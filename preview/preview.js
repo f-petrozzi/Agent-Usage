@@ -3,6 +3,11 @@ const frame = document.querySelector('#frame');
 let compact=false, pinned=true, weekly=true, hoveredAccount=-1;
 try { const saved=JSON.parse(localStorage.getItem('agent-usage-design')||'{}');compact=saved.compact===true;weekly=saved.weekly!==false; } catch {}
 const colors=n=>n<15?'#ff6b72':n<40?'#f2b24c':'#95d8c5';
+const gaugeColor=n=>{
+ const t=Math.max(0,Math.min(1,n<25?(n-12)/6:(n-37)/6));
+ const a=n<25?[255,107,114]:[242,178,76],b=n<25?[242,178,76]:[149,216,197];
+ return `rgb(${a.map((v,i)=>Math.round(v+(b[i]-v)*t)).join(',')})`;
+};
 const symbols={codex:'<path d="M6 20C0 20 0 11 5 10C4 2 15 1 17 8C24 7 25 20 18 20ZM7 11l3 3-3 3m6 0h4"/>',claude:Array.from({length:10},(_,i)=>{const a=i*Math.PI/5;return `<path d="M${12+Math.cos(a)*4} ${12+Math.sin(a)*4}L${12+Math.cos(a)*10} ${12+Math.sin(a)*10}"/>`;}).join(''),close:'<path d="m6 6 12 12M6 18 18 6"/>',refresh:'<path d="M20 9V4h-5M20 4a8 8 0 1 0 1 10"/>',collapse:'<path d="m5 15 7-7 7 7"/>',expand:'<path d="m5 9 7 7 7-7"/>',pin:'<path d="M8 3h8v7l3 4H5l3-4ZM12 14v8"/>',unpin:'<path d="M8 3h8v7l3 4H5l3-4ZM12 14v8M3 3l18 18"/>',reserve:'<path d="M4 8h16v13H4zM2 4h20v4H2zM10 12h4"/>'};
 const icon=name=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${symbols[name]||symbols.reserve}</svg>`;
 const day=86400000, now=Date.now();
@@ -48,7 +53,7 @@ function animateGauges(){
    const value=from===undefined?target:from+(target-from)*ease;
    gaugeValues.set(name,value);
    const path=el.querySelector('.gauge-progress');
-   path.setAttribute('stroke-dasharray',`${value} 100`);path.setAttribute('stroke',colors(value));path.style.opacity=value>0?'1':'0';
+   path.setAttribute('stroke-dasharray',`${value} 100`);path.setAttribute('stroke',gaugeColor(value));path.style.opacity=value>0?'1':'0';
    el.querySelector('strong').textContent=Math.round(value);
    el.querySelector('.gauge-value').classList.toggle('three',Math.round(value)===100);
   }

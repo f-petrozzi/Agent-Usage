@@ -392,6 +392,18 @@ namespace AgentUsageFrame
             return Plenty;
         }
 
+        public static Color GaugeColor(float progress)
+        {
+            // Blend around the warning boundaries rather than snapping mid-tween.
+            float t = progress < 25 ? (progress - 12) / 6f : (progress - 37) / 6f;
+            t = Math.Max(0f, Math.Min(1f, t));
+            Color from = progress < 25 ? Spent : Tight;
+            Color to = progress < 25 ? Tight : Plenty;
+            return Color.FromArgb((int)Math.Round(from.R + (to.R - from.R) * t),
+                (int)Math.Round(from.G + (to.G - from.G) * t),
+                (int)Math.Round(from.B + (to.B - from.B) * t));
+        }
+
         public static Color Mark(string provider)
         {
             return String.Equals(provider, "claude", StringComparison.OrdinalIgnoreCase)
@@ -511,19 +523,41 @@ namespace AgentUsageFrame
             g.Restore(saved);
         }
 
+        // Avoid GDI+ DrawArc for animated fractional sweeps. A bounded polyline
+        // keeps geometry finite and avoids the native arc conversion failure path.
+        public static void GaugeArc(Graphics g, Pen pen, RectangleF ring, float progress)
+        {
+            if (Single.IsNaN(progress) || Single.IsInfinity(progress) || progress <= 0 ||
+                ring.Width <= 0 || ring.Height <= 0) return;
+            progress = Math.Min(100f, progress);
+            double sweep = GaugeSweepAngle * progress / 100.0;
+            double radius = Math.Max(ring.Width, ring.Height) / 2.0;
+            // Below a tenth of a logical pixel there is no useful visible arc.
+            if (radius * sweep * Math.PI / 180.0 < 0.1) return;
+            int segments = Math.Max(1, (int)Math.Ceiling(sweep / 2.0));
+            PointF[] points = new PointF[segments + 1];
+            for (int i = 0; i <= segments; i++)
+            {
+                double angle = (GaugeStartAngle + sweep * i / segments) * Math.PI / 180.0;
+                points[i] = new PointF(ring.X + ring.Width / 2f + ring.Width / 2f * (float)Math.Cos(angle),
+                    ring.Y + ring.Height / 2f + ring.Height / 2f * (float)Math.Sin(angle));
+            }
+            g.DrawLines(pen, points);
+        }
+
         public static void FocusGauge(Graphics g, RectangleF bounds, LimitWindow limit, Font font, Font narrow, Font caption, float progress)
         {
             RectangleF ring = Inset(bounds, 4);
             using (Pen track = new Pen(Theme.Track, 5))
             {
                 track.StartCap = track.EndCap = LineCap.Round;
-                g.DrawArc(track, ring, 135, 270);
+                Draw.GaugeArc(g, track, ring, 100);
             }
             if (limit != null && progress > 0)
-                using (Pen fill = new Pen(Theme.Headroom((int)Math.Round(progress)), 5))
+                using (Pen fill = new Pen(Theme.GaugeColor(progress), 5))
                 {
                     fill.StartCap = fill.EndCap = LineCap.Round;
-                    g.DrawArc(fill, ring, 135, 270 * progress / 100f);
+                    Draw.GaugeArc(g, fill, ring, progress);
                 }
             using (StringFormat format = Centred())
             {
@@ -1342,13 +1376,13 @@ namespace AgentUsageFrame
                 LimitWindow selected = account.Selected(state.Weekly);
                 float progress = GaugeProgress(account);
                 RectangleF ring = new RectangleF(x + 12, 8, 36, 36);
-                using (Pen track = new Pen(Theme.Track, 3)) g.DrawArc(track, ring, 135, 270);
+                using (Pen track = new Pen(Theme.Track, 3)) Draw.GaugeArc(g, track, ring, 100);
                 bool healthy = String.IsNullOrEmpty(account.Error) && selected != null;
                 if (healthy && progress > 0)
-                    using (Pen fill = new Pen(Theme.Headroom((int)Math.Round(progress)), 3))
+                    using (Pen fill = new Pen(Theme.GaugeColor(progress), 3))
                     {
                         fill.StartCap = fill.EndCap = LineCap.Round;
-                        g.DrawArc(fill, ring, 135, 270 * progress / 100f);
+                        Draw.GaugeArc(g, fill, ring, progress);
                     }
                 string value = healthy ? Math.Round(progress).ToString() : "--";
                 TextLine(g, value, value.Length > 2 ? fTinyNarrow : fTiny, Theme.Ink, ring, true);
@@ -1802,6 +1836,40 @@ namespace AgentUsageFrame
                 checks.Add(withExpiry.Accounts[0].ResetCreditDetails[0].ExpiresAt == 1893456000);
                 checks.Add(withExpiry.Accounts[0].ResetCreditDetails.Exists(delegate(ResetCredit c) { return !c.ExpiresAt.HasValue && c.ExpirationKnown; }));
                 checks.Add(withExpiry.Accounts[0].ResetCreditDetails.Exists(delegate(ResetCredit c) { return !c.ExpirationKnown; }));
+                // Exercise the real Windows drawing path, including zero endpoints,
+                // tiny fractional sweeps and both directions at multiple DPI scales.
+                using (Bitmap bitmap = new Bitmap(240, 240))
+                using (Graphics graphics = Graphics.FromImage(bitmap))
+                using (Pen pen = new Pen(Theme.Plenty, 3))
+                {
+                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    pen.StartCap = pen.EndCap = LineCap.Round;
+                    foreach (float scale in new float[] { 1f, 1.25f, 1.5f, 2f })
+                    {
+                        graphics.ResetTransform();
+                        graphics.ScaleTransform(scale, scale);
+                        foreach (int size in new int[] { 36, 80 })
+                        {
+                            RectangleF ring = new RectangleF(8, 8, size, size);
+                            foreach (float edge in new float[] { 0, 0.000001f, 0.001f, 0.1f, 100, Single.NaN, Single.PositiveInfinity })
+                                Draw.GaugeArc(graphics, pen, ring, edge);
+                            for (int frame = 0; frame <= 1000; frame++)
+                            {
+                                float t = frame / 1000f;
+                                float progress = 100 * t * t * (3 - 2 * t);
+                                pen.Color = Theme.GaugeColor(progress);
+                                Draw.GaugeArc(graphics, pen, ring, progress);
+                                Draw.GaugeArc(graphics, pen, ring, 100 - progress);
+                            }
+                        }
+                    }
+                    graphics.ResetTransform();
+                    graphics.Clear(Color.Transparent);
+                    Draw.GaugeArc(graphics, pen, new RectangleF(8, 8, 36, 36), 0);
+                    checks.Add(bitmap.GetPixel(8, 26).A == 0);
+                    Draw.GaugeArc(graphics, pen, new RectangleF(8, 8, 36, 36), 100);
+                    checks.Add(bitmap.GetPixel(8, 26).A > 0);
+                }
                 bool sane = true;
                 for (int index = 0; index < checks.Count; index++)
                     if (!checks[index])
