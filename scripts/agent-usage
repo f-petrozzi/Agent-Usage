@@ -20,6 +20,10 @@ Output is a small, versioned document so the Windows frame stays dumb.
 from __future__ import annotations
 
 import argparse
+import email.utils
+import fcntl
+import hashlib
+import math
 import concurrent.futures
 import datetime as dt
 import json
@@ -271,6 +275,7 @@ def normalize_codex(payload: dict[str, Any], active: str | None) -> dict[str, An
         "blocked": False,
         "limits": [],
         "resetCredits": None,
+        "resetCreditDetails": None,
         "creditBalance": None,
         "extraUsage": None,
     }
@@ -309,7 +314,23 @@ def normalize_codex(payload: dict[str, Any], active: str | None) -> dict[str, An
     if isinstance(resets, dict):
         count = resets.get("availableCount")
         if isinstance(count, int):
-            account["resetCredits"] = count
+            account["resetCredits"] = max(0, count)
+        details = resets.get("credits")
+        if isinstance(details, list):
+            account["resetCreditDetails"] = []
+            for credit in details:
+                if not isinstance(credit, dict) or credit.get("status") != "available":
+                    continue
+                expires = credit.get("expiresAt")
+                # Missing, non-expiring, and dated credits are different states.
+                known = "expiresAt" in credit and (expires is None or
+                    (type(expires) is int and 0 < expires <= 253402300799))
+                account["resetCreditDetails"].append({
+                    "expiresAt": expires if known else None,
+                    "expirationKnown": known,
+                })
+            account["resetCreditDetails"].sort(key=lambda row:
+                (row["expiresAt"] is None, row["expiresAt"] or 0))
 
     if not account["limits"]:
         account["error"] = "Codex returned no rate-limit windows."
@@ -538,7 +559,7 @@ def _claude_extra_usage(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def query_claude(timeout: float) -> dict[str, Any]:
+def _query_claude_uncached(timeout: float) -> dict[str, Any]:
     account: dict[str, Any] = {
         "id": "claude",
         "provider": "claude",
@@ -549,6 +570,7 @@ def query_claude(timeout: float) -> dict[str, Any]:
         "blocked": False,
         "limits": [],
         "resetCredits": None,
+        "resetCreditDetails": None,
         "creditBalance": None,
         "extraUsage": None,
     }
@@ -563,6 +585,10 @@ def query_claude(timeout: float) -> dict[str, Any]:
     if token and not expired:
         try:
             payload = _claude_fetch(token, timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429:
+                raise
+            first_error = _short(exc)
         except (urllib.error.URLError, OSError, ValueError, UsageError) as exc:
             first_error = _short(exc)
 
@@ -580,6 +606,10 @@ def query_claude(timeout: float) -> dict[str, Any]:
         if token:
             try:
                 payload = _claude_fetch(token, timeout)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429:
+                    raise
+                payload = None
             except (urllib.error.URLError, OSError, ValueError, UsageError):
                 payload = None
 
@@ -595,6 +625,81 @@ def query_claude(timeout: float) -> dict[str, Any]:
 
     account["blocked"] = any(limit["usedPercent"] >= 100 for limit in account["limits"])
     return account
+
+
+def _retry_seconds(value: str | None, now: float) -> float:
+    try:
+        seconds = float(value or "0")
+        return max(0.0, seconds) if math.isfinite(seconds) else 0.0
+    except ValueError:
+        try:
+            return max(0.0, email.utils.parsedate_to_datetime(value).timestamp() - now)
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+
+
+def query_claude(timeout: float) -> dict[str, Any]:
+    """Share a credential-scoped cache/cooldown across polling processes.
+
+    A 429 never launches the CLI fallback or immediately retries the endpoint.
+    The file lock also prevents two frames on this host racing the same quota.
+    Cache contains usage metadata only, never the token.
+    """
+    token, _, _ = _claude_token()
+    identity = str(claude_config_dir().resolve()) + CLAUDE_USAGE_URL + (token or "signed-out")
+    key = hashlib.sha256(identity.encode()).hexdigest()[:24]
+    root = Path(os.environ.get("AGENT_USAGE_CACHE_DIR") or
+                str(Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")) / "agent-usage"))
+    try:
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = root / ("claude-" + key + ".json")
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError:
+        return {"id": "claude", "provider": "claude", "label": "Claude", "limits": [],
+                "error": "Cannot open usage cache; Claude polling paused."}
+    with os.fdopen(fd, "r+", encoding="utf-8") as cache:
+        fcntl.flock(cache, fcntl.LOCK_EX)
+        try:
+            saved = json.loads(cache.read(1024 * 1024))
+            if not isinstance(saved, dict):
+                saved = {}
+        except (ValueError, OSError):
+            saved = {}
+        now = time.time()
+        if isinstance(saved.get("nextAttempt"), (int, float)) and now < saved["nextAttempt"]:
+            if isinstance(saved.get("account"), dict):
+                return saved["account"]
+        streak = min(8, max(0, int(saved.get("streak", 0))))
+        try:
+            account = _query_claude_uncached(timeout)
+            streak = 0
+            next_attempt = now + 300
+            if not account.get("error"):
+                account["sampledAt"] = int(time.time())
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429:
+                raise
+            # Even Retry-After: 0 must not cause a hammering loop.
+            delay = max(min(3600, 300 * (2 ** streak)),
+                        _retry_seconds(exc.headers.get("Retry-After") if exc.headers else None, now))
+            next_attempt = now + delay
+            streak += 1
+            previous = saved.get("account")
+            account = dict(previous) if isinstance(previous, dict) else {
+                "id": "claude", "provider": "claude", "label": "Claude", "limits": []}
+            message = "Claude is rate limited; retry after " + dt.datetime.fromtimestamp(next_attempt).strftime("%H:%M")
+            account["retryAt"] = int(next_attempt)
+            account["stale"] = True
+            if account.get("limits"):
+                account["error"] = None
+                account["warning"] = message + " (last reading)"
+            else:
+                account["error"] = message
+        cache.seek(0)
+        cache.truncate()
+        json.dump({"account": account, "nextAttempt": next_attempt, "streak": streak}, cache)
+        cache.flush()
+        return account
 
 
 def _short(value: Any) -> str:

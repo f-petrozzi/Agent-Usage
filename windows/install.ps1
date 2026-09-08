@@ -2,6 +2,7 @@
 param(
     [switch]$Force,
     [switch]$Autostart,
+    [switch]$Interactive,
     # Read the collector on another machine over SSH instead of in WSL, e.g.
     # -Ssh user@host. Point this at whichever box actually runs your agents:
     # the usage numbers are the same either way, but only that box knows when
@@ -18,6 +19,19 @@ $startMenuDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $startMenuShortcut = Join-Path $startMenuDir 'Agent Usage.lnk'
 $startupDir = Join-Path $startMenuDir 'Startup'
 $startupShortcut = Join-Path $startupDir 'Agent Usage.lnk'
+
+# Updates preserve the selected collector host unless explicitly overridden.
+$statePath = Join-Path $installDir 'state.json'
+$savedSource = $null
+if (Test-Path -LiteralPath $statePath) {
+    try { $savedSource = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json } catch { }
+}
+if (-not $PSBoundParameters.ContainsKey('Ssh')) {
+    if ($savedSource -and $savedSource.Source -eq 'ssh') { $Ssh = $savedSource.SshTarget }
+    elseif ($Interactive -and -not $savedSource) {
+        $Ssh = Read-Host 'Collector SSH host (user@host), or Enter for local WSL'
+    }
+}
 
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw "Missing source file: $source"
@@ -76,6 +90,7 @@ try {
         /optimize+ `
         /codepage:65001 `
         "/out:$buildTarget" `
+        "/win32icon:$(Join-Path $PSScriptRoot 'assets\agent-usage.ico')" `
         /reference:System.dll `
         /reference:System.Core.dll `
         /reference:System.Drawing.dll `
@@ -124,6 +139,7 @@ function New-AgentUsageShortcut {
     $shortcut = $shell.CreateShortcut($Path)
     $shortcut.TargetPath = $target
     $shortcut.WorkingDirectory = $installDir
+    $shortcut.IconLocation = "$target,0"
     $shortcut.Description = 'Codex and Claude usage limits, read through WSL'
     $shortcut.Save()
 }
@@ -164,7 +180,14 @@ if ($Ssh) {
 else {
     Write-Host 'Reading usage from the WSL collector.'
 }
-Write-Host 'Launch it from the Start menu as Agent Usage.'
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'update.ps1') -Destination (Join-Path $installDir 'update.ps1') -Force
+$updateShortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $startMenuDir 'Update Agent Usage.lnk'))
+$updateShortcut.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$updateShortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $installDir 'update.ps1') + '"'
+$updateShortcut.IconLocation = "$target,0"
+$updateShortcut.Save()
+Write-Host 'Launch Agent Usage from Start. Use Update Agent Usage there for future releases.'
+if ($Interactive) { Start-Process -FilePath $target }
 if ($Autostart) {
     Write-Host 'Enabled startup at Windows sign-in.'
 }

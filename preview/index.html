@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Usage · Design preview</title>
+<link rel="stylesheet" href="preview.css"><script src="preview.js" defer></script>
+</head>
+<body>
+<main>
+<header class="intro"><span class="eyebrow">AGENT USAGE</span><h1>Room for what’s next.</h1><p>Your limits, resets, and reserves. In one quiet view.</p></header>
+<nav class="preview-controls" aria-label="Preview controls">
+<label>Sample <select id="scenario"><option value="normal">Everyday usage</option><option value="low">Running low</option><option value="exhausted">Limit reached</option><option value="error">Claude unavailable</option><option value="loading">Loading</option><option value="unknown">Expiration unavailable</option><option value="full">100% remaining</option><option value="stale">Stale data</option><option value="limited">Claude rate limited</option></select></label>
+<label>Size <select id="scale"><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select></label>
+<button id="mode">Show compact</button><button id="restore">Reset preview</button>
+</nav>
+<div class="stage"><section class="frame" id="frame" aria-label="Agent usage overlay"></section></div>
+<footer>Design preview · sample data<br>Choose 5-hour or Weekly to change the large readings. Windows uses the same layout with an opaque surface for sharp text.</footer>
+</main></body></html>

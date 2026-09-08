@@ -21,3 +21,5 @@ foreach ($path in $paths) {
 }
 
 Write-Host 'Removed the Windows app only. WSL, Codex, Claude, and cxa are untouched.'
+
+Remove-Item -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Update Agent Usage.lnk') -Force -ErrorAction SilentlyContinue

@@ -26,6 +26,7 @@ namespace AgentUsageFrame
                 return;
             }
 
+            Native.EnableDpiAwareness();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new UsageForm());
@@ -78,6 +79,12 @@ namespace AgentUsageFrame
         }
     }
 
+    internal sealed class ResetCredit
+    {
+        public long? ExpiresAt { get; set; }
+        public bool ExpirationKnown { get; set; }
+    }
+
     internal sealed class Account
     {
         public string Id { get; set; }
@@ -87,13 +94,25 @@ namespace AgentUsageFrame
         public bool Active { get; set; }
         public bool Blocked { get; set; }
         public string Error { get; set; }
+        public string Warning { get; set; }
+        public long? SampledAt { get; set; }
         public int? ResetCredits { get; set; }
         public double? CreditBalance { get; set; }
+        public List<ResetCredit> ResetCreditDetails { get; set; }
         public bool ExtraUsageEnabled { get; set; }
         public double? ExtraUsageDollars { get; set; }
         public List<LimitWindow> Limits { get; private set; }
 
         public Account() { Limits = new List<LimitWindow>(); }
+
+        public LimitWindow Selected(bool weekly)
+        {
+            foreach (LimitWindow limit in Limits)
+                if (limit.WindowMins.HasValue && (weekly
+                    ? limit.WindowMins.Value >= 10080 : limit.WindowMins.Value < 1440))
+                    return limit;
+            return null;
+        }
 
         public string DisplayName
         {
@@ -224,9 +243,31 @@ namespace AgentUsageFrame
                     Active = Flag(row, "active"),
                     Blocked = Flag(row, "blocked"),
                     Error = Text(row, "error", null),
+                    Warning = Text(row, "warning", null),
+                    SampledAt = Long(row, "sampledAt"),
                     ResetCredits = (int?)Long(row, "resetCredits"),
                     CreditBalance = Number(row, "creditBalance")
                 };
+
+                object detailObject;
+                if (row.TryGetValue("resetCreditDetails", out detailObject) && detailObject is object[])
+                {
+                    account.ResetCreditDetails = new List<ResetCredit>();
+                    foreach (object item in (object[])detailObject)
+                    {
+                        IDictionary<string, object> detail = item as IDictionary<string, object>;
+                        if (detail == null) continue;
+                        long? expiry = Long(detail, "expiresAt");
+                        bool valid = !expiry.HasValue || (expiry.Value > 0 && expiry.Value <= 253402300799L);
+                        account.ResetCreditDetails.Add(new ResetCredit {
+                            ExpiresAt = valid ? expiry : null,
+                            ExpirationKnown = valid && Flag(detail, "expirationKnown")
+                        });
+                    }
+                    account.ResetCreditDetails.Sort(delegate(ResetCredit a, ResetCredit b) {
+                        return (a.ExpiresAt ?? Int64.MaxValue).CompareTo(b.ExpiresAt ?? Int64.MaxValue);
+                    });
+                }
 
                 IDictionary<string, object> extra = Map(row, "extraUsage");
                 if (extra != null)
@@ -327,21 +368,21 @@ namespace AgentUsageFrame
     {
         // Deep petrol glass, so the frame reads as smoked instrument housing
         // rather than a black rectangle laid over the desktop.
-        public static readonly Color ShellTop = Color.FromArgb(24, 32, 41);
-        public static readonly Color ShellBottom = Color.FromArgb(17, 22, 29);
-        public static readonly Color Hairline = Color.FromArgb(38, 50, 65);
-        public static readonly Color Track = Color.FromArgb(31, 41, 53);
+        public static readonly Color ShellTop = Color.FromArgb(38, 44, 55);
+        public static readonly Color ShellBottom = Color.FromArgb(22, 27, 36);
+        public static readonly Color Hairline = Color.FromArgb(57, 65, 79);
+        public static readonly Color Track = Color.FromArgb(43, 51, 64);
         public static readonly Color Ink = Color.FromArgb(232, 238, 244);
         public static readonly Color Muted = Color.FromArgb(138, 154, 171);
-        public static readonly Color Faint = Color.FromArgb(94, 110, 127);
+        public static readonly Color Faint = Color.FromArgb(154, 166, 182);
 
         // Headroom ramp. Colour answers "how much is left", never "which brand".
-        public static readonly Color Plenty = Color.FromArgb(79, 209, 176);
+        public static readonly Color Plenty = Color.FromArgb(149, 216, 197);
         public static readonly Color Tight = Color.FromArgb(242, 178, 76);
         public static readonly Color Spent = Color.FromArgb(255, 107, 114);
 
-        public static readonly Color CodexMark = Color.FromArgb(15, 164, 127);
-        public static readonly Color ClaudeMark = Color.FromArgb(201, 113, 79);
+        public static readonly Color CodexMark = Color.FromArgb(211, 222, 234);
+        public static readonly Color ClaudeMark = Color.FromArgb(231, 180, 152);
 
         public static Color Headroom(int remainingPercent)
         {
@@ -383,7 +424,7 @@ namespace AgentUsageFrame
 
         // Bahnschrift is Windows' own DIN: condensed, technical, built for dials.
         private static readonly string InstrumentName =
-            Pick("Bahnschrift SemiCondensed", "Bahnschrift", "Segoe UI Semibold");
+            Pick("Segoe UI", "Arial");
         private static readonly string ProseName = Pick("Segoe UI");
         private static readonly string ClockName = Pick("Cascadia Mono", "Consolas", "Courier New");
         private static readonly string IconName = Pick("Segoe MDL2 Assets", "Segoe UI Symbol");
@@ -392,22 +433,22 @@ namespace AgentUsageFrame
 
         public static Font Instrument(float size, FontStyle style)
         {
-            return new Font(InstrumentName, size, style, GraphicsUnit.Point);
+            return new Font(InstrumentName, size * 96f / 72f, style, GraphicsUnit.Pixel);
         }
 
         public static Font Prose(float size)
         {
-            return new Font(ProseName, size, FontStyle.Regular, GraphicsUnit.Point);
+            return new Font(ProseName, size * 96f / 72f, FontStyle.Regular, GraphicsUnit.Pixel);
         }
 
         public static Font ClockFace(float size)
         {
-            return new Font(ClockName, size, FontStyle.Regular, GraphicsUnit.Point);
+            return new Font(ClockName, size * 96f / 72f, FontStyle.Regular, GraphicsUnit.Pixel);
         }
 
         public static Font Icons(float size)
         {
-            return new Font(IconName, size, FontStyle.Regular, GraphicsUnit.Point);
+            return new Font(IconName, size * 96f / 72f, FontStyle.Regular, GraphicsUnit.Pixel);
         }
     }
 
@@ -417,6 +458,75 @@ namespace AgentUsageFrame
     {
         public const float GaugeStartAngle = 135f;
         public const float GaugeSweepAngle = 270f;
+
+        public static void Symbol(Graphics g, RectangleF bounds, string symbol, Color color)
+        {
+            GraphicsState saved = g.Save();
+            g.TranslateTransform(bounds.X, bounds.Y);
+            g.ScaleTransform(bounds.Width / 24f, bounds.Height / 24f);
+            using (Pen pen = new Pen(color, 1.7f))
+            {
+                pen.StartCap = pen.EndCap = LineCap.Round;
+                pen.LineJoin = LineJoin.Round;
+                if (symbol == "claude")
+                {
+                    for (int i = 0; i < 10; i++)
+                    {
+                        double angle = i * Math.PI / 5;
+                        g.DrawLine(pen, 12 + (float)Math.Cos(angle) * 4, 12 + (float)Math.Sin(angle) * 4,
+                            12 + (float)Math.Cos(angle) * 10, 12 + (float)Math.Sin(angle) * 10);
+                    }
+                }
+                else if (symbol == "codex")
+                {
+                    g.DrawLines(pen, new PointF[] { new PointF(8, 5), new PointF(2, 12), new PointF(8, 19) });
+                    g.DrawLines(pen, new PointF[] { new PointF(16, 5), new PointF(22, 12), new PointF(16, 19) });
+                    g.DrawLine(pen, 14, 5, 10, 19);
+                }
+                else if (symbol == "close") { g.DrawLine(pen, 6, 6, 18, 18); g.DrawLine(pen, 6, 18, 18, 6); }
+                else if (symbol == "refresh")
+                {
+                    g.DrawArc(pen, 4, 4, 16, 16, 35, 290);
+                    g.DrawLines(pen, new PointF[] { new PointF(15, 4), new PointF(20, 4), new PointF(20, 9) });
+                }
+                else if (symbol == "expand" || symbol == "collapse")
+                {
+                    bool down = symbol == "expand";
+                    g.DrawLines(pen, new PointF[] { new PointF(5, down ? 9 : 15), new PointF(12, down ? 16 : 8), new PointF(19, down ? 9 : 15) });
+                }
+                else
+                {
+                    g.DrawLines(pen, new PointF[] { new PointF(8, 3), new PointF(16, 3), new PointF(16, 10), new PointF(19, 14), new PointF(5, 14), new PointF(8, 10), new PointF(8, 3) });
+                    g.DrawLine(pen, 12, 14, 12, 22);
+                    if (symbol == "unpin") g.DrawLine(pen, 3, 3, 21, 21);
+                }
+            }
+            g.Restore(saved);
+        }
+
+        public static void FocusGauge(Graphics g, RectangleF bounds, LimitWindow limit, Font font, Font narrow, Font caption)
+        {
+            RectangleF ring = Inset(bounds, 4);
+            using (Pen track = new Pen(Theme.Track, 5))
+            {
+                track.StartCap = track.EndCap = LineCap.Round;
+                g.DrawArc(track, ring, 135, 270);
+            }
+            if (limit != null && limit.RemainingPercent > 0)
+                using (Pen fill = new Pen(Theme.Headroom(limit.RemainingPercent), 5))
+                {
+                    fill.StartCap = fill.EndCap = LineCap.Round;
+                    g.DrawArc(fill, ring, 135, 270 * limit.RemainingPercent / 100f);
+                }
+            using (StringFormat format = Centred())
+            {
+                string value = limit == null ? "--" : limit.RemainingPercent.ToString(CultureInfo.InvariantCulture);
+                Text(g, value, value.Length > 2 ? narrow : font, Theme.Ink,
+                    new RectangleF(bounds.X + 10, bounds.Y + bounds.Height * 0.22f, bounds.Width - 20, bounds.Height * 0.42f), format);
+                Text(g, "% left", caption, Theme.Muted,
+                    new RectangleF(bounds.X + 10, bounds.Y + bounds.Height * 0.62f, bounds.Width - 20, 16), format);
+            }
+        }
 
         public static GraphicsPath RoundedRect(RectangleF bounds, float radius)
         {
@@ -433,119 +543,6 @@ namespace AgentUsageFrame
             path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90f, 90f);
             path.CloseFigure();
             return path;
-        }
-
-        /// <summary>
-        /// Concentric depletion arcs: the outer ring is the short window, the inner
-        /// ring the long one. Both drain as usage climbs, and a notch marks how much
-        /// of the window's clock is left -- fill past the notch means you are ahead.
-        /// </summary>
-        public static void Gauge(
-            Graphics g, RectangleF bounds, Account account, Font centreFont, Font narrowFont)
-        {
-            float thickness = bounds.Width >= 44f ? 5f : 4f;
-            // Rings sit close together so the well at the centre stays wide
-            // enough for a two-digit readout in any fallback face.
-            float gap = thickness + 1.5f;
-
-            for (int index = 0; index < 2; index++)
-            {
-                RectangleF ring = Inset(bounds, thickness / 2f + index * gap);
-                if (ring.Width <= 2f)
-                    break;
-
-                LimitWindow limit = index < account.Limits.Count ? account.Limits[index] : null;
-                float ringThickness = index == 0 ? thickness : Math.Max(2.5f, thickness - 1.5f);
-
-                using (Pen track = new Pen(Theme.Track, ringThickness))
-                {
-                    track.StartCap = LineCap.Round;
-                    track.EndCap = LineCap.Round;
-                    g.DrawArc(track, ring, GaugeStartAngle, GaugeSweepAngle);
-                }
-
-                if (limit == null || !String.IsNullOrEmpty(account.Error))
-                    continue;
-
-                float remaining = limit.RemainingPercent / 100f;
-                if (remaining > 0.004f)
-                {
-                    using (Pen fill = new Pen(Theme.Headroom(limit.RemainingPercent), ringThickness))
-                    {
-                        fill.StartCap = LineCap.Round;
-                        fill.EndCap = LineCap.Round;
-                        g.DrawArc(fill, ring, GaugeStartAngle, GaugeSweepAngle * remaining);
-                    }
-                }
-
-                double? clockLeft = limit.ClockLeftPercent;
-                if (clockLeft.HasValue)
-                    PaceNotch(g, ring, (float)(clockLeft.Value / 100.0), ringThickness);
-            }
-
-            LimitWindow binding = account.Binding;
-            string centre = "--";
-            Color centreColor = Theme.Faint;
-            if (!String.IsNullOrEmpty(account.Error))
-            {
-                centre = "!";
-                centreColor = Theme.Spent;
-            }
-            else if (binding != null)
-            {
-                centre = binding.RemainingPercent.ToString(CultureInfo.InvariantCulture);
-                centreColor = Theme.Headroom(binding.RemainingPercent);
-            }
-
-            using (SolidBrush brush = new SolidBrush(centreColor))
-            using (StringFormat format = Centred())
-                g.DrawString(centre, centre.Length > 2 ? narrowFont : centreFont, brush, bounds, format);
-        }
-
-        private static void PaceNotch(Graphics g, RectangleF ring, float fraction, float thickness)
-        {
-            double angle = (GaugeStartAngle + GaugeSweepAngle * fraction) * Math.PI / 180.0;
-            float cx = ring.Left + ring.Width / 2f;
-            float cy = ring.Top + ring.Height / 2f;
-            float radius = ring.Width / 2f;
-            float inner = radius - thickness / 2f - 0.5f;
-            float outer = radius + thickness / 2f + 0.5f;
-            PointF from = new PointF(cx + (float)(Math.Cos(angle) * inner), cy + (float)(Math.Sin(angle) * inner));
-            PointF to = new PointF(cx + (float)(Math.Cos(angle) * outer), cy + (float)(Math.Sin(angle) * outer));
-
-            using (Pen shadow = new Pen(Theme.ShellBottom, 2.6f))
-                g.DrawLine(shadow, from, to);
-            using (Pen mark = new Pen(Color.FromArgb(210, Theme.Ink), 1.1f))
-                g.DrawLine(mark, from, to);
-        }
-
-        /// <summary>A linear depletion meter carrying the same notch as the gauge.</summary>
-        public static void Meter(Graphics g, RectangleF bounds, LimitWindow limit)
-        {
-            using (GraphicsPath track = RoundedRect(bounds, bounds.Height / 2f))
-            using (SolidBrush brush = new SolidBrush(Theme.Track))
-                g.FillPath(brush, track);
-
-            float remaining = limit.RemainingPercent / 100f;
-            if (remaining > 0.004f)
-            {
-                float width = Math.Max(bounds.Height, bounds.Width * remaining);
-                RectangleF fill = new RectangleF(bounds.X, bounds.Y, width, bounds.Height);
-                using (GraphicsPath path = RoundedRect(fill, bounds.Height / 2f))
-                using (SolidBrush brush = new SolidBrush(Theme.Headroom(limit.RemainingPercent)))
-                    g.FillPath(brush, path);
-            }
-
-            double? clockLeft = limit.ClockLeftPercent;
-            if (!clockLeft.HasValue)
-                return;
-
-            float x = bounds.X + bounds.Width * (float)(clockLeft.Value / 100.0);
-            x = Math.Max(bounds.X + 1f, Math.Min(bounds.Right - 1f, x));
-            using (SolidBrush gapBrush = new SolidBrush(Theme.ShellBottom))
-                g.FillRectangle(gapBrush, x - 1.5f, bounds.Y - 1.5f, 3f, bounds.Height + 3f);
-            using (SolidBrush markBrush = new SolidBrush(Color.FromArgb(210, Theme.Ink)))
-                g.FillRectangle(markBrush, x - 0.5f, bounds.Y - 1.5f, 1f, bounds.Height + 3f);
         }
 
         public static RectangleF Inset(RectangleF bounds, float amount)
@@ -612,6 +609,32 @@ namespace AgentUsageFrame
         public const uint SwpNoMove = 0x0002;
         public const uint SwpNoZOrder = 0x0004;
         public const uint SwpNoActivate = 0x0010;
+
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+        [DllImport("shcore.dll")]
+        private static extern int SetProcessDpiAwareness(int awareness);
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr window);
+
+        public static void EnableDpiAwareness()
+        {
+            try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return; }
+            catch (EntryPointNotFoundException) { }
+            try { if (SetProcessDpiAwareness(2) == 0) return; }
+            catch (DllNotFoundException) { }
+            catch (EntryPointNotFoundException) { }
+            SetProcessDPIAware();
+        }
+
+        public static float WindowScale(IntPtr window)
+        {
+            try { uint dpi = GetDpiForWindow(window); if (dpi > 0) return dpi / 96f; }
+            catch (EntryPointNotFoundException) { }
+            using (Graphics graphics = Graphics.FromHwnd(window)) return graphics.DpiX / 96f;
+        }
 
         public static readonly IntPtr HwndTopMost = new IntPtr(-1);
         public static readonly IntPtr HwndNoTopMost = new IntPtr(-2);
@@ -701,6 +724,7 @@ namespace AgentUsageFrame
         public int X { get; set; }
         public int Y { get; set; }
         public bool Compact { get; set; }
+        public bool Weekly { get; set; }
         public bool StayOnTop { get; set; }
 
         /// <summary>"wsl" reads the collector in the local WSL distribution;
@@ -710,6 +734,7 @@ namespace AgentUsageFrame
 
         public FrameState()
         {
+            Weekly = true;
             X = Int32.MinValue;
             Y = Int32.MinValue;
             StayOnTop = true;
@@ -759,21 +784,21 @@ namespace AgentUsageFrame
 
     internal sealed class UsageForm : Form
     {
-        private const int ExpandedWidth = 404;
-        private const int HeaderHeight = 34;
-        private const int GutterLeft = 74;
+        private const int ExpandedWidth = 420;
+        private const int HeaderHeight = 90;
+        private const int GutterLeft = 132;
         private const int GutterRight = 14;
-        private const int MeterRowHeight = 28;
-        private const int CompactCell = 82;
-        private const int CompactPad = 10;
-        private const int CompactHeight = 82;
+        private const int MeterRowHeight = 46;
+        private const int CompactCell = 60;
+        private const int CompactPad = 6;
+        private const int CompactHeight = 64;
 
         private const string WslCommand =
             "exec \"$HOME/.local/bin/agent-usage\" --timeout 20 --compact";
         private const string SshCommand =
             "~/.local/bin/agent-usage --timeout 20 --compact";
 
-        private enum Hit { None, Pin, Refresh, Fold, Close }
+        private enum Hit { None, Pin, Refresh, Fold, Close, Hourly, Weekly }
 
         private readonly Font fName, fPlan, fLimit, fValue, fClock, fFoot, fError;
         private readonly Font fGauge, fGaugeNarrow, fCellLabel, fCellClock, fHeader, fIcon;
@@ -796,31 +821,41 @@ namespace AgentUsageFrame
         private bool dragging;
         private Point dragOffset;
         private int tickCount;
+        private float dpiScale = 1f;
+        private int scrollOffset;
+        private readonly ToolTip tips = new ToolTip { ShowAlways = true, AutoPopDelay = 20000 };
+        private readonly Dictionary<Rectangle, string> bankTips = new Dictionary<Rectangle, string>();
+        private string currentTip;
+        private readonly Font fTiny = Theme.Instrument(10f, FontStyle.Bold);
+        private readonly Font fTinyNarrow = Theme.Instrument(9f, FontStyle.Bold);
 
         public UsageForm()
         {
             state = FrameState.Load();
 
-            fName = Theme.Instrument(10f, FontStyle.Bold);
-            fPlan = Theme.Prose(7.5f);
+            fName = Theme.Instrument(11f, FontStyle.Bold);
+            fPlan = Theme.Prose(8.5f);
             fLimit = Theme.Instrument(9f, FontStyle.Regular);
             fValue = Theme.Instrument(9.5f, FontStyle.Bold);
-            fClock = Theme.ClockFace(8f);
-            fFoot = Theme.Prose(7.5f);
+            fClock = Theme.Prose(8.5f);
+            fFoot = Theme.Prose(8.5f);
             fError = Theme.Prose(8.25f);
-            fGauge = Theme.Instrument(11f, FontStyle.Bold);
-            fGaugeNarrow = Theme.Instrument(8.5f, FontStyle.Bold);
+            fGauge = Theme.Instrument(20f, FontStyle.Bold);
+            fGaugeNarrow = Theme.Instrument(17f, FontStyle.Bold);
             fCellLabel = Theme.Instrument(8f, FontStyle.Regular);
             fCellClock = Theme.ClockFace(7.5f);
-            fHeader = Theme.Prose(8f);
+            fHeader = Theme.Prose(8.5f);
             fIcon = Theme.Icons(8.5f);
 
             Text = "Agent usage";
+            try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
-            AllowTransparency = true;
-            Opacity = 0.96;
+            // Keep text opaque. Glass depth comes from the surface, not faded glyphs.
+            AutoScaleMode = AutoScaleMode.None;
+            AllowTransparency = false;
+            Opacity = 1.0;
             BackColor = Theme.ShellBottom;
             DoubleBuffered = true;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
@@ -834,6 +869,7 @@ namespace AgentUsageFrame
 
             Shown += delegate
             {
+                dpiScale = Native.WindowScale(Handle);
                 PlaceWindow();
                 tick.Start();
                 BeginRefresh();
@@ -859,6 +895,17 @@ namespace AgentUsageFrame
             if (message.Msg == Native.WmMouseActivate)
             {
                 message.Result = new IntPtr(Native.MaNoActivate);
+                return;
+            }
+            if (message.Msg == 0x02E0) // WM_DPICHANGED, physical coordinates
+            {
+                dpiScale = Math.Max(1f, (message.WParam.ToInt64() & 0xffff) / 96f);
+                Native.Rect suggested = (Native.Rect)Marshal.PtrToStructure(message.LParam, typeof(Native.Rect));
+                Native.SetWindowPos(Handle, IntPtr.Zero, suggested.Left, suggested.Top, 0, 0,
+                    Native.SwpNoSize | Native.SwpNoZOrder | Native.SwpNoActivate);
+                ApplySize();
+                if (dragging) dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
+                message.Result = IntPtr.Zero;
                 return;
             }
             base.WndProc(ref message);
@@ -894,30 +941,44 @@ namespace AgentUsageFrame
             return null;
         }
 
-        private string FootRight(Account account)
+        private List<string> Details(Account account)
         {
-            if (account.ResetCredits.HasValue && account.ResetCredits.Value > 0)
-                return account.ResetCredits.Value == 1
-                    ? "1 reset banked"
-                    : account.ResetCredits.Value + " resets banked";
-            if (account.CreditBalance.HasValue && account.CreditBalance.Value > 0)
-                return String.Format(CultureInfo.InvariantCulture, "{0:N0} credits", account.CreditBalance.Value);
+            List<string> lines = new List<string>();
+            if (account.ResetCredits.HasValue)
+            {
+                int count = account.ResetCredits.Value;
+                lines.Add(count + (count == 1 ? " reset banked" : " resets banked"));
+            }
+            if (account.CreditBalance.HasValue)
+                lines.Add(account.CreditBalance.Value < 0 ? "Unlimited credits" :
+                    String.Format(CultureInfo.InvariantCulture, "{0:N2} credits available", account.CreditBalance.Value));
             if (account.ExtraUsageEnabled)
-                return account.ExtraUsageDollars.HasValue
-                    ? String.Format(CultureInfo.InvariantCulture, "${0:N2} extra usage", account.ExtraUsageDollars.Value)
-                    : "Extra usage on";
-            return null;
+                lines.Add(account.ExtraUsageDollars.HasValue ?
+                    String.Format(CultureInfo.InvariantCulture, "Extra usage on  /  ${0:N2} used", account.ExtraUsageDollars.Value) : "Extra usage on");
+            if (!String.IsNullOrEmpty(account.Warning)) lines.Add(account.Warning);
+            string pace = FootLeft(account);
+            if (pace != null) lines.Add(pace);
+            return lines;
+        }
+
+        private string BankTooltip(Account account)
+        {
+            if (account.ResetCredits.GetValueOrDefault() == 0) return "No banked resets available.";
+            if (account.ResetCreditDetails == null || account.ResetCreditDetails.Count == 0)
+                return "Expiration dates unavailable.";
+            List<string> lines = new List<string>();
+            foreach (ResetCredit credit in account.ResetCreditDetails)
+                lines.Add(!credit.ExpirationKnown ? "Expiration date unavailable" : !credit.ExpiresAt.HasValue ? "No expiration" :
+                    "Expires " + Clock.ToLocal(credit.ExpiresAt.Value).ToString("MMM d, yyyy 'at' h:mmtt", CultureInfo.InvariantCulture));
+            int missing = account.ResetCredits.GetValueOrDefault() - account.ResetCreditDetails.Count;
+            if (missing > 0) lines.Add(missing + " more: expiration unavailable");
+            return String.Join(Environment.NewLine, lines.ToArray());
         }
 
         private int BlockHeight(Account account)
         {
-            if (!String.IsNullOrEmpty(account.Error))
-                return 66;
-            int rows = Math.Min(3, account.Limits.Count);
-            int height = 8 + 18 + 4 + rows * MeterRowHeight + 8;
-            if (FootLeft(account) != null || FootRight(account) != null)
-                height += 15;
-            return height;
+            if (!String.IsNullOrEmpty(account.Error)) return 96;
+            return 40 + Math.Max(104, account.Limits.Count * MeterRowHeight) + Details(account).Count * 20 + 20;
         }
 
         private Size DesiredSize()
@@ -927,7 +988,7 @@ namespace AgentUsageFrame
 
             if (Compact)
                 return new Size(
-                    accounts.Count == 0 ? 200 : CompactPad * 2 + count * CompactCell,
+                    accounts.Count == 0 ? 214 : CompactPad * 2 + count * CompactCell + 22,
                     CompactHeight);
 
             int height = HeaderHeight;
@@ -935,12 +996,14 @@ namespace AgentUsageFrame
                 height += 66;
             foreach (Account account in accounts)
                 height += BlockHeight(account) + 1;
-            return new Size(ExpandedWidth, height + 5);
+            int available = IsHandleCreated ? (int)(Screen.FromHandle(Handle).WorkingArea.Height / dpiScale) - 32 : height + 5;
+            return new Size(ExpandedWidth, Math.Min(height + 5, Math.Max(HeaderHeight + 120, available)));
         }
 
         private void ApplySize()
         {
-            Size wanted = DesiredSize();
+            Size logical = DesiredSize();
+            Size wanted = new Size((int)Math.Round(logical.Width * dpiScale), (int)Math.Round(logical.Height * dpiScale));
             if (ClientSize == wanted && Region != null)
                 return;
 
@@ -958,7 +1021,7 @@ namespace AgentUsageFrame
 
             Region previous = Region;
             using (GraphicsPath path = Draw.RoundedRect(
-                new RectangleF(0, 0, ClientSize.Width, ClientSize.Height), 10f))
+                new RectangleF(0, 0, ClientSize.Width, ClientSize.Height), 16f * dpiScale))
                 Region = new Region(path);
             if (previous != null)
                 previous.Dispose();
@@ -1014,229 +1077,183 @@ namespace AgentUsageFrame
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
+            g.Clear(Theme.ShellBottom);
+            g.ScaleTransform(dpiScale, dpiScale);
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-            RectangleF shell = new RectangleF(0, 0, ClientSize.Width, ClientSize.Height);
-            using (GraphicsPath path = Draw.RoundedRect(shell, 10f))
-            using (LinearGradientBrush brush = new LinearGradientBrush(
-                new RectangleF(0, -1, shell.Width, shell.Height + 2),
-                Theme.ShellTop, Theme.ShellBottom, LinearGradientMode.Vertical))
-                g.FillPath(brush, path);
-
-            // A single lit edge along the top reads as glass rather than paint.
-            using (Pen edge = new Pen(Color.FromArgb(26, 255, 255, 255)))
-                g.DrawLine(edge, 10, 1, shell.Width - 10, 1);
-            using (GraphicsPath path = Draw.RoundedRect(Draw.Inset(shell, 0.5f), 9.5f))
-            using (Pen border = new Pen(Color.FromArgb(150, Theme.Hairline)))
-                g.DrawPath(border, path);
-
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            g.PixelOffsetMode = PixelOffsetMode.Default;
+            Size logical = DesiredSize();
+            RectangleF shell = new RectangleF(0, 0, logical.Width, logical.Height);
+            using (LinearGradientBrush brush = new LinearGradientBrush(shell,
+                Theme.ShellTop, Theme.ShellBottom, LinearGradientMode.ForwardDiagonal))
+                g.FillRectangle(brush, shell);
+            // A continuous inset rim avoids the former bright line near the corner.
+            using (GraphicsPath path = Draw.RoundedRect(Draw.Inset(shell, 1f), 15f))
+            using (Pen border = new Pen(Theme.Hairline, 1f)) g.DrawPath(border, path);
             buttons.Clear();
-            if (Compact)
-                PaintCompact(g);
-            else
-                PaintExpanded(g);
+            bankTips.Clear();
+            if (!Compact) PaintHeader(g);
+            if (Compact) PaintCompact(g); else PaintExpanded(g);
+        }
+
+        private void TextLine(Graphics g, string text, Font font, Color color, RectangleF bounds, bool centered)
+        {
+            using (StringFormat format = centered ? Draw.Centred() : Draw.Left())
+                Draw.Text(g, text, font, color, bounds, format);
         }
 
         private void PaintExpanded(Graphics g)
         {
-            PaintHeader(g);
-
-            int y = HeaderHeight;
-            List<Account> accounts = Accounts;
-            if (accounts.Count == 0)
+            if (Accounts.Count == 0)
             {
-                using (StringFormat format = Draw.Left())
-                    Draw.Text(g, failure ?? "Reading limits\u2026", fError, failure != null ? Theme.Spent : Theme.Muted,
-                        new RectangleF(GutterLeft - 60, y, ExpandedWidth - GutterLeft, 66), format);
+                TextLine(g, failure ?? "Reading limits...", fError, Theme.Muted,
+                    new RectangleF(18, HeaderHeight + 8, ExpandedWidth - 36, 40), false);
                 return;
             }
-
-            for (int index = 0; index < accounts.Count; index++)
+            int contentHeight = 0;
+            foreach (Account account in Accounts) contentHeight += BlockHeight(account) + 1;
+            int viewport = DesiredSize().Height - HeaderHeight - 5;
+            if (contentHeight > viewport) viewport -= 19;
+            int maximum = Math.Max(0, contentHeight - viewport);
+            scrollOffset = Math.Min(scrollOffset, maximum);
+            GraphicsState saved = g.Save();
+            g.SetClip(new Rectangle(0, HeaderHeight, ExpandedWidth, viewport));
+            g.TranslateTransform(0, -scrollOffset);
+            int y = HeaderHeight;
+            foreach (Account account in Accounts)
             {
-                Account account = accounts[index];
-                int height = BlockHeight(account);
-                PaintAccount(g, account, y, height);
-                y += height;
-                if (index < accounts.Count - 1)
-                    using (Pen line = new Pen(Theme.Hairline))
-                        g.DrawLine(line, 14, y, ExpandedWidth - 14, y);
-                y += 1;
+                PaintAccount(g, account, y, BlockHeight(account));
+                y += BlockHeight(account) + 1;
             }
+            g.Restore(saved);
+            if (maximum > 0)
+                TextLine(g, "Scroll to see all usage details", fPlan, Theme.Muted,
+                    new RectangleF(18, DesiredSize().Height - 24, ExpandedWidth - 36, 20), true);
         }
 
         private void PaintHeader(Graphics g)
         {
-            string status;
-            Color color;
-            if (refreshing)
-            {
-                status = "Reading limits\u2026";
-                color = Theme.Faint;
-            }
-            else if (failure != null)
-            {
-                status = "Can't read limits";
-                color = Theme.Spent;
-            }
-            else if (lastSuccess == DateTime.MinValue)
-            {
-                status = "Waiting";
-                color = Theme.Faint;
-            }
-            else
-            {
-                bool stale = (DateTime.Now - lastSuccess).TotalMinutes > 20;
-                status = (stale ? "Last read " : "Updated ") + LocalShort(lastSuccess);
-                color = stale ? Theme.Tight : Theme.Muted;
-            }
-            if (fullScreenApp && state.StayOnTop)
-                status += "   pin paused for full screen";
+            int width = DesiredSize().Width;
+            TextLine(g, "Usage", fName, Theme.Ink, new RectangleF(18, 10, 120, 22), false);
+            string status = refreshing ? "Reading limits..." : failure != null ? "Offline - showing last read" :
+                lastSuccess == DateTime.MinValue ? "Waiting for first read" :
+                (DateTime.Now - lastSuccess).TotalMinutes > 20 ? "Stale - refresh to update" : "Updated " + LocalShort(lastSuccess);
+            if (fullScreenApp && state.StayOnTop) status = "Pin paused for full screen";
+            TextLine(g, status, fHeader, failure != null ? Theme.Tight : Theme.Muted,
+                new RectangleF(18, 31, width - 36, 18), false);
+            PaintButton(g, Hit.Pin, new Rectangle(width - 136, 10, 28, 28));
+            PaintButton(g, Hit.Refresh, new Rectangle(width - 106, 10, 28, 28));
+            PaintButton(g, Hit.Fold, new Rectangle(width - 76, 10, 28, 28));
+            PaintButton(g, Hit.Close, new Rectangle(width - 46, 10, 28, 28));
+            PaintButton(g, Hit.Hourly, new Rectangle(18, 55, 84, 27));
+            PaintButton(g, Hit.Weekly, new Rectangle(106, 55, 84, 27));
 
-            using (StringFormat format = Draw.Left())
-                Draw.Text(g, status, fHeader, color, new RectangleF(14, 0, 260, HeaderHeight), format);
-
-            int right = ExpandedWidth - 8;
-            PaintButton(g, Hit.Close, new Rectangle(right - 24, 6, 24, 22), Glyph.Close);
-            PaintButton(g, Hit.Fold, new Rectangle(right - 48, 6, 24, 22), Glyph.Collapse);
-            PaintButton(g, Hit.Refresh, new Rectangle(right - 72, 6, 24, 22), Glyph.Refresh);
-            PaintButton(g, Hit.Pin, new Rectangle(right - 96, 6, 24, 22),
-                state.StayOnTop ? Glyph.Pinned : Glyph.Unpinned);
-
-            using (Pen line = new Pen(Theme.Hairline))
-                g.DrawLine(line, 14, HeaderHeight - 1, ExpandedWidth - 14, HeaderHeight - 1);
         }
 
-        private void PaintButton(Graphics g, Hit id, Rectangle bounds, string glyph)
+        private void PaintButton(Graphics g, Hit id, Rectangle bounds)
         {
             buttons[id] = bounds;
+            bool selected = (id == Hit.Weekly && state.Weekly) || (id == Hit.Hourly && !state.Weekly);
             bool hot = hotButton == id;
-            if (hot)
-                using (GraphicsPath path = Draw.RoundedRect(new RectangleF(bounds.X, bounds.Y, bounds.Width, bounds.Height), 5f))
-                using (SolidBrush brush = new SolidBrush(Theme.Track))
+            if (selected || hot)
+                using (GraphicsPath path = Draw.RoundedRect(bounds, 8f))
+                using (SolidBrush brush = new SolidBrush(selected ? Color.FromArgb(69, 79, 94) : Theme.Track))
                     g.FillPath(brush, path);
-
-            Color color = Theme.Faint;
-            if (hot)
-                color = id == Hit.Close ? Theme.Spent : Theme.Ink;
-            else if (id == Hit.Pin && state.StayOnTop)
-                color = fullScreenApp ? Theme.Tight : Theme.Muted;
-
-            using (StringFormat format = Draw.Centred())
-                Draw.Text(g, glyph, fIcon, color, bounds, format);
+            Color color = selected || hot || (id == Hit.Pin && state.StayOnTop) ? Theme.Ink : Theme.Muted;
+            if (id == Hit.Hourly || id == Hit.Weekly)
+            {
+                TextLine(g, Compact ? (state.Weekly ? "W" : "5h") : id == Hit.Weekly ? "Weekly" : "5-hour", fLimit, color, bounds, true);
+                return;
+            }
+            string icon = id == Hit.Close ? "close" : id == Hit.Refresh ? "refresh" :
+                id == Hit.Fold ? (Compact ? "expand" : "collapse") : state.StayOnTop ? "pin" : "unpin";
+            Draw.Symbol(g, new RectangleF(bounds.X + 6, bounds.Y + 6, 16, 16), icon, color);
         }
 
         private void PaintAccount(Graphics g, Account account, int top, int height)
         {
-            Color mark = Theme.Mark(account.Provider);
-            using (GraphicsPath bar = Draw.RoundedRect(new RectangleF(1.5f, top + 12, 2.5f, height - 24), 1.25f))
-            using (SolidBrush brush = new SolidBrush(mark))
-                g.FillPath(brush, bar);
-
-            RectangleF gauge = new RectangleF(14, top + 8, 48, 48);
-            using (SolidBrush tint = new SolidBrush(Color.FromArgb(22, mark)))
-                g.FillEllipse(tint, Draw.Inset(gauge, 9f));
-            Draw.Gauge(g, gauge, account, fGauge, fGaugeNarrow);
-
-            int width = ExpandedWidth - GutterLeft - GutterRight;
-            using (StringFormat left = Draw.Left())
+            using (Pen line = new Pen(Theme.Hairline)) g.DrawLine(line, 18, top, ExpandedWidth - 18, top);
+            Draw.Symbol(g, new RectangleF(18, top + 12, 18, 18), account.Provider, Theme.Mark(account.Provider));
+            TextLine(g, account.DisplayName, fName, Theme.Ink, new RectangleF(44, top + 9, 220, 24), false);
+            string plan = (account.Active ? "Active / " : "") + (account.Plan ?? "");
             using (StringFormat right = Draw.Right())
+                Draw.Text(g, plan, fPlan, Theme.Muted, new RectangleF(240, top + 9, 162, 24), right);
+            if (!String.IsNullOrEmpty(account.Error))
             {
-                if (account.Active)
-                    using (SolidBrush dot = new SolidBrush(Theme.Plenty))
-                        g.FillEllipse(dot, GutterLeft - 9, top + 15, 4.5f, 4.5f);
-
-                Draw.Text(g, account.DisplayName, fName, Theme.Ink,
-                    new RectangleF(GutterLeft, top + 8, width - 90, 18), left);
-                if (!String.IsNullOrEmpty(account.Plan))
-                    Draw.Text(g, account.Plan, fPlan, Theme.Faint,
-                        new RectangleF(GutterLeft, top + 9, width, 18), right);
-
-                if (!String.IsNullOrEmpty(account.Error))
+                TextLine(g, account.Error, fError, Theme.Spent, new RectangleF(18, top + 40, 384, 42), false);
+                return;
+            }
+            LimitWindow selected = account.Selected(state.Weekly);
+            Draw.FocusGauge(g, new RectangleF(22, top + 43, 88, 88), selected, fGauge, fGaugeNarrow, fPlan);
+            for (int index = 0; index < account.Limits.Count; index++)
+            {
+                LimitWindow limit = account.Limits[index];
+                int y = top + 40 + index * MeterRowHeight;
+                TextLine(g, limit.Label, fLimit, Theme.Muted, new RectangleF(GutterLeft, y, 128, 18), false);
+                using (StringFormat right = Draw.Right())
+                    Draw.Text(g, Clock.Countdown(limit.ResetsAt), fClock, Theme.Muted,
+                        new RectangleF(GutterLeft + 120, y, 148, 18), right);
+                RectangleF meter = new RectangleF(GutterLeft, y + 20, 270, 22);
+                using (GraphicsPath path = Draw.RoundedRect(meter, 7f))
+                using (SolidBrush track = new SolidBrush(Theme.Track)) g.FillPath(track, path);
+                if (limit.RemainingPercent > 0)
                 {
-                    using (StringFormat wrap = new StringFormat { Trimming = StringTrimming.EllipsisCharacter })
-                        Draw.Text(g, account.Error, fError, Theme.Spent,
-                            new RectangleF(GutterLeft, top + 29, width, 30), wrap);
-                    return;
+                    RectangleF fill = new RectangleF(meter.X, meter.Y, meter.Width * limit.RemainingPercent / 100f, meter.Height);
+                    using (GraphicsPath path = Draw.RoundedRect(fill, Math.Min(7f, fill.Width / 2)))
+                    using (SolidBrush brush = new SolidBrush(Color.FromArgb(48, Theme.Headroom(limit.RemainingPercent))))
+                        g.FillPath(brush, path);
                 }
-
-                int rows = Math.Min(3, account.Limits.Count);
-                for (int index = 0; index < rows; index++)
+                if (limit.ClockLeftPercent.HasValue)
                 {
-                    LimitWindow limit = account.Limits[index];
-                    int rowTop = top + 30 + index * MeterRowHeight;
-                    Color headroom = Theme.Headroom(limit.RemainingPercent);
-
-                    Draw.Text(g, limit.Label, fLimit, Theme.Muted,
-                        new RectangleF(GutterLeft, rowTop, 130, 15), left);
-                    Draw.Text(g,
-                        limit.RemainingPercent.ToString(CultureInfo.InvariantCulture) + "% left",
-                        fValue, headroom,
-                        new RectangleF(GutterLeft + 120, rowTop, 134, 15), right);
-
-                    bool urgent = limit.ResetsAt.HasValue && limit.ResetsAt.Value - Clock.UnixNow < 600;
-                    Draw.Text(g, Clock.Countdown(limit.ResetsAt), fClock,
-                        urgent ? Theme.Tight : Theme.Faint,
-                        new RectangleF(GutterLeft, rowTop, width, 15), right);
-
-                    Draw.Meter(g, new RectangleF(GutterLeft, rowTop + 18, width, 5), limit);
+                    float x = meter.X + meter.Width * (float)limit.ClockLeftPercent.Value / 100f;
+                    using (Pen notch = new Pen(Theme.Muted)) g.DrawLine(notch, x, meter.Bottom - 4, x, meter.Bottom - 1);
                 }
-
-                string footLeft = FootLeft(account);
-                string footRight = FootRight(account);
-                if (footLeft != null || footRight != null)
-                {
-                    int footTop = top + 30 + rows * MeterRowHeight + 2;
-                    if (footLeft != null)
-                        Draw.Text(g, footLeft, fFoot, account.Blocked ? Theme.Spent : Theme.Tight,
-                            new RectangleF(GutterLeft, footTop, width - 110, 14), left);
-                    if (footRight != null)
-                        Draw.Text(g, footRight, fFoot, Theme.Faint,
-                            new RectangleF(GutterLeft, footTop, width, 14), right);
-                }
+                TextLine(g, limit.RemainingPercent + "%", fValue, Theme.Ink, meter, true);
+            }
+            int detailTop = top + 40 + Math.Max(104, account.Limits.Count * MeterRowHeight);
+            foreach (string detail in Details(account))
+            {
+                if (detail.EndsWith("reset banked") || detail.EndsWith("resets banked"))
+                    bankTips[new Rectangle(18, detailTop - scrollOffset, 180, 20)] = BankTooltip(account);
+                bool warning = detail.StartsWith("Claude is rate limited") || detail.StartsWith("Expired") || detail.StartsWith("Out ") || detail.StartsWith("At this pace");
+                TextLine(g, detail, fFoot, warning ? Theme.Tight : Theme.Muted,
+                    new RectangleF(18, detailTop, 384, 20), false);
+                detailTop += 20;
             }
         }
 
         private void PaintCompact(Graphics g)
         {
-            List<Account> accounts = Accounts;
-            using (StringFormat centred = Draw.Centred())
+            if (Accounts.Count == 0)
+                TextLine(g, failure ?? "Reading limits...", fError, Theme.Muted, new RectangleF(6, 6, 180, 50), true);
+            for (int index = 0; index < Accounts.Count; index++)
             {
-                if (accounts.Count == 0)
-                {
-                    Draw.Text(g, failure != null ? "Can't read limits" : "Reading limits\u2026", fError,
-                        failure != null ? Theme.Spent : Theme.Muted,
-                        new RectangleF(0, 0, ClientSize.Width, ClientSize.Height), centred);
-                }
-
-                for (int index = 0; index < accounts.Count; index++)
-                {
-                    Account account = accounts[index];
-                    int cellX = CompactPad + index * CompactCell;
-                    LimitWindow binding = account.Binding;
-                    RectangleF gauge = new RectangleF(cellX + 19, 8, 44, 44);
-                    using (SolidBrush tint = new SolidBrush(Color.FromArgb(22, Theme.Mark(account.Provider))))
-                        g.FillEllipse(tint, Draw.Inset(gauge, 8f));
-                    Draw.Gauge(g, gauge, account, fGauge, fGaugeNarrow);
-
-                    Draw.Text(g, account.DisplayName, fCellLabel, Theme.Muted,
-                        new RectangleF(cellX, 53, CompactCell, 12), centred);
-
-                    bool healthy = String.IsNullOrEmpty(account.Error) && binding != null;
-                    string clock = healthy ? Clock.Countdown(binding.ResetsAt) : "--";
-                    bool urgent = healthy && binding.ResetsAt.HasValue
-                        && binding.ResetsAt.Value - Clock.UnixNow < 600;
-                    Draw.Text(g, clock, fCellClock, urgent ? Theme.Tight : Theme.Faint,
-                        new RectangleF(cellX, 65, CompactCell, 12), centred);
-                }
+                Account account = Accounts[index];
+                int x = CompactPad + index * CompactCell;
+                LimitWindow selected = account.Selected(state.Weekly);
+                RectangleF ring = new RectangleF(x + 12, 5, 36, 36);
+                using (Pen track = new Pen(Theme.Track, 3)) g.DrawArc(track, ring, 135, 270);
+                bool healthy = String.IsNullOrEmpty(account.Error) && selected != null;
+                if (healthy && selected.RemainingPercent > 0)
+                    using (Pen fill = new Pen(Theme.Headroom(selected.RemainingPercent), 3))
+                    {
+                        fill.StartCap = fill.EndCap = LineCap.Round;
+                        g.DrawArc(fill, ring, 135, 270 * selected.RemainingPercent / 100f);
+                    }
+                string value = healthy ? selected.RemainingPercent.ToString() : "--";
+                TextLine(g, value, value.Length > 2 ? fTinyNarrow : fTiny, Theme.Ink, ring, true);
+                Draw.Symbol(g, new RectangleF(x + 1, 48, 10, 10), account.Provider, Theme.Mark(account.Provider));
+                TextLine(g, account.DisplayName, fCellLabel, Theme.Muted, new RectangleF(x + 13, 44, 46, 18), true);
+                bankTips[new Rectangle(x, 0, CompactCell, CompactHeight)] = account.DisplayName + " - " +
+                    (state.Weekly ? "Weekly" : "5-hour") + Environment.NewLine +
+                    (account.Error ?? (healthy ? selected.RemainingPercent + "% left; resets in " + Clock.Countdown(selected.ResetsAt) : "Not reported")) +
+                    (String.IsNullOrEmpty(account.Warning) ? "" : Environment.NewLine + account.Warning);
             }
-
             if (hovering)
             {
-                int right = ClientSize.Width - 4;
-                PaintButton(g, Hit.Close, new Rectangle(right - 20, 3, 20, 18), Glyph.Close);
-                PaintButton(g, Hit.Fold, new Rectangle(right - 40, 3, 20, 18), Glyph.Expand);
+                int x = DesiredSize().Width - 26;
+                PaintButton(g, state.Weekly ? Hit.Hourly : Hit.Weekly, new Rectangle(x, 6, 22, 22));
+                PaintButton(g, Hit.Fold, new Rectangle(x, 33, 22, 24));
             }
         }
 
@@ -1245,24 +1262,23 @@ namespace AgentUsageFrame
             return value.ToString("h:mmtt", CultureInfo.InvariantCulture).ToLowerInvariant();
         }
 
-        private static class Glyph
-        {
-            public static string Close { get { return Theme.HasIconFont ? "\uE711" : "\u00D7"; } }
-            public static string Refresh { get { return Theme.HasIconFont ? "\uE72C" : "\u21BB"; } }
-            public static string Collapse { get { return Theme.HasIconFont ? "\uE70E" : "\u2303"; } }
-            public static string Expand { get { return Theme.HasIconFont ? "\uE70D" : "\u2304"; } }
-            public static string Pinned { get { return Theme.HasIconFont ? "\uE718" : "\u25CF"; } }
-            public static string Unpinned { get { return Theme.HasIconFont ? "\uE77A" : "\u25CB"; } }
-        }
-
         // ----------------------------------------------------- interaction --
 
         private Hit HitTest(Point point)
         {
+            point = new Point((int)(point.X / dpiScale), (int)(point.Y / dpiScale));
             foreach (KeyValuePair<Hit, Rectangle> entry in buttons)
                 if (entry.Value.Contains(point))
                     return entry.Key;
             return Hit.None;
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (Compact) return;
+            scrollOffset = Math.Max(0, scrollOffset - e.Delta / 120 * 46);
+            Invalidate();
         }
 
         protected override void OnMouseEnter(EventArgs e)
@@ -1293,6 +1309,14 @@ namespace AgentUsageFrame
             }
 
             Hit hit = HitTest(e.Location);
+            string tip = hit == Hit.Hourly ? "Show 5-hour usage" : hit == Hit.Weekly ? "Show weekly usage" :
+                hit == Hit.Fold ? "Switch expanded / compact" : hit == Hit.Pin ? "Toggle always on top" :
+                hit == Hit.Refresh ? "Refresh usage (Claude cooldown is respected)" : hit == Hit.Close ? "Close usage frame" : null;
+            Point logical = new Point((int)(e.X / dpiScale), (int)(e.Y / dpiScale));
+            if (tip == null && (Compact || logical.Y >= HeaderHeight))
+                foreach (KeyValuePair<Rectangle, string> entry in bankTips)
+                    if (entry.Key.Contains(logical)) { tip = entry.Value; break; }
+            if (tip != currentTip) { currentTip = tip; tips.SetToolTip(this, tip); }
             if (hit != hotButton)
             {
                 hotButton = hit;
@@ -1309,6 +1333,12 @@ namespace AgentUsageFrame
 
             switch (HitTest(e.Location))
             {
+                case Hit.Hourly:
+                case Hit.Weekly:
+                    state.Weekly = HitTest(e.Location) == Hit.Weekly;
+                    state.Save();
+                    Invalidate();
+                    return;
                 case Hit.Close:
                     Close();
                     return;
@@ -1327,6 +1357,7 @@ namespace AgentUsageFrame
                     return;
             }
 
+            Capture = true;
             dragging = true;
             dragOffset = new Point(Cursor.Position.X - Left, Cursor.Position.Y - Top);
         }
@@ -1337,6 +1368,7 @@ namespace AgentUsageFrame
             if (!dragging)
                 return;
             dragging = false;
+            Capture = false;
             PersistState();
         }
 
@@ -1350,6 +1382,7 @@ namespace AgentUsageFrame
         private void ToggleCompact()
         {
             dragging = false;
+            scrollOffset = 0;
             state.Compact = !state.Compact;
             hotButton = Hit.None;
             ApplySize();
@@ -1549,6 +1582,9 @@ namespace AgentUsageFrame
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             tick.Stop();
+            tick.Dispose();
+            tips.Dispose();
+            foreach (Font font in new Font[] { fName, fPlan, fLimit, fValue, fClock, fFoot, fError, fGauge, fGaugeNarrow, fCellLabel, fCellClock, fHeader, fIcon, fTiny, fTinyNarrow }) font.Dispose();
             base.OnFormClosed(e);
         }
     }
@@ -1581,6 +1617,10 @@ namespace AgentUsageFrame
                     snapshot.ActivityAt == 1788837091,
                     snapshot.Accounts[0].DisplayName == "Codex a",
                     snapshot.Accounts[0].Active,
+                    snapshot.Accounts[0].Selected(false).RemainingPercent == 38,
+                    snapshot.Accounts[0].Selected(true).RemainingPercent == 70,
+                    snapshot.Accounts[1].Selected(true) == null,
+                    snapshot.Accounts[0].ResetCreditDetails == null,
                     snapshot.Accounts[0].ResetCredits == 3,
                     Math.Abs(snapshot.Accounts[0].CreditBalance.Value - 1294.14) < 0.001,
                     snapshot.Accounts[0].Limits.Count == 2,
@@ -1606,6 +1646,11 @@ namespace AgentUsageFrame
                     !UsageForm.IsValidSshTarget("user@host\" --oProxyCommand=x \"")
                 };
 
+                Snapshot withExpiry = SnapshotParser.Parse(Fixture.Replace("\"resetCredits\":3", "\"resetCredits\":3,\"resetCreditDetails\":[{\"expiresAt\":1893456000,\"expirationKnown\":true},{\"expiresAt\":null,\"expirationKnown\":true},{\"expiresAt\":null,\"expirationKnown\":false}]"));
+                checks.Add(withExpiry.Accounts[0].ResetCreditDetails.Count == 3);
+                checks.Add(withExpiry.Accounts[0].ResetCreditDetails[0].ExpiresAt == 1893456000);
+                checks.Add(withExpiry.Accounts[0].ResetCreditDetails.Exists(delegate(ResetCredit c) { return !c.ExpiresAt.HasValue && c.ExpirationKnown; }));
+                checks.Add(withExpiry.Accounts[0].ResetCreditDetails.Exists(delegate(ResetCredit c) { return !c.ExpirationKnown; }));
                 bool sane = true;
                 for (int index = 0; index < checks.Count; index++)
                     if (!checks[index])

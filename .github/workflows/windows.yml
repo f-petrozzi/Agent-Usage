@@ -1,0 +1,25 @@
+name: Windows build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse installers, compile icon, and run self-test
+        shell: powershell
+        run: |
+          Get-ChildItem windows/*.ps1 | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors) { throw ($errors | Out-String) }
+          }
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:winexe /codepage:65001 /out:AgentUsageFrame.exe /win32icon:windows/assets/agent-usage.ico /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Windows.Forms.dll windows/AgentUsageFrame.cs
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
+          $check = Start-Process .\AgentUsageFrame.exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($check.ExitCode -ne 0) { throw 'Self-test failed' }

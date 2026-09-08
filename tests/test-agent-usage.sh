@@ -97,6 +97,8 @@ assert claude["blocked"] is True, claude
 ' <<< "$output"
 printf 'PASS: Claude falls back to the CLI when the endpoint is unreachable\n'
 
+rm -rf "$TEST_ROOT/home/.cache/agent-usage"
+
 # --- a signed-out provider must not take the others down --------------------
 output="$(CLAUDE_BIN="$TEST_ROOT/missing-claude" \
     AGENT_USAGE_CLAUDE_URL="file://$TEST_ROOT/absent.json" \
@@ -130,3 +132,30 @@ assert codex["limits"], codex
 printf 'PASS: a bare ~/.codex install is read without a profiles directory\n'
 
 printf '\nPASS: agent usage collector\n'
+
+# Expiry metadata remains optional for older app-server versions.
+python3 - "$COLLECTOR" <<'PYTEST'
+import runpy, sys
+normalize = runpy.run_path(sys.argv[1])["normalize_codex"]
+def read(summary):
+    return normalize({"account": "a", "result": {
+        "rateLimits": {"primary": {"usedPercent": 20, "windowDurationMins": 300}},
+        "rateLimitResetCredits": summary}}, "a")
+assert read({"availableCount": 2})["resetCreditDetails"] is None
+assert read({"availableCount": 0, "credits": []})["resetCreditDetails"] == []
+row = read({"availableCount": 5, "credits": [
+    {"status": "available", "expiresAt": 1893456000},
+    {"status": "redeemed", "expiresAt": 1893456001},
+    {"status": "available", "expiresAt": None},
+    {"status": "available"},
+    {"status": "available", "expiresAt": "invalid"},
+    {"status": "available", "expiresAt": 1800000000}]})
+assert row["resetCredits"] == 5
+assert row["resetCreditDetails"] == [
+    {"expiresAt": 1800000000, "expirationKnown": True},
+    {"expiresAt": 1893456000, "expirationKnown": True},
+    {"expiresAt": None, "expirationKnown": True},
+    {"expiresAt": None, "expirationKnown": False},
+    {"expiresAt": None, "expirationKnown": False}]
+print("PASS: reset expiry dates, missing metadata, non-expiring and redeemed credits")
+PYTEST
