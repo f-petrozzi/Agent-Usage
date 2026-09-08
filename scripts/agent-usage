@@ -1,0 +1,780 @@
+#!/usr/bin/env python3
+"""Read local Codex and Claude usage limits and emit one normalized JSON snapshot.
+
+Design notes
+------------
+Both providers are read through the path their own tooling uses, so no
+credential file is ever opened, copied, or transmitted by this script beyond
+handing Claude Code's own OAuth access token back to Anthropic:
+
+* Codex  - the documented app-server ``account/rateLimits/read`` method, run
+           once per ``cxa`` profile with that profile's ``CODEX_HOME``.
+* Claude - ``GET /api/oauth/usage``, the endpoint Claude Code's own ``/usage``
+           command calls. When the cached token is expired or rejected we shell
+           out to ``claude -p /usage`` which refreshes it, then retry once and
+           fall back to parsing that command's text.
+
+Output is a small, versioned document so the Windows frame stays dumb.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import datetime as dt
+import json
+import os
+import re
+import selectors
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+SCHEMA_VERSION = 2
+APP_VERSION = "2.0.0"
+AUTH_STORE_OVERRIDE = 'cli_auth_credentials_store="file"'
+ACCOUNT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+DEFAULT_CODEX_LABEL = "codex"
+
+CLAUDE_USAGE_URL = os.environ.get(
+    "AGENT_USAGE_CLAUDE_URL", "https://api.anthropic.com/api/oauth/usage"
+)
+CLAUDE_BETA_HEADER = "oauth-2025-04-20"
+MAX_RESPONSE_BYTES = 1024 * 1024
+
+# Claude's API reports a limit's kind but not how long its window is.
+CLAUDE_WINDOW_MINS = {
+    "session": 300,
+    "weekly": 10_080,
+}
+
+
+class UsageError(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------- codex ----
+
+
+def accounts_root() -> Path:
+    configured = os.environ.get("CODEX_ACCOUNTS_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    xdg_data = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg_data).expanduser() if xdg_data else Path.home() / ".local" / "share"
+    return base / "codex-accounts"
+
+
+def codex_profiles(requested: list[str] | None) -> list[tuple[str, Path]]:
+    """Return one (label, CODEX_HOME) pair per Codex account to read.
+
+    Multi-account setups keep a directory of profiles, each a CODEX_HOME of its
+    own; a plain single-account install just has ~/.codex. Both are supported,
+    and passing --codex-accounts with no names skips Codex entirely.
+    """
+    profiles_dir = accounts_root() / "profiles"
+    if requested is not None:
+        names = requested
+    elif profiles_dir.is_dir():
+        names = sorted(path.name for path in profiles_dir.iterdir() if path.is_dir())
+    else:
+        names = []
+
+    if names:
+        for name in names:
+            if not ACCOUNT_RE.fullmatch(name):
+                raise UsageError(f"Invalid account name: {name!r}")
+            if not (profiles_dir / name).is_dir():
+                raise UsageError(f"Account {name!r} does not exist under {profiles_dir}")
+        return [(name, profiles_dir / name) for name in names]
+
+    if requested is not None:
+        return []
+
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
+    return [(DEFAULT_CODEX_LABEL, home)] if home.is_dir() else []
+
+
+def active_codex_account() -> str | None:
+    active_file = accounts_root() / "active"
+    try:
+        name = active_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return name if ACCOUNT_RE.fullmatch(name) else None
+
+
+def _send(proc: subprocess.Popen[str], message: dict[str, Any]) -> None:
+    if proc.stdin is None:
+        raise UsageError("Codex app-server stdin is unavailable")
+    proc.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+    proc.stdin.flush()
+
+
+def _wait_for_response(
+    proc: subprocess.Popen[str],
+    selector: selectors.BaseSelector,
+    request_id: int,
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not selector.select(remaining):
+            raise UsageError(f"Timed out waiting for Codex response {request_id}")
+        if proc.stdout is None:
+            raise UsageError("Codex app-server stdout is unavailable")
+        line = proc.stdout.readline()
+        if not line:
+            raise UsageError(
+                f"Codex app-server exited before responding (status {proc.poll()})"
+            )
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if message.get("id") != request_id:
+            continue
+        if "error" in message:
+            error = message["error"]
+            detail = (
+                error.get("message") or error.get("code") or "unknown error"
+                if isinstance(error, dict)
+                else str(error)
+            )
+            raise UsageError(f"Codex request failed: {detail}")
+        result = message.get("result")
+        if not isinstance(result, dict):
+            raise UsageError("Codex returned an invalid response")
+        return result
+
+
+def query_codex(name: str, profile_home: Path, timeout: float) -> dict[str, Any]:
+    binary = os.environ.get("CODEX_BIN") or shutil.which("codex")
+    if not binary:
+        return {"account": name, "error": "codex is not installed or not on PATH"}
+
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(profile_home)
+    command = [binary, "-c", AUTH_STORE_OVERRIDE, "app-server", "--listen", "stdio://"]
+
+    proc: subprocess.Popen[str] | None = None
+    selector: selectors.BaseSelector | None = None
+    try:
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+        if proc.stdout is None:
+            raise UsageError("Codex app-server stdout is unavailable")
+        selector = selectors.DefaultSelector()
+        selector.register(proc.stdout, selectors.EVENT_READ)
+
+        _send(
+            proc,
+            {
+                "method": "initialize",
+                "id": 0,
+                "params": {
+                    "clientInfo": {
+                        "name": "agent_usage",
+                        "title": "Agent Usage",
+                        "version": APP_VERSION,
+                    }
+                },
+            },
+        )
+        _wait_for_response(proc, selector, 0, timeout)
+        _send(proc, {"method": "initialized", "params": {}})
+        _send(proc, {"method": "account/rateLimits/read", "id": 1})
+        return {"account": name, "result": _wait_for_response(proc, selector, 1, timeout)}
+    except (OSError, UsageError) as exc:
+        return {"account": name, "error": str(exc)}
+    finally:
+        if selector is not None:
+            selector.close()
+        if proc is not None:
+            if proc.stdin is not None:
+                try:
+                    proc.stdin.close()
+                except OSError:
+                    pass
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=2)
+
+
+def _duration_label(minutes: Any) -> str | None:
+    if not isinstance(minutes, int) or minutes <= 0:
+        return None
+    if minutes % 10_080 == 0:
+        weeks = minutes // 10_080
+        return "Weekly" if weeks == 1 else f"{weeks} weeks"
+    if minutes % 1_440 == 0:
+        days = minutes // 1_440
+        return "Daily" if days == 1 else f"{days} days"
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return "Hourly" if hours == 1 else f"{hours} hours"
+    return f"{minutes} min"
+
+
+def _percent(value: Any) -> int | None:
+    try:
+        return max(0, min(100, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return None
+
+
+def _limit(label: str, window: Any, fallback_mins: int | None = None) -> dict[str, Any] | None:
+    if not isinstance(window, dict):
+        return None
+    used = _percent(window.get("usedPercent"))
+    if used is None:
+        return None
+    minutes = window.get("windowDurationMins")
+    if not isinstance(minutes, int) or minutes <= 0:
+        minutes = fallback_mins
+    resets_at = window.get("resetsAt")
+    return {
+        "label": _duration_label(minutes) or label,
+        "usedPercent": used,
+        "windowMins": minutes if isinstance(minutes, int) and minutes > 0 else None,
+        "resetsAt": resets_at if isinstance(resets_at, int) else None,
+    }
+
+
+def normalize_codex(payload: dict[str, Any], active: str | None) -> dict[str, Any]:
+    """Fold one raw app-server reply into the shared account shape."""
+    name = str(payload.get("account", "?"))
+    account: dict[str, Any] = {
+        "id": f"codex:{name}",
+        "provider": "codex",
+        "label": name,
+        "plan": None,
+        "active": name == active,
+        "error": payload.get("error"),
+        "blocked": False,
+        "limits": [],
+        "resetCredits": None,
+        "creditBalance": None,
+        "extraUsage": None,
+    }
+    if account["error"]:
+        return account
+
+    result = payload.get("result") or {}
+    buckets = result.get("rateLimitsByLimitId")
+    if not isinstance(buckets, dict) or not buckets:
+        snapshot = result.get("rateLimits")
+        buckets = {"codex": snapshot} if isinstance(snapshot, dict) else {}
+
+    for snapshot in buckets.values():
+        if not isinstance(snapshot, dict):
+            continue
+        if not account["plan"]:
+            plan = snapshot.get("planType")
+            account["plan"] = str(plan) if plan else None
+        if snapshot.get("rateLimitReachedType") or snapshot.get("spendControlReached"):
+            account["blocked"] = True
+        for label, key in (("5 hours", "primary"), ("Weekly", "secondary")):
+            limit = _limit(label, snapshot.get(key))
+            if limit:
+                account["limits"].append(limit)
+        credits = snapshot.get("credits")
+        if isinstance(credits, dict) and account["creditBalance"] is None:
+            if credits.get("unlimited"):
+                account["creditBalance"] = -1.0
+            else:
+                try:
+                    account["creditBalance"] = round(float(credits.get("balance", 0)), 2)
+                except (TypeError, ValueError):
+                    pass
+
+    resets = result.get("rateLimitResetCredits")
+    if isinstance(resets, dict):
+        count = resets.get("availableCount")
+        if isinstance(count, int):
+            account["resetCredits"] = count
+
+    if not account["limits"]:
+        account["error"] = "Codex returned no rate-limit windows."
+    return account
+
+
+# --------------------------------------------------------------- claude ----
+
+
+def claude_config_dir() -> Path:
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".claude"
+
+
+def _claude_token() -> tuple[str | None, str | None, bool]:
+    """Return (token, subscription, expired) from Claude Code's credential cache."""
+    path = claude_config_dir() / ".credentials.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, None, False
+    oauth = raw.get("claudeAiOauth")
+    if not isinstance(oauth, dict):
+        return None, None, False
+    token = oauth.get("accessToken")
+    subscription = oauth.get("subscriptionType")
+    expires_at = oauth.get("expiresAt")
+    expired = isinstance(expires_at, (int, float)) and expires_at / 1000 <= time.time() + 60
+    if not isinstance(token, str) or not token:
+        return None, subscription, expired
+    return token, subscription, expired
+
+
+def _claude_fetch(token: str, timeout: float) -> dict[str, Any]:
+    request = urllib.request.Request(
+        CLAUDE_USAGE_URL,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": CLAUDE_BETA_HEADER,
+            "Accept": "application/json",
+            "User-Agent": f"agent-usage/{APP_VERSION}",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise UsageError("Claude usage response was too large")
+    parsed = json.loads(body.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        raise UsageError("Claude usage response was not an object")
+    return parsed
+
+
+def _claude_cli_usage(timeout: float) -> str:
+    """Run Claude Code's own /usage command, which also refreshes the token."""
+    binary = os.environ.get("CLAUDE_BIN") or shutil.which("claude")
+    if not binary:
+        raise UsageError("claude is not installed or not on PATH")
+    completed = subprocess.run(
+        [binary, "-p", "/usage", "--output-format", "json"],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=str(Path.home()),
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        raise UsageError(detail[0] if detail else "claude /usage failed")
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise UsageError("claude /usage returned unreadable output") from exc
+    text = payload.get("result")
+    if not isinstance(text, str) or not text.strip():
+        raise UsageError("claude /usage returned no usage text")
+    return text
+
+
+_USAGE_LINE_RE = re.compile(
+    r"^Current (?:(session)|week \(([^)]*)\)):\s*(\d+)%\s*used"
+    r"(?:\s*[·•-]\s*resets\s+(.+?))?\s*$"
+)
+
+
+def _parse_reset_text(text: str | None) -> int | None:
+    """Turn 'Sep 8, 4am (America/New_York)' into a unix timestamp."""
+    if not text:
+        return None
+    zone = None
+    match = re.search(r"\(([^)]+)\)\s*$", text)
+    if match:
+        try:
+            from zoneinfo import ZoneInfo
+
+            zone = ZoneInfo(match.group(1))
+        except Exception:
+            zone = None
+        text = text[: match.start()]
+    stamp = text.strip().rstrip(".").upper()
+    parsed = None
+    for pattern in ("%b %d, %I:%M%p", "%b %d, %I%p", "%b %d, %H:%M"):
+        try:
+            parsed = dt.datetime.strptime(stamp, pattern)
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        return None
+    now = dt.datetime.now(tz=zone) if zone else dt.datetime.now().astimezone()
+    best = None
+    for year in (now.year - 1, now.year, now.year + 1):
+        try:
+            candidate = parsed.replace(year=year, tzinfo=now.tzinfo if zone is None else zone)
+        except ValueError:
+            continue
+        delta = abs((candidate - now).total_seconds())
+        if best is None or delta < best[0]:
+            best = (delta, candidate)
+    return int(best[1].timestamp()) if best else None
+
+
+def parse_claude_usage_text(text: str) -> list[dict[str, Any]]:
+    """Read the limit lines out of `claude -p /usage` output."""
+    limits: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        match = _USAGE_LINE_RE.match(line.strip())
+        if not match:
+            continue
+        session, scope, percent, reset_text = match.groups()
+        if session:
+            label, minutes = "5 hours", CLAUDE_WINDOW_MINS["session"]
+        else:
+            scope = (scope or "").strip()
+            minutes = CLAUDE_WINDOW_MINS["weekly"]
+            label = "Weekly" if scope in ("", "all models") else f"Weekly {scope.replace(' only', '')}"
+        limits.append(
+            {
+                "label": label,
+                "usedPercent": _percent(percent) or 0,
+                "windowMins": minutes,
+                "resetsAt": _parse_reset_text(reset_text),
+            }
+        )
+    return limits
+
+
+_CLAUDE_LABELS = {
+    "session": "5 hours",
+    "weekly_all": "Weekly",
+    "weekly_opus": "Weekly Opus",
+    "weekly_sonnet": "Weekly Sonnet",
+    "weekly_oauth_apps": "Weekly apps",
+}
+
+
+def _parse_iso(value: Any) -> int | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return int(dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+    except ValueError:
+        return None
+
+
+def normalize_claude_api(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    limits: list[dict[str, Any]] = []
+    rows = payload.get("limits")
+    if isinstance(rows, list) and rows:
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            percent = _percent(row.get("percent"))
+            if percent is None:
+                continue
+            kind = str(row.get("kind") or "")
+            group = str(row.get("group") or "")
+            limits.append(
+                {
+                    "label": _CLAUDE_LABELS.get(kind) or kind.replace("_", " ").capitalize() or "Limit",
+                    "usedPercent": percent,
+                    "windowMins": CLAUDE_WINDOW_MINS.get(group),
+                    "resetsAt": _parse_iso(row.get("resets_at")),
+                }
+            )
+        return limits
+
+    for key, label, minutes in (
+        ("five_hour", "5 hours", CLAUDE_WINDOW_MINS["session"]),
+        ("seven_day", "Weekly", CLAUDE_WINDOW_MINS["weekly"]),
+        ("seven_day_opus", "Weekly Opus", CLAUDE_WINDOW_MINS["weekly"]),
+    ):
+        row = payload.get(key)
+        if not isinstance(row, dict):
+            continue
+        percent = _percent(row.get("utilization"))
+        if percent is None:
+            continue
+        limits.append(
+            {
+                "label": label,
+                "usedPercent": percent,
+                "windowMins": minutes,
+                "resetsAt": _parse_iso(row.get("resets_at")),
+            }
+        )
+    return limits
+
+
+def _claude_extra_usage(payload: dict[str, Any]) -> dict[str, Any] | None:
+    extra = payload.get("extra_usage")
+    if not isinstance(extra, dict):
+        return None
+    spend = payload.get("spend") if isinstance(payload.get("spend"), dict) else {}
+    used = spend.get("used") if isinstance(spend.get("used"), dict) else {}
+    amount = used.get("amount_minor")
+    exponent = used.get("exponent")
+    dollars = None
+    if isinstance(amount, (int, float)) and isinstance(exponent, int):
+        dollars = round(amount / (10**exponent), 2)
+    return {
+        "enabled": bool(extra.get("is_enabled")),
+        "usedDollars": dollars,
+        "reason": extra.get("disabled_reason"),
+    }
+
+
+def query_claude(timeout: float) -> dict[str, Any]:
+    account: dict[str, Any] = {
+        "id": "claude",
+        "provider": "claude",
+        "label": "Claude",
+        "plan": None,
+        "active": False,
+        "error": None,
+        "blocked": False,
+        "limits": [],
+        "resetCredits": None,
+        "creditBalance": None,
+        "extraUsage": None,
+    }
+
+    token, subscription, expired = _claude_token()
+    account["plan"] = str(subscription) if subscription else None
+
+    payload: dict[str, Any] | None = None
+    fallback_text: str | None = None
+    first_error: str | None = None
+
+    if token and not expired:
+        try:
+            payload = _claude_fetch(token, timeout)
+        except (urllib.error.URLError, OSError, ValueError, UsageError) as exc:
+            first_error = _short(exc)
+
+    if payload is None:
+        # Running Claude Code's own /usage refreshes an expired token and gives
+        # us a readable answer even if the JSON endpoint has moved.
+        try:
+            fallback_text = _claude_cli_usage(max(timeout, 30.0))
+        except (subprocess.SubprocessError, OSError, UsageError) as exc:
+            account["error"] = first_error or _short(exc)
+            return account
+        token, subscription, _ = _claude_token()
+        if subscription:
+            account["plan"] = str(subscription)
+        if token:
+            try:
+                payload = _claude_fetch(token, timeout)
+            except (urllib.error.URLError, OSError, ValueError, UsageError):
+                payload = None
+
+    if payload is not None:
+        account["limits"] = normalize_claude_api(payload)
+        account["extraUsage"] = _claude_extra_usage(payload)
+    elif fallback_text:
+        account["limits"] = parse_claude_usage_text(fallback_text)
+
+    if not account["limits"]:
+        account["error"] = first_error or "Claude returned no limits."
+        return account
+
+    account["blocked"] = any(limit["usedPercent"] >= 100 for limit in account["limits"])
+    return account
+
+
+def _short(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    return text if len(text) <= 200 else text[:200] + "…"
+
+
+# ------------------------------------------------------------- activity ----
+
+
+def latest_activity(codex_homes: list[Path], include_claude: bool) -> int | None:
+    """Newest local prompt across both CLIs, so the frame can poll adaptively.
+
+    Both CLIs append to a history file on every prompt, so one stat per profile
+    tells the frame whether anything is running without a network round trip.
+    """
+    candidates: list[Path] = []
+    if include_claude:
+        candidates.append(claude_config_dir() / "history.jsonl")
+    candidates.extend(home / "history.jsonl" for home in codex_homes)
+
+    newest: int | None = None
+    for path in candidates:
+        try:
+            stamp = int(path.stat().st_mtime)
+        except OSError:
+            continue
+        if newest is None or stamp > newest:
+            newest = stamp
+    return newest
+
+
+# ----------------------------------------------------------------- main ----
+
+
+def collect(
+    profiles: list[tuple[str, Path]], include_claude: bool, timeout: float
+) -> dict[str, Any]:
+    active = active_codex_account()
+    accounts: list[dict[str, Any]] = []
+
+    jobs = len(profiles) + (1 if include_claude else 0)
+    if jobs:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(jobs, 4)) as pool:
+            codex_futures = [
+                pool.submit(query_codex, name, home, timeout) for name, home in profiles
+            ]
+            claude_future = pool.submit(query_claude, timeout) if include_claude else None
+            for future in codex_futures:
+                accounts.append(normalize_codex(future.result(), active))
+            if claude_future is not None:
+                accounts.append(claude_future.result())
+
+    return {
+        "schema": SCHEMA_VERSION,
+        "generatedAt": int(time.time()),
+        "activityAt": latest_activity([home for _, home in profiles], include_claude),
+        "accounts": accounts,
+    }
+
+
+def self_test() -> bool:
+    codex_fixture = {
+        "account": "a",
+        "result": {
+            "rateLimits": {
+                "planType": "plus",
+                "primary": {"usedPercent": 62, "windowDurationMins": 300, "resetsAt": 1788853701},
+                "secondary": {"usedPercent": 30, "windowDurationMins": 10080, "resetsAt": 1789400570},
+                "credits": {"hasCredits": True, "unlimited": False, "balance": "1294.1415"},
+                "rateLimitReachedType": None,
+            },
+            "rateLimitsByLimitId": None,
+            "rateLimitResetCredits": {"availableCount": 3},
+        },
+    }
+    codex = normalize_codex(codex_fixture, "a")
+    checks = [
+        codex["plan"] == "plus",
+        codex["active"] is True,
+        codex["blocked"] is False,
+        codex["resetCredits"] == 3,
+        codex["creditBalance"] == 1294.14,
+        [limit["label"] for limit in codex["limits"]] == ["5 hours", "Weekly"],
+        codex["limits"][0]["usedPercent"] == 62,
+        codex["limits"][1]["windowMins"] == 10080,
+    ]
+
+    blocked = normalize_codex(
+        {
+            "account": "b",
+            "result": {
+                "rateLimits": {
+                    "planType": "plus",
+                    "primary": {"usedPercent": 100, "windowDurationMins": 300, "resetsAt": 1},
+                    "rateLimitReachedType": "rate_limit_reached",
+                }
+            },
+        },
+        "a",
+    )
+    checks += [blocked["blocked"] is True, blocked["active"] is False]
+
+    checks.append(normalize_codex({"account": "c", "error": "boom"}, None)["error"] == "boom")
+
+    api = normalize_claude_api(
+        {
+            "limits": [
+                {"kind": "session", "group": "session", "percent": 6, "resets_at": "2026-09-08T08:00:00+00:00"},
+                {"kind": "weekly_all", "group": "weekly", "percent": 20, "resets_at": "2026-09-08T04:00:00+00:00"},
+            ]
+        }
+    )
+    checks += [
+        [limit["label"] for limit in api] == ["5 hours", "Weekly"],
+        api[0]["windowMins"] == 300,
+        api[1]["resetsAt"] == 1788840000,
+    ]
+
+    legacy = normalize_claude_api(
+        {"five_hour": {"utilization": 6.0, "resets_at": "2026-09-08T08:00:00+00:00"}, "limits": []}
+    )
+    checks.append(len(legacy) == 1 and legacy[0]["usedPercent"] == 6)
+
+    text = parse_claude_usage_text(
+        "You are currently using your subscription\n"
+        "Current session: 5% used · resets Sep 8, 4am (America/New_York)\n"
+        "Current week (all models): 20% used · resets Sep 8, 12:30am (America/New_York)\n"
+        "Current week (Sonnet only): 3% used\n"
+    )
+    checks += [
+        [limit["label"] for limit in text] == ["5 hours", "Weekly", "Weekly Sonnet"],
+        text[0]["usedPercent"] == 5,
+        text[1]["windowMins"] == 10080,
+        isinstance(text[0]["resetsAt"], int),
+        text[2]["resetsAt"] is None,
+    ]
+
+    failures = [index for index, ok in enumerate(checks) if not ok]
+    if failures:
+        print(f"self-test failed at checks {failures}", file=sys.stderr)
+    return not failures
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Emit one normalized JSON snapshot of Codex and Claude usage limits."
+    )
+    parser.add_argument(
+        "--codex-accounts",
+        nargs="*",
+        metavar="NAME",
+        help="Codex profiles to read (default: all of them; pass with no names to skip Codex)",
+    )
+    parser.add_argument("--no-claude", action="store_true", help="skip the Claude account")
+    parser.add_argument("--timeout", type=float, default=20.0, help="per-provider timeout")
+    parser.add_argument("--compact", action="store_true", help="emit JSON without indentation")
+    parser.add_argument("--self-test", action="store_true", help="check the parsers and exit")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.self_test:
+        return 0 if self_test() else 1
+    try:
+        if args.timeout <= 0:
+            raise UsageError("--timeout must be greater than zero")
+        profiles = codex_profiles(args.codex_accounts)
+        include_claude = not args.no_claude
+        if not profiles and not include_claude:
+            raise UsageError("Nothing to read: no Codex accounts and Claude is disabled.")
+        document = collect(profiles, include_claude, args.timeout)
+    except UsageError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    json.dump(document, sys.stdout, indent=None if args.compact else 2)
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,41 @@
+# Nothing in this repository should ever carry an account, a host, or a token.
+# These patterns are here so a stray local file cannot become a commit.
+
+# Credentials, and the files this project reads around them
+.credentials.json
+auth.json
+*.pem
+*.key
+*.pfx
+id_rsa*
+id_ed25519*
+.env
+.env.*
+
+# Captured usage snapshots: real output names your accounts and reset times
+*.snapshot.json
+live.json
+usage-*.json
+
+# Local host details -- keep your own SSH target and paths out of git
+*.local
+*.local.*
+
+# Windows build output and the frame's saved window state
+*.exe
+*.pdb
+*.obj
+state.json
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
