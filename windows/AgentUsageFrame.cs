@@ -885,8 +885,9 @@ namespace AgentUsageFrame
             };
 
             bankMotion.Tick += delegate {
-                double t = Math.Min(1.0, bankClock.Elapsed.TotalMilliseconds / 180.0);
-                double eased = 1.0 - Math.Pow(1.0 - t, 3.0);
+                double t = Math.Min(1.0, bankClock.Elapsed.TotalMilliseconds / 240.0);
+                // Smooth start/stop, including acceleration; retarget from current height.
+                double eased = t * t * t * (t * (6.0 * t - 15.0) + 10.0);
                 bankAmount = bankFrom + ((bankTarget ? 1.0 : 0.0) - bankFrom) * eased;
                 if (t >= 1.0) { bankMotion.Stop(); if (!bankTarget) bankId = null; }
                 ApplySize();
@@ -1284,7 +1285,6 @@ namespace AgentUsageFrame
                 if (bank)
                 {
                     bankAreas[new Rectangle(18, detailTop - scrollOffset, 384, 20 + reveal)] = account.Id;
-                    Draw.Symbol(g, new RectangleF(156, detailTop + 4, 12, 12), reveal > 0 ? "collapse" : "expand", Theme.Muted);
                 }
                 bool warning = detail.StartsWith("Claude is rate limited") || detail.StartsWith("Expired") || detail.StartsWith("Out ") || detail.StartsWith("At this pace");
                 TextLine(g, detail, fFoot, warning ? Theme.Tight : Theme.Muted,
