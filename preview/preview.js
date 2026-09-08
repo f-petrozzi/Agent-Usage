@@ -3,7 +3,7 @@ const frame = document.querySelector('#frame');
 let compact=false, pinned=true, weekly=true, hoveredAccount=-1;
 try { const saved=JSON.parse(localStorage.getItem('agent-usage-design')||'{}');compact=saved.compact===true;weekly=saved.weekly!==false; } catch {}
 const colors=n=>n<15?'#ff6b72':n<40?'#f2b24c':'#95d8c5';
-const symbols={codex:'<path d="m8 5-6 7 6 7m8-14 6 7-6 7m-2-14-4 14"/>',claude:Array.from({length:10},(_,i)=>{const a=i*Math.PI/5;return `<path d="M${12+Math.cos(a)*4} ${12+Math.sin(a)*4}L${12+Math.cos(a)*10} ${12+Math.sin(a)*10}"/>`;}).join(''),close:'<path d="m6 6 12 12M6 18 18 6"/>',refresh:'<path d="M20 9V4h-5M20 4a8 8 0 1 0 1 10"/>',collapse:'<path d="m5 15 7-7 7 7"/>',expand:'<path d="m5 9 7 7 7-7"/>',pin:'<path d="M8 3h8v7l3 4H5l3-4ZM12 14v8"/>',unpin:'<path d="M8 3h8v7l3 4H5l3-4ZM12 14v8M3 3l18 18"/>',reserve:'<path d="M4 8h16v13H4zM2 4h20v4H2zM10 12h4"/>'};
+const symbols={codex:'<path d="M6 20C0 20 0 11 5 10C4 2 15 1 17 8C24 7 25 20 18 20ZM7 11l3 3-3 3m6 0h4"/>',claude:Array.from({length:10},(_,i)=>{const a=i*Math.PI/5;return `<path d="M${12+Math.cos(a)*4} ${12+Math.sin(a)*4}L${12+Math.cos(a)*10} ${12+Math.sin(a)*10}"/>`;}).join(''),close:'<path d="m6 6 12 12M6 18 18 6"/>',refresh:'<path d="M20 9V4h-5M20 4a8 8 0 1 0 1 10"/>',collapse:'<path d="m5 15 7-7 7 7"/>',expand:'<path d="m5 9 7 7 7-7"/>',pin:'<path d="M8 3h8v7l3 4H5l3-4ZM12 14v8"/>',unpin:'<path d="M8 3h8v7l3 4H5l3-4ZM12 14v8M3 3l18 18"/>',reserve:'<path d="M4 8h16v13H4zM2 4h20v4H2zM10 12h4"/>'};
 const icon=name=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${symbols[name]||symbols.reserve}</svg>`;
 const day=86400000, now=Date.now();
 const base=[
@@ -20,8 +20,10 @@ if(state==='unknown'){rows[0].expiries=null;rows[1].expiries=[null];}
 if(state==='full')rows.forEach(a=>a.left=[100,100]);return rows;}
 function point(r,f){const a=(135+270*f)*Math.PI/180;return [44+r*Math.cos(a),44+r*Math.sin(a)];}
 function arc(r,f){return `M${point(r,0)}A${r} ${r} 0 ${f*270>180?1:0} 1 ${point(r,f)}`;}
-function gauge(a){const n=a.error?null:a.left[weekly?1:0];return `<div class="gauge" role="img" aria-label="${a.name}: ${n===null?'usage unavailable':n+' percent remaining, '+(weekly?'weekly':'5-hour')}"><svg viewBox="0 0 88 88"><g fill="none" stroke-width="5" stroke-linecap="round"><path d="${arc(40,1)}" stroke="#2b3340"/>${n>0?`<path d="${arc(40,n/100)}" stroke="${colors(n)}"/>`:''}</g></svg><div class="gauge-value ${n===100?'three':''}"><strong>${n===null?'—':n}</strong><small>% left</small></div></div>`;}
-function button(action,label,symbol,pressed){return `<button data-action="${action}" aria-label="${label}" title="${label}" ${pressed===undefined?'':`aria-pressed="${pressed}"`}>${icon(symbol)}</button>`;}
+const gaugeValues=new Map();
+let gaugeAnimation;
+function gauge(a){const n=a.error?null:a.left[weekly?1:0];return `<div class="gauge" data-name="${a.name}" data-target="${n===null?'':n}" role="img" aria-label="${a.name}: ${n===null?'usage unavailable':n+' percent remaining, '+(weekly?'weekly':'5-hour')}"><svg viewBox="0 0 88 88"><g fill="none" stroke-width="5" stroke-linecap="round"><path d="${arc(40,1)}" stroke="#2b3340"/><path class="gauge-progress" d="${arc(40,1)}" pathLength="100" stroke-dasharray="${n||0} 100" stroke="${colors(n)}" style="opacity:${n>0?1:0}"/></g></svg><div class="gauge-value ${n===100?'three':''}"><strong>${n===null?'—':n}</strong><small>% left</small></div></div>`;}
+function button(action,label,symbol,pressed){return `<button data-action="${action}" aria-label="${label}" ${action==='fold'?'':`title="${label}"`} ${pressed===undefined?'':`aria-pressed="${pressed}"`}>${icon(symbol)}</button>`;}
 function header(){const state=document.querySelector('#scenario').value;return `<header class="frame-header"><div class="title-row"><strong>Usage</strong><div class="actions">${button('pin','Toggle simulated pin',pinned?'pin':'unpin',pinned)}${button('refresh','Refresh sample','refresh')}${button('fold',compact?'Expand':'Collapse',compact?'expand':'collapse')}${button('close','Hide preview','close')}</div></div><div class="status ${state==='stale'?'warning':''}">${state==='loading'?'Reading limits…':state==='stale'?'Stale — refresh to update':'Updated just now'}</div><div class="selection-row"><div class="tabs" role="group" aria-label="Gauge window"><button data-action="hourly" aria-pressed="${!weekly}">5-hour</button><button data-action="weekly" aria-pressed="${weekly}">Weekly</button></div></div></header>`;}
 function identity(a){return `<div class="identity"><span class="provider-${a.provider}">${icon(a.provider)}</span><span>${a.name}</span></div>`;}
 function details(a){let content='';if(a.banked!==undefined){content+=`<div class="bank-hover" tabindex="0" aria-label="${a.banked} banked resets; hover or focus for expiration dates"><div class="detail-title">${icon('reserve')}${a.banked} ${a.banked===1?'reset':'resets'} banked</div><div class="bank-reveal"><div class="bank-content">`;
@@ -30,10 +32,30 @@ if(a.banked!==undefined)content+='</div></div></div>';
 if(a.credits!==undefined)content+=`<div>${a.credits.toLocaleString('en-US',{minimumFractionDigits:2})} credits available</div>`;
 if(a.extra!==undefined)content+=`<div>Extra usage on / $${a.extra.toFixed(2)} used</div>`;
 if(a.note)content+=`<div class="urgent">${a.note}</div>`;return `<div class="details">${content}</div>`;}
-function render(){hoveredAccount=-1;frame.hidden=false;frame.className='frame'+(compact?' compact':'');document.querySelector('#mode').textContent=compact?'Show expanded':'Show compact';try{localStorage.setItem('agent-usage-design',JSON.stringify({compact,weekly}));}catch{}
+function render(){
+ cancelAnimationFrame(gaugeAnimation);
+ requestAnimationFrame(animateGauges);hoveredAccount=-1;frame.hidden=false;frame.className='frame'+(compact?' compact':'');document.querySelector('#mode').textContent=compact?'Show expanded':'Show compact';try{localStorage.setItem('agent-usage-design',JSON.stringify({compact,weekly}));}catch{}
 const rows=accounts();if(document.querySelector('#scenario').value==='loading'){frame.innerHTML=header()+'<div class="message" role="status">Reading limits…</div>';return;}
-if(compact){frame.innerHTML=`<div class="compact-controls"><button data-action="${weekly?'hourly':'weekly'}" aria-label="${weekly?'Show 5-hour usage':'Show weekly usage'}" title="${weekly?'Show 5-hour usage':'Show weekly usage'}">${weekly?'W':'5h'}</button>${button('fold','Expand','expand')}</div>`+`<div class="cells">${rows.map((a,index)=>`<div data-account="${index}" tabindex="0" class="cell" title="${a.note||a.error||((weekly?'Weekly':'5-hour')+': resets in '+a.resets[weekly?1:0])}">${gauge(a)}${identity(a)}</div>`).join('')}</div><div class="reset-reveal" aria-live="polite"></div>`;return;}
+if(compact){frame.innerHTML=`<div class="compact-controls"><button data-action="${weekly?'hourly':'weekly'}" aria-label="${weekly?'Show 5-hour usage':'Show weekly usage'}">${weekly?'W':'5h'}</button>${button('fold','Expand','expand')}</div>`+`<div class="cells">${rows.map((a,index)=>`<div data-account="${index}" tabindex="0" class="cell">${gauge(a)}${identity(a)}</div>`).join('')}</div><div class="reset-reveal" aria-live="polite"></div>`;return;}
 frame.innerHTML=header()+rows.map(a=>`<article class="account"><div class="account-inner"><div class="account-head">${identity(a)}<span class="plan">${a.active?'<span class="active">Active</span>':''}${a.plan}</span></div>${a.error?`<div class="error">${a.error}</div>`:`<div class="account-main">${gauge(a)}<div class="limits">${a.left.map((n,i)=>`<div class="limit"><div class="values"><span>${i?'Weekly':'5 hours'}</span><span class="clock">${a.resets[i]}</span></div><div class="meter" role="meter" aria-label="${a.name} ${i?'weekly':'5-hour'} remaining" aria-valuenow="${n}" aria-valuemin="0" aria-valuemax="100"><span class="fill" style="width:${n}%;--color:${colors(n)}"></span><span class="notch" style="left:${a.clock[i]*100}%"></span><span class="meter-value">${n}%</span></div></div>`).join('')}</div></div>${details(a)}`}</div></article>`).join('');}
+function animateGauges(){
+ const gauges=[...frame.querySelectorAll('.gauge')].map(el=>({el,name:el.dataset.name,target:el.dataset.target===''?null:Number(el.dataset.target),from:gaugeValues.get(el.dataset.name)}));
+ const start=performance.now(),reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ function step(now){
+  const t=reduce?1:Math.min(1,(now-start)/320),ease=t*t*(3-2*t);
+  for(const {el,name,target,from} of gauges){
+   if(target===null){gaugeValues.delete(name);continue;}
+   const value=from===undefined?target:from+(target-from)*ease;
+   gaugeValues.set(name,value);
+   const path=el.querySelector('.gauge-progress');
+   path.setAttribute('stroke-dasharray',`${value} 100`);path.setAttribute('stroke',colors(value));path.style.opacity=value>0?'1':'0';
+   el.querySelector('strong').textContent=Math.round(value);
+   el.querySelector('.gauge-value').classList.toggle('three',Math.round(value)===100);
+  }
+  if(t<1)gaugeAnimation=requestAnimationFrame(step);
+ }
+ step(start);
+}
 function revealReset(index){
   if(!compact)return;
   hoveredAccount=index;

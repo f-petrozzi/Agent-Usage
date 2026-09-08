@@ -2,6 +2,9 @@
 
 A small Windows overlay for Codex and Claude usage, reset times, and banked resets.
 Switch between 5-hour and weekly readings. Hover to reveal details.
+The gauge animates between periods and respects reduced-motion settings.
+Small ticks in the horizontal bars mark the percentage of time left until reset;
+a fill ending before the tick means allowance is being used faster than an even pace.
 
 <p><img src="docs/expanded.png" width="420" alt="Expanded design"><br><img src="docs/compact.png" width="192" alt="Compact design"></p>
 <sub>Expanded and compact design previews.</sub>

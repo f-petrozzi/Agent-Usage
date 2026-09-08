@@ -479,9 +479,16 @@ namespace AgentUsageFrame
                 }
                 else if (symbol == "codex")
                 {
-                    g.DrawLines(pen, new PointF[] { new PointF(8, 5), new PointF(2, 12), new PointF(8, 19) });
-                    g.DrawLines(pen, new PointF[] { new PointF(16, 5), new PointF(22, 12), new PointF(16, 19) });
-                    g.DrawLine(pen, 14, 5, 10, 19);
+                    using (GraphicsPath cloud = new GraphicsPath())
+                    {
+                        cloud.AddBezier(6, 20, 0, 20, 0, 11, 5, 10);
+                        cloud.AddBezier(5, 10, 4, 2, 15, 1, 17, 8);
+                        cloud.AddBezier(17, 8, 24, 7, 25, 20, 18, 20);
+                        cloud.CloseFigure();
+                        g.DrawPath(pen, cloud);
+                    }
+                    g.DrawLines(pen, new PointF[] { new PointF(7, 11), new PointF(10, 14), new PointF(7, 17) });
+                    g.DrawLine(pen, 13, 17, 17, 17);
                 }
                 else if (symbol == "close") { g.DrawLine(pen, 6, 6, 18, 18); g.DrawLine(pen, 6, 18, 18, 6); }
                 else if (symbol == "refresh")
@@ -504,7 +511,7 @@ namespace AgentUsageFrame
             g.Restore(saved);
         }
 
-        public static void FocusGauge(Graphics g, RectangleF bounds, LimitWindow limit, Font font, Font narrow, Font caption)
+        public static void FocusGauge(Graphics g, RectangleF bounds, LimitWindow limit, Font font, Font narrow, Font caption, float progress)
         {
             RectangleF ring = Inset(bounds, 4);
             using (Pen track = new Pen(Theme.Track, 5))
@@ -512,15 +519,15 @@ namespace AgentUsageFrame
                 track.StartCap = track.EndCap = LineCap.Round;
                 g.DrawArc(track, ring, 135, 270);
             }
-            if (limit != null && limit.RemainingPercent > 0)
-                using (Pen fill = new Pen(Theme.Headroom(limit.RemainingPercent), 5))
+            if (limit != null && progress > 0)
+                using (Pen fill = new Pen(Theme.Headroom((int)Math.Round(progress)), 5))
                 {
                     fill.StartCap = fill.EndCap = LineCap.Round;
-                    g.DrawArc(fill, ring, 135, 270 * limit.RemainingPercent / 100f);
+                    g.DrawArc(fill, ring, 135, 270 * progress / 100f);
                 }
             using (StringFormat format = Centred())
             {
-                string value = limit == null ? "--" : limit.RemainingPercent.ToString(CultureInfo.InvariantCulture);
+                string value = limit == null ? "--" : Math.Round(progress).ToString(CultureInfo.InvariantCulture);
                 Text(g, value, value.Length > 2 ? narrow : font, Theme.Ink,
                     new RectangleF(bounds.X + 10, bounds.Y + bounds.Height * 0.22f, bounds.Width - 20, bounds.Height * 0.42f), format);
                 Text(g, "% left", caption, Theme.Muted,
@@ -805,6 +812,9 @@ namespace AgentUsageFrame
 
         private readonly FrameState state;
         private readonly Timer tick;
+        private readonly Timer gaugeMotion = new Timer { Interval = 16 };
+        private readonly Stopwatch gaugeClock = new Stopwatch();
+        private readonly Dictionary<string, float> gaugeFrom = new Dictionary<string, float>();
         private readonly Dictionary<Hit, Rectangle> buttons = new Dictionary<Hit, Rectangle>();
 
         private Snapshot snapshot;
@@ -876,6 +886,10 @@ namespace AgentUsageFrame
 
             tick = new Timer { Interval = 1000 };
             tick.Tick += delegate { OnTick(); };
+            gaugeMotion.Tick += delegate {
+                if (gaugeClock.ElapsedMilliseconds >= 320) gaugeMotion.Stop();
+                Invalidate();
+            };
             motion.Tick += delegate {
                 double t = Math.Min(1.0, motionClock.Elapsed.TotalMilliseconds / 180.0);
                 double eased = 1.0 - Math.Pow(1.0 - t, 3.0);
@@ -945,6 +959,17 @@ namespace AgentUsageFrame
         private List<Account> Accounts
         {
             get { return snapshot != null ? snapshot.Accounts : new List<Account>(); }
+        }
+
+        private float GaugeProgress(Account account)
+        {
+            LimitWindow limit = account.Selected(state.Weekly);
+            float target = limit == null ? 0 : limit.RemainingPercent;
+            float from;
+            if (!gaugeMotion.Enabled || !gaugeFrom.TryGetValue(account.Id, out from)) return target;
+            double t = Math.Min(1.0, gaugeClock.Elapsed.TotalMilliseconds / 320.0);
+            double eased = t * t * (3.0 - 2.0 * t);
+            return from + (target - from) * (float)eased;
         }
 
         private string FootLeft(Account account)
@@ -1229,12 +1254,12 @@ namespace AgentUsageFrame
             Color color = selected || hot || (id == Hit.Pin && state.StayOnTop) ? Theme.Ink : Theme.Muted;
             if (id == Hit.Hourly || id == Hit.Weekly)
             {
-                TextLine(g, Compact ? (state.Weekly ? "W" : "5h") : id == Hit.Weekly ? "Weekly" : "5-hour", fLimit, color, bounds, true);
+                TextLine(g, Compact ? (state.Weekly ? "W" : "5h") : id == Hit.Weekly ? "Weekly" : "5-hour", Compact ? fCellLabel : fLimit, color, bounds, true);
                 return;
             }
             string icon = id == Hit.Close ? "close" : id == Hit.Refresh ? "refresh" :
                 id == Hit.Fold ? (Compact ? "expand" : "collapse") : state.StayOnTop ? "pin" : "unpin";
-            Draw.Symbol(g, new RectangleF(bounds.X + 6, bounds.Y + 6, 16, 16), icon, color);
+            Draw.Symbol(g, new RectangleF(bounds.X + (bounds.Width - 16) / 2f, bounds.Y + (bounds.Height - 16) / 2f, 16, 16), icon, color);
         }
 
         private void PaintAccount(Graphics g, Account account, int top, int height)
@@ -1251,7 +1276,7 @@ namespace AgentUsageFrame
                 return;
             }
             LimitWindow selected = account.Selected(state.Weekly);
-            Draw.FocusGauge(g, new RectangleF(22, top + 43, 88, 88), selected, fGauge, fGaugeNarrow, fPlan);
+            Draw.FocusGauge(g, new RectangleF(22, top + 43, 88, 88), selected, fGauge, fGaugeNarrow, fPlan, GaugeProgress(account));
             for (int index = 0; index < account.Limits.Count; index++)
             {
                 LimitWindow limit = account.Limits[index];
@@ -1315,23 +1340,26 @@ namespace AgentUsageFrame
                 Account account = Accounts[index];
                 int x = CompactPad + index * CompactCell;
                 LimitWindow selected = account.Selected(state.Weekly);
-                RectangleF ring = new RectangleF(x + 12, 5, 36, 36);
+                float progress = GaugeProgress(account);
+                RectangleF ring = new RectangleF(x + 12, 8, 36, 36);
                 using (Pen track = new Pen(Theme.Track, 3)) g.DrawArc(track, ring, 135, 270);
                 bool healthy = String.IsNullOrEmpty(account.Error) && selected != null;
-                if (healthy && selected.RemainingPercent > 0)
-                    using (Pen fill = new Pen(Theme.Headroom(selected.RemainingPercent), 3))
+                if (healthy && progress > 0)
+                    using (Pen fill = new Pen(Theme.Headroom((int)Math.Round(progress)), 3))
                     {
                         fill.StartCap = fill.EndCap = LineCap.Round;
-                        g.DrawArc(fill, ring, 135, 270 * selected.RemainingPercent / 100f);
+                        g.DrawArc(fill, ring, 135, 270 * progress / 100f);
                     }
-                string value = healthy ? selected.RemainingPercent.ToString() : "--";
+                string value = healthy ? Math.Round(progress).ToString() : "--";
                 TextLine(g, value, value.Length > 2 ? fTinyNarrow : fTiny, Theme.Ink, ring, true);
-                Draw.Symbol(g, new RectangleF(x + 1, 48, 10, 10), account.Provider, Theme.Mark(account.Provider));
-                TextLine(g, account.DisplayName, fCellLabel, Theme.Muted, new RectangleF(x + 13, 44, 46, 18), true);
-                bankTips[new Rectangle(x, 0, CompactCell, CompactHeight)] = account.DisplayName + " - " +
-                    (state.Weekly ? "Weekly" : "5-hour") + Environment.NewLine +
-                    (account.Error ?? (healthy ? selected.RemainingPercent + "% left; resets in " + Clock.Countdown(selected.ResetsAt) : "Not reported")) +
-                    (String.IsNullOrEmpty(account.Warning) ? "" : Environment.NewLine + account.Warning);
+                using (StringFormat labelFormat = Draw.Centred())
+                {
+                    float labelWidth = Math.Min(46, g.MeasureString(account.DisplayName, fCellLabel, 1000, labelFormat).Width);
+                    float left = x + (CompactCell - labelWidth - 13) / 2f;
+                    Draw.Symbol(g, new RectangleF(left, 49, 10, 10), account.Provider, Theme.Mark(account.Provider));
+                    Draw.Text(g, account.DisplayName, fCellLabel, Theme.Muted,
+                        new RectangleF(left + 13, 45, labelWidth, 18), labelFormat);
+                }
             }
             if (hoveredAccount >= 0 && hoveredAccount < Accounts.Count)
             {
@@ -1407,8 +1435,7 @@ namespace AgentUsageFrame
             }
 
             Hit hit = HitTest(e.Location);
-            string tip = hit == Hit.Hourly ? "Show 5-hour usage" : hit == Hit.Weekly ? "Show weekly usage" :
-                hit == Hit.Fold ? "Switch expanded / compact" : hit == Hit.Pin ? "Toggle always on top" :
+            string tip = hit == Hit.Pin ? "Toggle always on top" :
                 hit == Hit.Refresh ? "Refresh usage (Claude cooldown is respected)" : hit == Hit.Close ? "Close usage frame" : null;
             Point logical = new Point((int)(e.X / dpiScale), (int)(e.Y / dpiScale));
             if (Compact)
@@ -1447,7 +1474,11 @@ namespace AgentUsageFrame
             {
                 case Hit.Hourly:
                 case Hit.Weekly:
+                    foreach (Account account in Accounts) gaugeFrom[account.Id] = GaugeProgress(account);
                     state.Weekly = HitTest(e.Location) == Hit.Weekly;
+                    gaugeClock.Restart();
+                    if (SystemInformation.IsMenuAnimationEnabled) gaugeMotion.Start();
+                    else gaugeMotion.Stop();
                     state.Save();
                     Invalidate();
                     return;
@@ -1697,6 +1728,8 @@ namespace AgentUsageFrame
         {
             motion.Stop();
             motion.Dispose();
+            gaugeMotion.Stop();
+            gaugeMotion.Dispose();
             bankMotion.Stop();
             bankMotion.Dispose();
             tick.Stop();
