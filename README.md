@@ -53,10 +53,6 @@ agent-usage --self-test            # check the parsers
 reads the same from anywhere, but only that machine knows when a prompt just
 ran, which is what sets the poll rate.
 
-**It will not disturb a full-screen game.** It cannot take focus
-(`WS_EX_NOACTIVATE`), never resizes on refresh, and drops top-most by itself
-while a full-screen app is in front.
-
 **Polling is change-driven,** not a fixed timer: 60s while a CLI is active,
 backing off to 600s when nothing moves, and jumping to a reset the moment it
 lands. Neither read costs model tokens.
