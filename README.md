@@ -17,12 +17,15 @@ the small notch marks the fraction of the window's clock remaining.
 
 Provider symbols distinguish Codex and Claude without colored side borders.
 Expanded details include banked resets, credit balances, and extra usage.
-Hover over the banked-reset count to see local expiration dates. Missing expiry metadata is labeled unavailable;
+Hover over the banked-reset count to tween open its local expiration dates
+inline. The section closes when you move away; it never floats over other data. Missing expiry metadata is labeled unavailable;
 a server-reported non-expiring reset is labeled **No expiration**. Older
 collectors still work, but need updating to supply the new expiry details.
 
-Compact mode is a 214 × 64 strip for three accounts at 100% scale. Hover to
-reveal the window selector and expand button; hover a gauge for its reset time.
+Compact mode is a centered 192 × 64 strip for three accounts at 100% scale. Hover to
+smoothly reveal the window selector and expand button. Hover an account to
+expand a small row with its exact reset date/time. Reduced-motion preferences
+are respected.
 Double-click to fold down to the gauges. Drag to move. Use the pin to toggle
 always-on-top. Expanded views scroll when the details exceed the monitor height.
 The Windows renderer uses per-monitor DPI scaling and fully opaque text over a

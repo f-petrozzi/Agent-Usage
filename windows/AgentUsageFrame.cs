@@ -817,6 +817,16 @@ namespace AgentUsageFrame
         private bool refreshing;
         private bool fullScreenApp;
         private bool hovering;
+        private int hoveredAccount = -1;
+        private string bankId;
+        private bool bankTarget;
+        private double bankAmount, bankFrom;
+        private readonly Timer bankMotion = new Timer { Interval = 16 };
+        private readonly Stopwatch bankClock = new Stopwatch();
+        private readonly Dictionary<Rectangle, string> bankAreas = new Dictionary<Rectangle, string>();
+        private readonly Timer motion = new Timer { Interval = 16 };
+        private readonly Stopwatch motionClock = new Stopwatch();
+        private Size motionFrom, motionTo;
         private Hit hotButton = Hit.None;
         private bool dragging;
         private Point dragOffset;
@@ -866,6 +876,22 @@ namespace AgentUsageFrame
 
             tick = new Timer { Interval = 1000 };
             tick.Tick += delegate { OnTick(); };
+            motion.Tick += delegate {
+                double t = Math.Min(1.0, motionClock.Elapsed.TotalMilliseconds / 180.0);
+                double eased = 1.0 - Math.Pow(1.0 - t, 3.0);
+                ResizeFrame(new Size((int)Math.Round(motionFrom.Width + (motionTo.Width - motionFrom.Width) * eased),
+                    (int)Math.Round(motionFrom.Height + (motionTo.Height - motionFrom.Height) * eased)));
+                if (t >= 1.0) motion.Stop();
+            };
+
+            bankMotion.Tick += delegate {
+                double t = Math.Min(1.0, bankClock.Elapsed.TotalMilliseconds / 180.0);
+                double eased = 1.0 - Math.Pow(1.0 - t, 3.0);
+                bankAmount = bankFrom + ((bankTarget ? 1.0 : 0.0) - bankFrom) * eased;
+                if (t >= 1.0) { bankMotion.Stop(); if (!bankTarget) bankId = null; }
+                ApplySize();
+                Invalidate();
+            };
 
             Shown += delegate
             {
@@ -975,10 +1001,30 @@ namespace AgentUsageFrame
             return String.Join(Environment.NewLine, lines.ToArray());
         }
 
+        private int BankHeight(Account account)
+        {
+            return bankId == account.Id ? (int)Math.Round(BankTooltip(account).Split(new string[] { Environment.NewLine }, StringSplitOptions.None).Length * 20 * bankAmount) : 0;
+        }
+
+        private void RevealBank(string next)
+        {
+            if (Compact || (next == bankId && bankTarget) || (next == null && !bankTarget)) return;
+            if (next != null && next != bankId) { bankId = next; bankAmount = 0; }
+            bankFrom = bankAmount;
+            bankTarget = next != null;
+            if (!SystemInformation.IsMenuAnimationEnabled)
+            {
+                bankMotion.Stop(); bankAmount = bankTarget ? 1.0 : 0.0;
+                if (!bankTarget) bankId = null;
+                ApplySize(); Invalidate(); return;
+            }
+            bankClock.Restart(); bankMotion.Start();
+        }
+
         private int BlockHeight(Account account)
         {
             if (!String.IsNullOrEmpty(account.Error)) return 96;
-            return 40 + Math.Max(104, account.Limits.Count * MeterRowHeight) + Details(account).Count * 20 + 20;
+            return 40 + Math.Max(104, account.Limits.Count * MeterRowHeight) + Details(account).Count * 20 + BankHeight(account) + 20;
         }
 
         private Size DesiredSize()
@@ -988,8 +1034,8 @@ namespace AgentUsageFrame
 
             if (Compact)
                 return new Size(
-                    accounts.Count == 0 ? 214 : CompactPad * 2 + count * CompactCell + 22,
-                    CompactHeight);
+                    (accounts.Count == 0 ? 192 : CompactPad * 2 + count * CompactCell) + (hovering ? 26 : 0),
+                    CompactHeight + (hoveredAccount >= 0 ? 26 : 0));
 
             int height = HeaderHeight;
             if (accounts.Count == 0)
@@ -1004,6 +1050,25 @@ namespace AgentUsageFrame
         {
             Size logical = DesiredSize();
             Size wanted = new Size((int)Math.Round(logical.Width * dpiScale), (int)Math.Round(logical.Height * dpiScale));
+            motion.Stop();
+            ResizeFrame(wanted);
+        }
+
+        private void AnimateCompact()
+        {
+            if (!Compact) return;
+            Size logical = DesiredSize();
+            Size wanted = new Size((int)Math.Round(logical.Width * dpiScale), (int)Math.Round(logical.Height * dpiScale));
+            if (!SystemInformation.IsMenuAnimationEnabled) { motion.Stop(); ResizeFrame(wanted); return; }
+            if (motion.Enabled && motionTo == wanted) return;
+            motionFrom = ClientSize;
+            motionTo = wanted;
+            motionClock.Restart();
+            motion.Start();
+        }
+
+        private void ResizeFrame(Size wanted)
+        {
             if (ClientSize == wanted && Region != null)
                 return;
 
@@ -1082,7 +1147,7 @@ namespace AgentUsageFrame
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             g.PixelOffsetMode = PixelOffsetMode.Default;
-            Size logical = DesiredSize();
+            SizeF logical = new SizeF(ClientSize.Width / dpiScale, ClientSize.Height / dpiScale);
             RectangleF shell = new RectangleF(0, 0, logical.Width, logical.Height);
             using (LinearGradientBrush brush = new LinearGradientBrush(shell,
                 Theme.ShellTop, Theme.ShellBottom, LinearGradientMode.ForwardDiagonal))
@@ -1092,6 +1157,7 @@ namespace AgentUsageFrame
             using (Pen border = new Pen(Theme.Hairline, 1f)) g.DrawPath(border, path);
             buttons.Clear();
             bankTips.Clear();
+            bankAreas.Clear();
             if (!Compact) PaintHeader(g);
             if (Compact) PaintCompact(g); else PaintExpanded(g);
         }
@@ -1213,12 +1279,30 @@ namespace AgentUsageFrame
             int detailTop = top + 40 + Math.Max(104, account.Limits.Count * MeterRowHeight);
             foreach (string detail in Details(account))
             {
-                if (detail.EndsWith("reset banked") || detail.EndsWith("resets banked"))
-                    bankTips[new Rectangle(18, detailTop - scrollOffset, 180, 20)] = BankTooltip(account);
+                bool bank = detail.EndsWith("reset banked") || detail.EndsWith("resets banked");
+                int reveal = bank ? BankHeight(account) : 0;
+                if (bank)
+                {
+                    bankAreas[new Rectangle(18, detailTop - scrollOffset, 384, 20 + reveal)] = account.Id;
+                    Draw.Symbol(g, new RectangleF(156, detailTop + 4, 12, 12), reveal > 0 ? "collapse" : "expand", Theme.Muted);
+                }
                 bool warning = detail.StartsWith("Claude is rate limited") || detail.StartsWith("Expired") || detail.StartsWith("Out ") || detail.StartsWith("At this pace");
                 TextLine(g, detail, fFoot, warning ? Theme.Tight : Theme.Muted,
                     new RectangleF(18, detailTop, 384, 20), false);
                 detailTop += 20;
+                if (reveal > 0)
+                {
+                    GraphicsState saved = g.Save();
+                    g.SetClip(new Rectangle(18, detailTop, 384, reveal), CombineMode.Intersect);
+                    int lineTop = detailTop;
+                    foreach (string date in BankTooltip(account).Split(new string[] { Environment.NewLine }, StringSplitOptions.None))
+                    {
+                        TextLine(g, date, fFoot, Theme.Muted, new RectangleF(26, lineTop, 376, 20), false);
+                        lineTop += 20;
+                    }
+                    g.Restore(saved);
+                    detailTop += reveal;
+                }
             }
         }
 
@@ -1249,9 +1333,19 @@ namespace AgentUsageFrame
                     (account.Error ?? (healthy ? selected.RemainingPercent + "% left; resets in " + Clock.Countdown(selected.ResetsAt) : "Not reported")) +
                     (String.IsNullOrEmpty(account.Warning) ? "" : Environment.NewLine + account.Warning);
             }
+            if (hoveredAccount >= 0 && hoveredAccount < Accounts.Count)
+            {
+                Account account = Accounts[hoveredAccount];
+                LimitWindow selected = account.Selected(state.Weekly);
+                string reset = !String.IsNullOrEmpty(account.Error) ? "Usage unavailable" :
+                    selected == null || !selected.ResetsAt.HasValue ? "Reset time unavailable" :
+                    "Resets " + Clock.ToLocal(selected.ResetsAt.Value).ToString("MMM d, h:mmtt", CultureInfo.InvariantCulture);
+                TextLine(g, reset, fPlan, Theme.Muted,
+                    new RectangleF(6, 64, ClientSize.Width / dpiScale - 12, 22), true);
+            }
             if (hovering)
             {
-                int x = DesiredSize().Width - 26;
+                int x = CompactPad * 2 + Math.Max(1, Accounts.Count) * CompactCell;
                 PaintButton(g, state.Weekly ? Hit.Hourly : Hit.Weekly, new Rectangle(x, 6, 22, 22));
                 PaintButton(g, Hit.Fold, new Rectangle(x, 33, 22, 24));
             }
@@ -1285,6 +1379,7 @@ namespace AgentUsageFrame
         {
             base.OnMouseEnter(e);
             hovering = true;
+            AnimateCompact();
             Invalidate();
         }
 
@@ -1292,6 +1387,9 @@ namespace AgentUsageFrame
         {
             base.OnMouseLeave(e);
             hovering = false;
+            RevealBank(null);
+            hoveredAccount = -1;
+            AnimateCompact();
             hotButton = Hit.None;
             Invalidate();
         }
@@ -1313,6 +1411,20 @@ namespace AgentUsageFrame
                 hit == Hit.Fold ? "Switch expanded / compact" : hit == Hit.Pin ? "Toggle always on top" :
                 hit == Hit.Refresh ? "Refresh usage (Claude cooldown is respected)" : hit == Hit.Close ? "Close usage frame" : null;
             Point logical = new Point((int)(e.X / dpiScale), (int)(e.Y / dpiScale));
+            if (Compact)
+            {
+                int next = logical.X >= CompactPad && logical.X < CompactPad + Accounts.Count * CompactCell
+                    ? (logical.X - CompactPad) / CompactCell : -1;
+                if (next != hoveredAccount) { hoveredAccount = next; AnimateCompact(); Invalidate(); }
+            }
+            if (!Compact)
+            {
+                string nextBank = null;
+                if (logical.Y >= HeaderHeight)
+                    foreach (KeyValuePair<Rectangle, string> area in bankAreas)
+                        if (area.Key.Contains(logical)) { nextBank = area.Value; break; }
+                RevealBank(nextBank);
+            }
             if (tip == null && (Compact || logical.Y >= HeaderHeight))
                 foreach (KeyValuePair<Rectangle, string> entry in bankTips)
                     if (entry.Key.Contains(logical)) { tip = entry.Value; break; }
@@ -1383,6 +1495,8 @@ namespace AgentUsageFrame
         {
             dragging = false;
             scrollOffset = 0;
+            hoveredAccount = -1;
+            bankMotion.Stop(); bankId = null; bankAmount = 0; bankTarget = false;
             state.Compact = !state.Compact;
             hotButton = Hit.None;
             ApplySize();
@@ -1581,6 +1695,10 @@ namespace AgentUsageFrame
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            motion.Stop();
+            motion.Dispose();
+            bankMotion.Stop();
+            bankMotion.Dispose();
             tick.Stop();
             tick.Dispose();
             tips.Dispose();

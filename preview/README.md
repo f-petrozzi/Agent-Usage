@@ -10,8 +10,9 @@ from the repository root, then open http://localhost:4444.
 The page represents `windows/AgentUsageFrame.cs` using sample data. Controls cover
 expanded/compact views, zoom, normal, low, exhausted, error, loading, full, stale, and unavailable-expiry states.
 The 5-hour/Weekly selector controls the large gauge values and is remembered
-along with compact mode. Hover or focus the banked-reset count to see sample expiration dates.
-Compact mode is a 214 × 64 strip with controls revealed on hover or keyboard focus.
+along with compact mode. Hover or focus the banked-reset count to tween open sample expiration dates inline.
+Compact mode is a 192 × 64 strip with controls tweened into view on hover or keyboard focus. Account hover reveals a
+small reset-time row.
 Accepted visual changes must also be applied to the Windows source. Browser fonts
 may differ; native focus, pinning, dragging, and fullscreen behavior need Windows
 testing. Keep this preview and the Windows UI in sync when changing the design.
