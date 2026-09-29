@@ -20,7 +20,7 @@ let win, settings, tray, input, collector, feed, config, configPath, timer, upda
 let visible = false, held = false, escape = false, mouseDown = false, carrying = false, dismissed = false;
 let pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
-let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '';
+let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
 const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
@@ -58,9 +58,9 @@ async function start() {
   // The UI is entirely local. Collector traffic is owned by ssh.exe/wsl.exe, not the renderer.
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (_request, callback) => callback({ cancel: true }));
   monitor = screen.getAllDisplays().find(d => String(d.id) === config.display) || screen.getPrimaryDisplay();
-  // thickFrame off drops Windows' own open/close animation, which zoomed the whole screen-sized overlay
-  // in from the middle, so the notch seemed to float in to the edge whatever the page itself did
-  win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, thickFrame: false, resizable: false,
+  // Shown once and then only moved (see place): Windows zooms a window in from its middle each time
+  // it is shown, and on this screen-sized overlay that made the notch float in to the edge
+  win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, resizable: false,
     focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true,
       nodeIntegration: false, backgroundThrottling: false, spellcheck: false } });
@@ -68,6 +68,7 @@ async function start() {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.webContents.setZoomFactor(config.scale);
   await win.loadFile(path.join(uiRoot, 'notch.html'));
+  place(); win.showInactive(); // its one show happens parked, off every screen
   updates = createUpdates({ app, updater: require('electron-updater').autoUpdater,
     installed: process.platform === 'win32' && app.isPackaged && fs.existsSync(resource('installer-managed')),
     onChange: state => broadcast('update_state', state),
@@ -79,6 +80,7 @@ async function start() {
   configureTray();
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!config.autostart, path: process.execPath });
   nativeTheme.on('updated', () => broadcast('theme_resolved', theme()));
+  screen.on('display-added', () => place()); // Windows can pull an off-screen window onto a new display
   screen.on('display-removed', () => { if (!screen.getAllDisplays().some(d => d.id === monitor.id)) useMonitor(screen.getPrimaryDisplay()); });
   screen.on('display-metrics-changed', (_event, display) => { if (display.id === monitor.id) useMonitor(display); });
   timer = setInterval(tick, 16);
@@ -97,9 +99,18 @@ function restartCollector() {
 }
 function useMonitor(display) {
   monitor = display; hot = []; controls = {}; lastCursor = ''; inside = false; config.display = String(display.id);
-  win.setBounds(display.bounds, false);
+  place();
   sendLayout();
 }
+// Closed, the window is parked just past the leftmost screen, still shown: nothing of it is composited over
+// other apps, and opening moves it back, as moving it between screens always has, with no show animation.
+function parkedBounds() {
+  const left = Math.min(...screen.getAllDisplays().map(d => d.bounds.x));
+  return { x: left - monitor.bounds.width - 400, y: monitor.bounds.y, width: monitor.bounds.width, height: monitor.bounds.height };
+}
+function place() { if (win && !win.isDestroyed()) win.setBounds(visible ? monitor.bounds : parkedBounds(), false); }
+// Above the taskbar, which is also topmost and wins whenever it was raised more recently
+function raise() { win.setAlwaysOnTop(true, 'screen-saver'); win.moveTop(); }
 function sendLayout() {
   if (!config || !monitor) return;
   send('layout', { width: monitor.bounds.width, height: monitor.bounds.height, scale: config.scale,
@@ -113,7 +124,7 @@ function reveal() {
     config.edge = nearestEdge(cursor);
     const b = monitor.bounds; config.along = Math.max(0,Math.min(1,['top','bottom'].includes(config.edge)?(cursor.x-b.x)/b.width:(cursor.y-b.y)/b.height));
     visible = true; phase = 'shown'; hot = [];
-    win.showInactive();
+    place(); raise(); if (!win.isVisible()) win.showInactive();
     sendLayout(); send('appear', { edge: config.edge }); broadcast('ui_flags', flags());
   }
 }
@@ -122,8 +133,8 @@ function hide() {
   visible = false; phase = 'hiding'; pinned = false; hot = [];
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); broadcast('ui_flags', flags());
-  // Long enough for the notch to slide back into the edge (agent-usage.css)
-  setTimeout(() => { if (!visible) { win.hide(); phase = 'hidden'; } }, 300);
+  // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
+  setTimeout(() => { if (!visible) { place(); phase = 'hidden'; } }, 300);
 }
 function nearestEdge(point) {
   const b = monitor.bounds;
@@ -139,6 +150,8 @@ function setPinned(value) {
 function tick() {
   if (!win || win.isDestroyed()) return;
   if (!visible && !(held || carrying)) return;
+  // Windows lets a topmost window sink behind the taskbar and other topmost windows; keep reasserting it
+  if (visible && Date.now() - lastRaise > 2000) { lastRaise = Date.now(); raise(); }
   cursor = screen.getCursorScreenPoint();
   if ((held || carrying) && !dismissed && !menuOpen) {
     reveal();
@@ -317,7 +330,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'set_notch_edge': config.edge = enumValue(args.edge, ['left','right','top','bottom']); config.along = 0.5; save(); reveal(); sendLayout(); broadcast('notch_edge', config.edge); return config.edge;
     case 'get_notch_insets': return [0,0,0,0];
     case 'get_monitors': return screen.getAllDisplays().map((d,i) => ({ id: String(d.id), label: d.label || `Display ${i + 1} (${d.size.width} × ${d.size.height})`, current: d.id === monitor.id, primary: d.id === screen.getPrimaryDisplay().id }));
-    case 'set_notch_monitor': { const d = screen.getAllDisplays().find(d => String(d.id) === args.id); if (!d) throw new Error('Display no longer attached'); useMonitor(d); visible = true; win.showInactive(); visibleUntil = Date.now() + 1800; sendLayout(); send('appear', { edge: config.edge }); save(); return null; }
+    case 'set_notch_monitor': { const d = screen.getAllDisplays().find(d => String(d.id) === args.id); if (!d) throw new Error('Display no longer attached'); useMonitor(d); visible = true; place(); raise(); if (!win.isVisible()) win.showInactive(); visibleUntil = Date.now() + 1800; sendLayout(); send('appear', { edge: config.edge }); save(); return null; }
     case 'reset_notch_position': config.along = 0.5; save(); reveal(); sendLayout(); return null;
     case 'get_lang': return config.lang;
     case 'get_lang_resolved': return config.lang === 'auto' ? 'en' : config.lang;

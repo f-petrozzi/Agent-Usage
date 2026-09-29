@@ -86,8 +86,10 @@ Since 3.0.5 the notch's black is one SVG outline (`desktop/ui/shape.js`) rather
 than a CSS box with gradient fillets, so its shape can move. It wells out of the
 screen edge on the Mac's unfold spring, spreading a little along the edge and
 settling past a slight overshoot, and slides away past the edge when it hides.
-The notch window has no thick frame, so Windows' own open animation no longer
-zooms the overlay in from the middle of the screen. It is 70 px deep on every
+The notch window is shown once and parked off every screen when closed, so
+opening only moves it: Windows zooms a window in from its middle whenever it is
+shown, which made the notch float in to the edge. It is raised above the
+taskbar when it opens and every two seconds while open. It is 70 px deep on every
 edge; lying flat, each reading sits beside its ring. While the shortcut is held
 it closes up square into a corner, a little gooey on the way, and out along the
 next edge. The Settings and Move handles rest as quarter arcs in the fillet
