@@ -1,10 +1,19 @@
 /* Keep the adopted SVG/HTML at native Chromium resolution, never a scaled bitmap. */
 :root,:root[data-theme="light"]{--pill:#000;--edge:#000;--ink:#fff;--ink-2:#e8e8ea;--card:#080808;--ink-3:#ccc;--ink-4:#bbb;--bar:#292929;--track:#303030;--hole:#252525}
-/* The notch is stowed just past the screen edge and slides out of it in one piece: out settling, back in
-   accelerating. Nothing fades, so it never breaks into parts on the way. */
+/* Leaving, the notch slides away past the screen edge in one piece, accelerating. */
 body{--stow:96px 0}body[data-edge="left"]{--stow:-96px 0}body[data-edge="top"]{--stow:0 -96px}body[data-edge="bottom"]{--stow:0 96px}
 #root{translate:var(--stow);transition:translate .24s cubic-bezier(.55,0,.8,.3)}
-#root.visible{translate:0 0;transition:translate .34s cubic-bezier(.22,1,.36,1)}
+#root.visible{translate:0 0;transition:none}
+/* Arriving, it grows out of the edge: the clip opens from the edge side, so the base and its fillets are
+   there from the first frame, and the rings ride out on the growing side, all together. */
+#pill{--clip-grow:inset(-40px -1px -40px 100% round 0);--grow-cell:28px 0}
+body[data-edge="left"] #pill{--clip-grow:inset(-40px 100% -40px -1px round 0);--grow-cell:-28px 0}
+body[data-edge="top"] #pill{--clip-grow:inset(-1px -40px 100% -40px round 0);--grow-cell:0 -28px}
+body[data-edge="bottom"] #pill{--clip-grow:inset(100% -40px -1px -40px round 0);--grow-cell:0 28px}
+#root.growing #pill{clip-path:var(--clip-grow)}
+#root.growing .cell,#root.growing .ctl{translate:var(--grow-cell);opacity:0}
+body.grow-motion #pill{transition:clip-path .36s cubic-bezier(.22,1,.36,1),border-radius .18s ease}
+body.grow-motion .cell,body.grow-motion .ctl{transition:translate .36s cubic-bezier(.22,1,.36,1),opacity .22s ease .05s}
 #pill{max-height:calc(100vh - 110px);max-width:calc(100vw - 110px);transition:border-radius .18s ease}
 /* Held for one style flush while the folded notch is moved to the edge it will open from */
 body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:none!important}
@@ -20,8 +29,8 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 .h-disc{width:38px;height:38px;margin:-19px 0 0 -19px}
 .h-glyph{width:18px;height:18px;margin:-9px 0 0 -9px}
 #move{cursor:grab}#move.armed{cursor:grabbing}
-/* Arriving, the arms sweep a quarter turn into their pockets as the notch settles; leaving, they wind back */
-#root:not(.visible) .h-rest{opacity:0;transform:rotate(calc(var(--arc) - 90deg)) scale(.7)}
+/* Arriving, the arms sweep a quarter turn into their pockets as the notch grows; leaving, they wind back */
+#root:not(.visible) .h-rest,#root.growing .h-rest{opacity:0;transform:rotate(calc(var(--arc) - 90deg)) scale(.7)}
 #root.visible .handle:not(.hover) .h-rest{transition:opacity .2s ease .06s,transform .55s cubic-bezier(.34,1.3,.64,1) .06s}
 #card{z-index:2}#tail{z-index:1}
 /* The card comes out of the notch: a short fade and an 8 px travel away from the edge, once per opening */
@@ -44,3 +53,30 @@ svg.reading{transform-origin:50% 50%}
 @media(prefers-reduced-motion:reduce){.extra-fold,.extra-toggle svg{transition:none}}
 
 #orb.update-available::after{content:"";position:absolute;right:3px;top:3px;width:6px;height:6px;border:2px solid #000;border-radius:50%;background:#8bafff;pointer-events:none}
+
+/* The gear: eight identical teeth, corners eased by a hairline of its own colour, so it turns evenly */
+.h-glyph.gear path{stroke:var(--ink-2);stroke-width:.9;stroke-linejoin:round}
+
+/* The same notch on every edge: 70 deep and about as long. Lying flat, each reading sits beside its ring
+   instead of under it, so the row is as thick as the column is wide. */
+body[data-edge="top"] #pill,body[data-edge="bottom"] #pill{padding:0 18px;height:70px;align-items:center;gap:10px}
+body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{flex-direction:row;gap:5px}
+body[data-edge="top"] .pct,body[data-edge="bottom"] .pct{min-width:3.1ch}
+
+/* Rounding a corner the notch squeezes into it and out along the next edge (motion.js sets --sq, 0 to 1):
+   its contents, its flares and its handles step back while it is compressed, so nothing is seen squashed */
+#pill .cell,#pill .ctl{opacity:calc(1 - var(--sq,0) * 2.4)}
+#pill::before,#pill::after{opacity:calc(1 - var(--sq,0) * 1.6)}
+.handle.placed{opacity:calc(1 - var(--sq,0) * 3)}
+
+/* Pin and refresh, one click each, at the end of the notch beside the Settings pocket */
+.ctl{display:flex;gap:4px;justify-content:center;align-items:center}
+body[data-edge="top"] .ctl,body[data-edge="bottom"] .ctl{flex-direction:column}
+.ctl-btn{width:26px;height:26px;border:0;border-radius:50%;padding:0;background:transparent;color:var(--ink-4);display:grid;place-items:center;
+  cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.ctl-btn:hover,.ctl-btn:focus-visible{background:#1d1d1f;color:var(--ink)}
+.ctl-btn:focus-visible{outline:1px solid #aaa;outline-offset:1px}
+.ctl-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.ctl-btn.on{color:var(--ink)}
+.ctl-btn.on .pin-head{fill:currentColor}
+@media(prefers-reduced-motion:reduce){.ctl-btn{transition:none}}

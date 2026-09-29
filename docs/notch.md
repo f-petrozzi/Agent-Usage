@@ -82,12 +82,15 @@ The sliders button opens Settings. Hold the four-arrow move button and drag to
 reposition, then release to drop. Both controls have full square hit regions
 and a Windows input-helper fallback for overlays that do not receive clicks.
 
-Since 3.0.3 the notch slides out of the screen edge in one piece and slides back
-in when it hides; the fillets taper fully into the edge. The Settings and Move
-handles rest as quarter arcs in the fillet pockets, sweeping into place as the
-notch arrives, and become a gear and a move disc under the pointer; the gear
-spins and presses on click. The card eases out of the notch, and a ring eases
-to a new reading.
+Since 3.0.4 the notch grows out of the screen edge, its base and fillets on the
+edge from the first frame, and slides away past the edge when it hides. It is
+70 px deep on every edge; lying flat, each reading sits beside its ring. While
+the shortcut is held it squeezes into a corner as a square cap and out along
+the next edge. The Settings and Move handles rest as quarter arcs in the fillet
+pockets and become a gear and a move disc under the pointer. Pin and Refresh
+sit at the end of the notch, one click each; Settings → Appearance → Controls
+hides either, and the move handle. The card eases out of the notch, and a ring
+eases to a new reading.
 
 Cards keep usage and resets visible; hover Account details to expand credits,
 banked resets, expiration dates, and plan information. Click also toggles it.

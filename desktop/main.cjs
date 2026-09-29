@@ -47,6 +47,7 @@ async function start() {
   config = { source: legacy.Source === 'ssh' ? 'ssh' : 'wsl', sshTarget: legacy.SshTarget || '',
     scale: 1, theme: 'dark', weekly: 'outside', transition: 'ramp', slots: [], edge: 'right', along: 0.5,
     display: null, move: true, tray: false, lang: 'en', shortcut: 'Ctrl+Shift+Space', autostart: true, ...stored };
+  config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false };
   if (!shortcuts[config.shortcut]) config.shortcut = 'Ctrl+Shift+Space';
   if (!['left','right','top','bottom'].includes(config.edge)) config.edge = 'right';
   config.scale = [0.8, 1, 1.25].includes(config.scale) ? config.scale : 1;
@@ -191,7 +192,7 @@ function registerShortcut(value) {
       if (!held && previous) { visibleUntil = Date.now() + 1800; send('release'); broadcast('ui_flags', flags()); save(); }
       if (mouseDown && !previousMouse && visible && !held && !carrying) {
         const point=screen.getCursorScreenPoint();
-        for(const name of ['settings','move']) if(controlHit(controls[name],point)) { activateControl(name); break; }
+        for(const name of CONTROLS) if(controlHit(controls[name],point)) { activateControl(name); break; }
       }
       if (!mouseDown && previousMouse) endMove();
       if (value[1] === '1' && !escape && visible) { dismissed = true; carrying = false; hide(); }
@@ -213,11 +214,15 @@ function endMove() {
   carrying=false;send('release');send('move_end');send('drag_end');
   broadcast('ui_flags',flags());visibleUntil=Date.now()+1800;save();
 }
+const CONTROLS = ['settings', 'move', 'pin', 'refresh'];
 function activateControl(name) {
-  if(!visible||!['settings','move'].includes(name))return;
+  if(!visible||!CONTROLS.includes(name))return;
   const now=Date.now();if(lastControl.name===name&&now-lastControl.at<300)return;
   lastControl={name,at:now};send('control_pressed',name);
-  if(name==='settings')openSettings(['available','downloading','ready','error'].includes(updates?.get().status)?'general':'accounts');else beginMove();
+  if(name==='settings')openSettings(['available','downloading','ready','error'].includes(updates?.get().status)?'general':'accounts');
+  else if(name==='move')beginMove();
+  else if(name==='pin')setPinned(!pinned);
+  else requestRefresh();
 }
 function requestRefresh() {
   const started=collector.refresh();if(started)send('refresh_started');return started;
@@ -267,7 +272,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'set_hot': {
       const validRect=r=>Array.isArray(r)&&r.length===4&&r.every(Number.isFinite)&&r[2]>=0&&r[3]>=0;
       hot=Array.isArray(args.rects)?args.rects.filter(validRect).slice(0,12):[];
-      controls={};for(const name of ['settings','move'])if(validRect(args.controls?.[name]))controls[name]=args.controls[name];
+      controls={};for(const name of CONTROLS)if(validRect(args.controls?.[name]))controls[name]=args.controls[name];
       return null;
     }
     case 'activate_control': activateControl(args.control); return null;
@@ -294,6 +299,8 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'set_color_transition': config.transition = enumValue(args.style, ['hard_step','ramp']); save(); broadcast('color_transition', config.transition); return config.transition;
     case 'get_move_handle': return config.move;
     case 'set_move_handle': config.move = args.on === true; save(); broadcast('move_handle', config.move); return config.move;
+    case 'get_notch_buttons': return config.buttons;
+    case 'set_notch_buttons': for (const key of ['pin', 'refresh']) if (typeof args[key] === 'boolean') config.buttons[key] = args[key]; save(); broadcast('notch_buttons', config.buttons); return config.buttons;
     case 'set_pinned': setPinned(args.on === true); return pinned;
     case 'get_ui_flags': return flags();
     case 'set_ui_flags': {

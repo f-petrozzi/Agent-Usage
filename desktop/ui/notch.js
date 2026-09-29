@@ -778,16 +778,27 @@ function svgArc(r,frac,color,width,extra=''){
     transform="rotate(-90 28 28)" ${extra}/>`;
 }
 
+// Pin and refresh at the end of the notch; each can be hidden in Settings → Appearance → Controls
+let notchButtons={pin:true,refresh:true}, pinnedNow=false;
+const PIN_ICON='<svg viewBox="0 0 16 16" aria-hidden="true"><path class="pin-head" d="M10.2 1.9l3.9 3.9-1.9.7-2.6 2.6.3 2.9-1.1 1.1-5.9-5.9 1.1-1.1 2.9.3 2.6-2.6z"/><path d="M5.3 10.7 2 14"/></svg>';
+const REFRESH_ICON='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.3 8.4a5.3 5.3 0 1 1-1.6-4.3"/><path d="M12.2 1.6v3h-3"/></svg>';
+function controlsHtml(){
+  if(!notchButtons.pin&&!notchButtons.refresh) return '';
+  return `<div class="ctl">${notchButtons.pin?`<button class="ctl-btn" id="ctl-pin" type="button" aria-label="Pin" aria-pressed="false" title="Pin">${PIN_ICON}</button>`:''}`
+    +`${notchButtons.refresh?`<button class="ctl-btn" id="ctl-refresh" type="button" aria-label="Refresh usage" title="Refresh usage">${REFRESH_ICON}</button>`:''}</div>`;
+}
 function renderRing(){
   const ps=providers();
   // Rebuild the DOM only when the structure changes (never swap the element under the cursor)
-  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',');
+  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}${notchButtons.refresh}`;
   if(pill.dataset.cells!==want){
     pill.innerHTML=ps.map((p,i)=>`<div class="cell" data-p="${p.id}" style="--i:${i}">
       <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><svg class="activity" viewBox="0 0 56 56"></svg><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
-      <div class="pct">…</div></div>`).join('');
+      <div class="pct">…</div></div>`).join('')+controlsHtml();
     pill.dataset.cells=want;
   }
+  const pinButton=pill.querySelector('#ctl-pin');
+  if(pinButton){ pinButton.classList.toggle('on',pinnedNow); pinButton.setAttribute('aria-pressed',String(pinnedNow)); pinButton.title=pinnedNow?'Unpin':'Pin'; }
   for(const p of ps){
     const cell=pill.querySelector(`.cell[data-p="${p.id}"]`); if(!cell) continue;
     const svg=cell.querySelector('svg.ring'), reading=cell.querySelector('svg.reading'), activity=cell.querySelector('svg.activity'), pct=cell.querySelector('.pct'), glyph=cell.querySelector('.glyph'), wrap=cell.querySelector('.ringwrap');
@@ -995,6 +1006,7 @@ function flushHot(){
     controls.settings=rectOf(orb);rects.push(controls.settings);
     if(showMove){controls.move=rectOf(moveHandle);rects.push(controls.move);}
   }
+  for(const [name,id] of [['pin','ctl-pin'],['refresh','ctl-refresh']]){ const b=document.getElementById(id); if(b) controls[name]=rectOf(b); }
   const data={rects,controls,expanded:open};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
 }
@@ -1081,7 +1093,8 @@ document.addEventListener('mousemove',e=>{
   if(dragging)return; // no card while dragging
   if(carrying) return; // the notch is in hand; the card would only be in the way
   setHovered(onHandle(e.clientX,e.clientY));
-  if(hovered){ if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
+  // Over a handle or the pin/refresh row, the card gives way
+  if(hovered||e.target.closest?.('.ctl')){ if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
   const hot=pointerInHot(e.clientX,e.clientY);
   if(hot){
     clearTimeout(hideTimer);
@@ -1135,7 +1148,7 @@ function settle(id){
 }
 // Alt+drag, the Mac's ⌥-drag. Without Alt a press on the pill is only ever a click. a ring
 // refreshes (#244). so one that slips can no longer carry the notch off (#251).
-pill.addEventListener('mousedown',e=>{ if(e.button!==0||folded)return; press={x:e.clientX,y:e.clientY,id:cellAt(e.clientX,e.clientY)||hoverId,alt:e.altKey}; });
+pill.addEventListener('mousedown',e=>{ if(e.button!==0||folded||e.target.closest('.ctl'))return; press={x:e.clientX,y:e.clientY,id:cellAt(e.clientX,e.clientY)||hoverId,alt:e.altKey}; });
 document.addEventListener('mousemove',e=>{
   if(!press||dragging||!press.alt)return;
   if(Math.abs(e.clientY-press.y)>4||Math.abs(e.clientX-press.x)>4){
@@ -1203,21 +1216,25 @@ function pressIn(el){
   el.animate([{transform:'scale(1)',easing:'ease-out'},{transform:'scale(.84)',offset:.21,easing:'cubic-bezier(.34,1.56,.64,1)'},{transform:'scale(1)'}],{duration:430});
 }
 // main.cjs confirms an activation from either click path (page or input helper), so both animate once
-listen('control_pressed',e=>{if(e.payload==='settings'){orb.style.setProperty('--spins',++orbSpins);pressIn(orb);}});
+listen('control_pressed',e=>{
+  if(e.payload==='settings'){orb.style.setProperty('--spins',++orbSpins);pressIn(orb);}
+  const b=document.getElementById(e.payload==='pin'?'ctl-pin':e.payload==='refresh'?'ctl-refresh':'');
+  if(b){ pressIn(b); if(e.payload==='refresh'&&!matchMedia('(prefers-reduced-motion: reduce)').matches) b.querySelector('svg').animate([{transform:'rotate(0)'},{transform:'rotate(360deg)'}],{duration:800,easing:'cubic-bezier(.32,.72,.24,1)'}); }
+});
+pill.addEventListener('pointerdown',e=>{
+  const b=e.target.closest('.ctl-btn'); if(!b||e.button!==0) return;
+  e.preventDefault();e.stopPropagation();
+  callq('activate_control',{control:b.id==='ctl-pin'?'pin':'refresh'}).catch(()=>{});
+});
+listen('notch_buttons',e=>{ if(e.payload){ notchButtons={pin:e.payload.pin!==false,refresh:e.payload.refresh!==false}; renderRing(); reportHot(); } }).catch(()=>{});
+invoke('get_notch_buttons').then(v=>{ if(v){ notchButtons={pin:v.pin!==false,refresh:v.refresh!==false}; renderRing(); reportHot(); } }).catch(()=>{});
 listen('move_begin',()=>{carrying=true;window.agentTracking=true;moveHandle.classList.add('armed','hover');moveHandle.style.setProperty('--spins',++moveSpins);clearTimeout(hideTimer);hideCard();});
 listen('move_end',()=>{carrying=false;window.agentTracking=false;moveHandle.classList.remove('armed');setHovered(null);reportHot();});
 document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_move').catch(()=>{});});
-/* Appearing and disappearing: the whole notch slides out of the screen edge and back (agent-usage.css).
-   The Mac's resting-pill fold is not used; with nothing on screen at rest it read as a strip growing. */
+/* Appearing grows the notch out of the screen edge; disappearing slides it away past the edge
+   (agent-usage.css). The Mac's resting-pill fold is not used: with nothing on screen at rest it read as a
+   strip growing, and a slide in hides the base until the end, so the notch seemed to float in. */
 let shown=false;
-/* Stow the hidden notch past the edge it is about to open from, transitions off, so it slides out of that
-   edge. Stowed past another edge (or the default one at startup), it would travel in from the side. */
-function settleOnEdge(edge){
-  document.body.classList.add('no-motion');
-  if(edge&&edge!==notchEdge){ applyEdge(edge); renderRing(); }
-  void pill.offsetWidth; // commit the folded layout before anything animates from it
-  document.body.classList.remove('no-motion');
-}
 function setFolded(f){
   if(f===folded) return;
   folded=f;
@@ -1227,15 +1244,28 @@ function setFolded(f){
 }
 function unfold(){ clearTimeout(foldTimer); }
 function scheduleFold(){ clearTimeout(foldTimer); }
+let growTimer=0;
 function setShown(on,edge){
   if(on===shown) return;
   shown=on;
-  if(on) settleOnEdge(edge);
-  document.getElementById('root').classList.toggle('visible',on);
+  const root=document.getElementById('root');
+  if(!on){ root.classList.remove('visible'); return; } // leaving: slides away past the edge (agent-usage.css)
+  /* Arriving: grows out of the edge instead of sliding in, so its base and fillets sit on the screen edge
+     from the first frame. Laid out in place and closed against the edge with transitions held, then opened. */
+  document.body.classList.add('no-motion');
+  if(edge&&edge!==notchEdge){ applyEdge(edge); renderRing(); }
+  root.classList.add('visible','growing');
+  void pill.offsetWidth;
+  document.body.classList.remove('no-motion');
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    document.body.classList.add('grow-motion');clearTimeout(growTimer);
+    growTimer=setTimeout(()=>document.body.classList.remove('grow-motion'),450);
+  }
+  root.classList.remove('growing');
 }
 // Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
 document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });
-function applyUiFlags(){ scheduleFold(); }
+function applyUiFlags(f){ scheduleFold(); if(f){ pinnedNow=f.notch_on_hover===false&&f.notch_visible!==false; renderRing(); } }
 listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{

@@ -60,6 +60,12 @@ for(const [id,get,set] of [['sw-autostart','get_autostart','set_autostart'],['sw
   $(id).onclick=action(async()=>toggle(id,await call(set,{on:!$(id).classList.contains('on')})));
 }
 $('screen').onchange=action(()=>call('set_notch_monitor',{id:$('screen').value}));
+// The notch's pin and refresh buttons, each on its own switch
+function renderButtons(v){if(!v)return;toggle('sw-pin-button',v.pin!==false);toggle('sw-refresh-button',v.refresh!==false);}
+action(async()=>renderButtons(await call('get_notch_buttons')))();
+for(const [id,key] of [['sw-pin-button','pin'],['sw-refresh-button','refresh']])
+  $(id).onclick=action(async()=>renderButtons(await call('set_notch_buttons',{[key]:!$(id).classList.contains('on')})));
+api.on('notch_buttons',renderButtons);
 api.on('ui_flags',renderFlags);
 api.on('agent_accounts',v=>{accounts=v;renderAccounts();});
 api.on('glyphs',v=>{glyphs=v||{};renderAccounts();});
