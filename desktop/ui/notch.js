@@ -872,6 +872,7 @@ let claudeActionMessage='';
 function renderCard(){
   const c=document.getElementById('card');
   const p=providers().find(x=>x.id===hoverId)||providers()[0];
+  if(!p)return;
   const snap=p.snap;
   const headIcon=glyphHtml(p,true);
   // p.name is no longer a constant: for a second account it is built from the home
@@ -922,7 +923,7 @@ function renderCard(){
     }
   }
   const wasOpen=c.querySelector('.account-extra')?.classList.contains('expanded') && c.dataset.account===p.id;
-  const scroll=c.scrollTop;
+  const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   c.innerHTML=html;c.dataset.account=p.id;
   const extra=c.querySelector('.account-extra');
   if(extra){
@@ -935,40 +936,43 @@ function renderCard(){
     if(wasOpen) expand(true);
   }
   c.scrollTop=scroll;
+  if(changedAccount&&typeof changeDetailAccount==='function')changeDetailAccount();
   placeCard();
 }
-// The card follows the hovered cell: centred on it along the pill (kept inside the window), tail pointing at it.
-// On the upright edges that means matching its vertical centre; on the flat ones, its horizontal centre,
-// and the card is pushed clear of a pill whose thickness follows the cells it holds.
+// Details stay aligned with their account, joined to the notch by a broad liquid shoulder.
 function placeCard(){
   // Measured on screen, written inside #root, which is offset while it slides
   const o=document.getElementById('root').getBoundingClientRect();
   const r=pill.getBoundingClientRect(), cell=pill.querySelector(`.cell[data-p="${hoverId}"]`)||pill;
   const cr=cell.getBoundingClientRect(), w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
-  if(notchEdge==='left') x=r.right+28;
-  if(notchEdge==='right') x=r.left-w-28;
-  if(notchEdge==='top') y=r.bottom+28;
-  if(notchEdge==='bottom') y=r.top-h-28;
+  if(notchEdge==='left') x=r.right+14;
+  if(notchEdge==='right') x=r.left-w-14;
+  if(notchEdge==='top') y=r.bottom+14;
+  if(notchEdge==='bottom') y=r.top-h-14;
   x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
   card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
-  // The point sits on the ring, not the cell, which includes the label below it; clamped to the card's straight edge
+  // The transparent bridge only supplies hit testing; details.js draws the connected ink.
   const rr=(cell.querySelector('.ringwrap')||cell).getBoundingClientRect();
   if(edgeIsVertical()){
-    const th=tail.offsetHeight||36, ty=Math.max(y+16+th/2,Math.min(y+h-16-th/2,rr.top+rr.height/2));
-    tail.style.left=(notchEdge==='left'?r.right-1:r.left-31)-o.left+'px';tail.style.top=Math.round(ty-th/2)-o.top+'px';
+    const top=Math.max(r.top+12,rr.top+rr.height/2-46),bottom=Math.min(r.bottom-12,rr.top+rr.height/2+46);
+    const left=notchEdge==='left'?r.right-8:x+w-1,right=notchEdge==='left'?x+1:r.left+8;
+    tail.style.cssText=`left:${left-o.left}px;top:${top-o.top}px;width:${right-left}px;height:${bottom-top}px`;
   }else{
-    const tw=tail.offsetWidth||36, tx=Math.max(x+16+tw/2,Math.min(x+w-16-tw/2,rr.left+rr.width/2));
-    tail.style.left=Math.round(tx-tw/2)-o.left+'px';tail.style.top=(notchEdge==='top'?r.bottom-1:r.top-31)-o.top+'px';
+    const left=Math.max(r.left+12,rr.left+rr.width/2-46),right=Math.min(r.right-12,rr.left+rr.width/2+46);
+    const top=notchEdge==='top'?r.bottom-8:y+h-1,bottom=notchEdge==='top'?y+1:r.top+8;
+    tail.style.cssText=`left:${left-o.left}px;top:${top-o.top}px;width:${right-left}px;height:${bottom-top}px`;
   }
+  if(typeof syncDetails==='function')syncDetails();
+
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 
 /* Hover: stays expanded while either the pill or the card is under the cursor; collapses after a 250 ms grace period (upstream motion rule) */
 const card=document.getElementById('card'), pill=document.getElementById('pill'), tail=document.getElementById('tail');
-let hideTimer=null;
-function showCard(){clearTimeout(hideTimer);card.classList.add('show');renderCard();armWatchdog();refreshClock();} // show first, then render: placeCard needs offsetHeight
+let hideTimer=null,showTimer=null,pendingAccount=null;
+function showCard(){clearTimeout(hideTimer);card.classList.remove('closing');card.classList.add('show');renderCard();setDetailsShown(true);armWatchdog();refreshClock();} // show first, then render: placeCard needs offsetHeight
 // Nothing is broadcast when the Windows clock format changes, so ask again each time the card opens
 function refreshClock(){
   invoke('get_state').then(s=>{
@@ -977,7 +981,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(!card.classList.contains('show'))return;card.classList.remove('show');reportHot();}
+function hideCard(){clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,250);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1076,8 +1080,7 @@ function pointerInHot(x,y){
   if(!card.classList.contains('show'))return false;
   const c=card.getBoundingClientRect();
   if(inRect(x,y,c,4))return true;
-  const u={left:Math.min(p.left,c.left),top:Math.min(p.top,c.top),right:Math.max(p.right,c.right),bottom:Math.max(p.bottom,c.bottom)};
-  return inRect(x,y,u,0);
+  return inRect(x,y,tail.getBoundingClientRect(),4);
 }
 let hideLogged=0;
 document.addEventListener('mousemove',e=>{
@@ -1088,17 +1091,25 @@ document.addEventListener('mousemove',e=>{
   if(carrying) return; // the notch is in hand; the card would only be in the way
   setHovered(onHandle(e.clientX,e.clientY));
   // Over a handle or the pin/refresh row, the card gives way
-  if(hovered||e.target.closest?.('.ctl')){ if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
+  if(hovered||e.target.closest?.('.ctl')){ clearTimeout(showTimer);pendingAccount=null;if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
   const hot=pointerInHot(e.clientX,e.clientY);
   if(hot){
     clearTimeout(hideTimer);
     const id=cellAt(e.clientX,e.clientY);
-    if(id&&id!==hoverId){ hoverId=id; if(card.classList.contains('show')){ renderCard(); armWatchdog(); } }
-    if(!card.classList.contains('show')) showCard();
+    if(id&&(!card.classList.contains('show')||id!==hoverId)){
+      if(pendingAccount!==id){
+        clearTimeout(showTimer);pendingAccount=id;
+        showTimer=setTimeout(()=>{
+          pendingAccount=null;hoverId=id;
+          if(card.classList.contains('show')){renderCard();armWatchdog();}else showCard();
+        },140);
+      }
+    }else{clearTimeout(showTimer);pendingAccount=null;}
   }
-  else if(card.classList.contains('show')){ if(hideLogged++<5) jslog(`mousemove left the hot area -> collapse at ${e.clientX},${e.clientY}`); scheduleHide(); }
+  else {clearTimeout(showTimer);pendingAccount=null;if(card.classList.contains('show')){ if(hideLogged++<5) jslog(`mousemove left the hot area -> collapse at ${e.clientX},${e.clientY}`); scheduleHide(); }}
 });
 document.addEventListener('mouseout',e=>{ // relatedTarget null = the cursor left the page
+  if(!e.relatedTarget){clearTimeout(showTimer);pendingAccount=null;}
   if(!e.relatedTarget && card.classList.contains('show')){ if(hideLogged++<5) jslog('mouseout left the page -> collapse'); scheduleHide(); }
 });
 listen('pointer_left',()=>{clearTimeout(hideTimer);hideCard();}).catch(()=>{});

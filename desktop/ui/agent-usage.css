@@ -37,14 +37,15 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 #shape .neck{fill:var(--pill);stroke:none}
 #root:not(.visible) .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .18s ease-in}
 #root.carrying .handle .h-disc,#root.carrying .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .2s ease-in}
-#card{z-index:2}#tail{z-index:1}
-/* The card comes out of the notch: a short fade and an 8 px travel away from the edge, once per opening */
-#card.show{animation:card-in .2s cubic-bezier(.32,.72,.24,1)}
-#card.show + #tail{animation:tail-in .2s ease-out}
-body{--card-from:8px 0}body[data-edge="left"]{--card-from:-8px 0}body[data-edge="top"]{--card-from:0 -8px}body[data-edge="bottom"]{--card-from:0 8px}
-@keyframes card-in{from{opacity:0;translate:var(--card-from)}}
-@keyframes tail-in{from{opacity:0}}
-@media(prefers-reduced-motion:reduce){#card.show,#card.show + #tail{animation:none}}
+#detail-shape{position:absolute;inset:0;overflow:visible;pointer-events:none;fill:#000}
+#card{z-index:2;background:transparent;border:0;border-radius:26px;padding:22px 24px;display:block;visibility:hidden;pointer-events:none;
+  opacity:calc(clamp(0,(var(--detail-open,0) - .85) / .15,1) * var(--detail-reading,1));translate:calc(var(--detail-offset-x,0px) + var(--ride-x,0) * (1 - var(--detail-open,0)) * 14px) calc(var(--detail-offset-y,0px) + var(--ride-y,0) * (1 - var(--detail-open,0)) * 14px)}
+#card.show,#card.closing{display:block;visibility:visible}
+#card.show{pointer-events:auto;animation:none}
+#tail,#card.show + #tail{background:transparent;clip-path:none!important;animation:none;z-index:1;pointer-events:none}
+body[data-edge="left"] #card{--ride-x:-1;--ride-y:0}body[data-edge="right"] #card{--ride-x:1;--ride-y:0}
+body[data-edge="top"] #card{--ride-x:0;--ride-y:-1}body[data-edge="bottom"] #card{--ride-x:0;--ride-y:1}
+body[data-edge="top"] #card,body[data-edge="bottom"] #card{max-height:calc(100vh - 120px)!important}
 .account-extra{margin-top:12px;border-top:1px solid #252525;padding-top:8px}
 .extra-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:5px 0;background:none;border:0;color:#aaa;font:inherit;font-size:12px;cursor:pointer;text-align:left}
 .extra-toggle svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;transition:transform .22s}
