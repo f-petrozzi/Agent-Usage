@@ -40,8 +40,8 @@ function animate(now){
   // Snap settled text to physical pixels. Layout itself is never rotated or raster-scaled.
   const pixel=v=>Math.abs(delta)>.3?v:Math.round(v*devicePixelRatio)/devicePixelRatio;
   /* Rounding a corner: within reach of it the notch shortens and slides into it, until it is a D×D cap in
-     the corner itself. That cap is the same box on both edges, so the edge changes inside it and only the
-     rounded corners move (their CSS transition), instead of the notch jumping from one edge to the other. */
+     the corner itself. That cap is the same shape on both edges, so the edge changes inside it instead of
+     the notch jumping from one edge to the other. */
   const vertical=edge==='left'||edge==='right';
   const L=vertical?ph:pw, D=vertical?pw:ph, len=vertical?h:w, at=vertical?y:x;
   const zone=L/2+CORNER, reach=Math.min(at,len-at);
@@ -51,7 +51,9 @@ function animate(now){
   const along=pixel(start+Ls/2-L/2), across=vertical?(edge==='left'?0:w-pw):(edge==='top'?0:h-ph);
   const px=vertical?across:along, py=vertical?along:across;
   pill.style.left='0';pill.style.top='0';pill.style.right='auto';pill.style.bottom='auto';
-  pill.style.transform=`translate(${px}px,${py}px)`+(squeeze>0?(vertical?` scale(1,${(Ls/L).toFixed(4)})`:` scale(${(Ls/L).toFixed(4)},1)`):'');
+  pill.style.transform=shapeSvg.style.transform=`translate(${px}px,${py}px)`;
+  // The box keeps its length; the outline is drawn Ls long within it, closing up into the corner (shape.js)
+  setShapeSqueeze(Ls,at<len/2,squeeze);drawShape();
   document.getElementById('root').style.setProperty('--sq',squeeze.toFixed(3));
   if(card.classList.contains('show')) placeCard();
   reportHot();

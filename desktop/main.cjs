@@ -58,7 +58,9 @@ async function start() {
   // The UI is entirely local. Collector traffic is owned by ssh.exe/wsl.exe, not the renderer.
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (_request, callback) => callback({ cancel: true }));
   monitor = screen.getAllDisplays().find(d => String(d.id) === config.display) || screen.getPrimaryDisplay();
-  win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, resizable: false,
+  // thickFrame off drops Windows' own open/close animation, which zoomed the whole screen-sized overlay
+  // in from the middle, so the notch seemed to float in to the edge whatever the page itself did
+  win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, thickFrame: false, resizable: false,
     focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true,
       nodeIntegration: false, backgroundThrottling: false, spellcheck: false } });

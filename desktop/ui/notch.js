@@ -1244,24 +1244,20 @@ function setFolded(f){
 }
 function unfold(){ clearTimeout(foldTimer); }
 function scheduleFold(){ clearTimeout(foldTimer); }
-let growTimer=0;
 function setShown(on,edge){
   if(on===shown) return;
   shown=on;
   const root=document.getElementById('root');
   if(!on){ root.classList.remove('visible'); return; } // leaving: slides away past the edge (agent-usage.css)
-  /* Arriving: grows out of the edge instead of sliding in, so its base and fillets sit on the screen edge
+  /* Arriving: wells out of the edge instead of sliding in, so its base and flares sit on the screen edge
      from the first frame. Laid out in place and closed against the edge with transitions held, then opened. */
   document.body.classList.add('no-motion');
   if(edge&&edge!==notchEdge){ applyEdge(edge); renderRing(); }
   root.classList.add('visible','growing');
+  openShape(); // closed against the edge before the first frame, then the spring (shape.js)
   void pill.offsetWidth;
   document.body.classList.remove('no-motion');
-  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
-    document.body.classList.add('grow-motion');clearTimeout(growTimer);
-    growTimer=setTimeout(()=>document.body.classList.remove('grow-motion'),450);
-  }
-  root.classList.remove('growing');
+  root.classList.remove('growing'); // the arms sweep out as it opens
 }
 // Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
 document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });
