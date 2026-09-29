@@ -1208,7 +1208,7 @@ function near(at,x,y){return !!at&&Math.abs(x-at.x)<=at.reach&&Math.abs(y-at.y)<
 function onHandle(x,y){return near(orbAt,x,y)?'orb':near(moveAt,x,y)?'move':null;}
 function setHovered(which){
   const was=hovered;hovered=which;orb.classList.toggle('hover',which==='orb');moveHandle.classList.toggle('hover',which==='move'||carrying);
-  if(was!==which&&typeof drawShape==='function') drawShape(); // an arm gives way to its button (shape.js)
+  if(was!==which&&typeof morphHandles==='function') morphHandles();
 }
 orb.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'settings'}).catch(()=>{});});
 orb.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'settings'}).catch(()=>{});});
@@ -1252,7 +1252,7 @@ function setShown(on,edge){
   if(on===shown) return;
   shown=on;
   const root=document.getElementById('root');
-  if(!on){ root.classList.remove('visible'); moveArms(0,.18); return; } // leaving: arms in, and it slides away past the edge (agent-usage.css)
+  if(!on){ root.classList.remove('visible'); cancelAnimationFrame(openFrame);openFrame=0;moveArms(0,.18);setHovered(null); return; } // absorb, then slide away
   /* Arriving: wells out of the edge instead of sliding in, so its base and flares sit on the screen edge
      from the first frame. Laid out in place and closed against the edge with transitions held, then opened. */
   document.body.classList.add('no-motion');

@@ -18,16 +18,36 @@ shapeSvg.id='shape';shapeSvg.setAttribute('aria-hidden','true');
 shapeSvg.innerHTML=`<defs><filter id="goo" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
   <feGaussianBlur in="SourceGraphic" stdDeviation="0"/>
   <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -12"/></filter></defs>
-  <g id="shape-body"><path class="part"/><path class="part"/><path class="arm"/><path class="arm"/></g>`;
+  <g id="shape-body"><path class="part"/><path class="part"/><path class="neck"/><path class="neck"/><path class="arm"/><path class="arm"/></g>`;
 const gooFilter=shapeSvg.querySelector('#goo'), gooBlur=shapeSvg.querySelector('feGaussianBlur');
 const shapeBody=shapeSvg.querySelector('#shape-body');
 const [partA,partB]=shapeSvg.querySelectorAll('.part'), [armStart,armEnd]=shapeSvg.querySelectorAll('.arm');
+const necks=[...shapeSvg.querySelectorAll('.neck')];
 pill.before(shapeSvg);
 
 // How far open (0 closed against the edge, 1 open; a spring takes it a little past)
 let openness=1, openVelocity=0, openFrame=0, openLast=0;
 // How far the arms have come away from the flares (0 in the black, 1 at their place), and the tween moving it
 let armsOut=0, armsFrame=0;
+let absorbing=false;
+const handles=[{el:moveHandle,ink:armStart,value:0,target:0,frame:0},{el:orb,ink:armEnd,value:0,target:0,frame:0}];
+
+// A round-ended stroke rolls up from the arc's midpoint into the disc. Reversing the same
+// drawing spreads the disc back into its arc, without swapping HTML and SVG silhouettes.
+function morphHandles(){
+  for(const h of handles){
+    const to=!absorbing&&shown&&!carrying&&h.el.classList.contains('hover')?1:0;
+    if(absorbing||to===h.target) continue;
+    cancelAnimationFrame(h.frame);h.target=to;
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches){h.value=to;drawShape();continue;}
+    const from=h.value,t0=performance.now();
+    const step=now=>{
+      const t=Math.min(1,(now-t0)/360);h.value=from+(to-from)*smooth(t);drawShape();
+      h.frame=t<1?requestAnimationFrame(step):0;
+    };
+    h.frame=requestAnimationFrame(step);
+  }
+}
 // A corner being rounded ({corner, first, second, before, after}), and how close to one the notch is (0 to 1)
 let passage=null, cornerNear=0, pillTransform='';
 
@@ -65,21 +85,43 @@ function drawStraight(){
   shapeSvg.style.transform=pillTransform;
   shapeSvg.setAttribute('width',w);shapeSvg.setAttribute('height',h);
   shapeBody.setAttribute('transform',`matrix(${edgeMatrix(notchEdge,w,h).join(' ')})`);
+  // Passage parts have page-space transforms. Clear them before applying the local edge matrix
+  // to their parent, otherwise left/bottom parts rotate or reflect a second time after a corner.
+  partA.removeAttribute('transform');partB.removeAttribute('transform');
   partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
   const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4);
   const armR=SHAPE.arm+(F+SHAPE.armStroke-SHAPE.arm)*(1-out), stroke=SHAPE.armStroke*grown;
-  const arc=(cx,a0,hidden)=>{
-    if(hidden||grown<.5) return '';
-    const t0=a0*Math.PI/180, t1=t0+Math.PI/2;
-    return `M${n(cx+armR*Math.cos(t0))} ${n(F+armR*Math.sin(t0))}A${n(armR)} ${n(armR)} 0 0 1 ${n(cx+armR*Math.cos(t1))} ${n(F+armR*Math.sin(t1))}`;
-  };
-  armStart.setAttribute('d',arc(u0-F,-90,moveHandle.classList.contains('hover')||!showMove));
-  armEnd.setAttribute('d',arc(u1+F,180,orb.classList.contains('hover')));
-  for(const a of [armStart,armEnd]) a.setAttribute('stroke-width',n(stroke));
+  handles.forEach((h,i)=>{
+    const cx=i?u1+F:u0-F, mid=(i?225:-45)*Math.PI/180, disc=h.value;
+    necks[i].removeAttribute('d');
+    if((!i&&!showMove)||grown<.5){h.ink.removeAttribute('d');return;}
+    const onto=smooth((1-disc)/.55), half=Math.PI/4*smooth(((1-disc)-.08)/.82);
+    const radius=armR, shift=radius*(1-onto);
+    // During absorption the disc follows the flare's midpoint into solid black.
+    const home=absorbing?smooth(1-out):0;
+    const centreRadius=shift*(1-home)+(radius+F+SHAPE.armStroke)*home*disc;
+    const sx=-centreRadius*Math.cos(mid), sy=-centreRadius*Math.sin(mid);
+    const points=[];
+    for(let j=0;j<=32;j++){
+      const angle=mid-half+2*half*j/32;
+      points.push(`${j?'L':'M'}${n(cx+radius*Math.cos(angle)+sx)} ${n(F+radius*Math.sin(angle)+sy)}`);
+    }
+    h.ink.setAttribute('d',points.join(''));
+    const width=(38+(stroke-38)*smooth((1-disc)/.8))*(1-.72*home);
+    h.ink.setAttribute('stroke-width',n(width));
+    if(absorbing&&disc>.01&&home>.01&&home<.99){
+      const ax=cx+(F+stroke)*Math.cos(mid), ay=F+(F+stroke)*Math.sin(mid);
+      const bx=cx+radius*Math.cos(mid)+sx, by=F+radius*Math.sin(mid)+sy;
+      necks[i].setAttribute('d',`M${n(ax)} ${n(ay)}L${n(bx)} ${n(by)}`);
+      necks[i].setAttribute('stroke-width',n(width*smooth(home/.22)*.65));
+    }
+  });
   // Goo while an arm is dividing or going back in: strong on the flare, gone by the time it is at its place
   const dividing=out>.01&&out<.97?SHAPE.armStroke*.55*(1-smooth((out-.35)/.6)):0;
-  setGoo(dividing,-300,-300,L+600,d+600);
+  const morphBlur=Math.max(...handles.map(h=>4*4*h.value*(1-h.value)));
+  const mergeBlur=absorbing&&handles.some(h=>h.value>.01)?5*smooth((1-out)/.2):0;
+  setGoo(Math.max(dividing,morphBlur,mergeBlur),-300,-300,L+600,d+600);
 }
 
 /* Round a corner: the part still on the edge it is leaving, shortening, and the part on the edge it is
@@ -109,6 +151,7 @@ function drawPassage(){
   part(partA,first,before,after,atStart[first]);
   part(partB,second,after,before,atStart[second]);
   armStart.removeAttribute('d'); armEnd.removeAttribute('d');
+  for(const neck of necks) neck.removeAttribute('d');
   const share=Math.min(1,4*Math.min(before,after)/L), blur=D*.22*share*share*(3-2*share);
   const cx=corner==='tr'||corner==='br'?W:0, cy=corner==='br'||corner==='bl'?H:0;
   setGoo(blur,cx-L-120,cy-L-120,2*L+240,2*L+240);
@@ -122,6 +165,8 @@ function setOpenness(v){ openness=v; document.getElementById('root').style.setPr
 function openShape(){
   cancelAnimationFrame(openFrame); openFrame=0;
   cancelAnimationFrame(armsFrame); armsOut=0;
+  absorbing=false;
+  for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;h.value=0;h.target=0;}
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=1; setOpenness(1); return; }
   openVelocity=0; openLast=0; setOpenness(0);
   const omega=2*Math.PI/0.62, zeta=0.72;
@@ -139,11 +184,19 @@ function openShape(){
 // Arms out to `to` over `seconds`: out easing off as they arrive, back in accelerating as they are taken in
 function moveArms(to,seconds,ease=t=>t*t){
   cancelAnimationFrame(armsFrame);
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=to; drawShape(); return; }
+  absorbing=to===0;
+  if(absorbing) for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;}
+  else morphHandles();
+  const finish=()=>{
+    if(absorbing){for(const h of handles){h.value=0;h.target=0;}absorbing=false;}
+    morphHandles();drawShape();
+  };
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=to;finish();return; }
   const from=armsOut, t0=performance.now();
   const step=now=>{
     const t=Math.min(1,(now-t0)/(seconds*1000)); armsOut=from+(to-from)*ease(t); drawShape();
     armsFrame=t<1?requestAnimationFrame(step):0;
+    if(t===1) finish();
   };
   armsFrame=requestAnimationFrame(step);
 }

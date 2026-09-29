@@ -134,7 +134,7 @@ function hide() {
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); broadcast('ui_flags', flags());
   // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
-  setTimeout(() => { if (!visible) { place(); phase = 'hidden'; } }, 300);
+  setTimeout(() => { if (!visible) { place(); phase = 'hidden'; } }, 460);
 }
 function nearestEdge(point) {
   const b = monitor.bounds;

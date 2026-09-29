@@ -2,12 +2,13 @@
 :root,:root[data-theme="light"]{--pill:#000;--edge:#000;--ink:#fff;--ink-2:#e8e8ea;--card:#080808;--ink-3:#ccc;--ink-4:#bbb;--bar:#292929;--track:#303030;--hole:#252525}
 /* Leaving, the notch slides away past the screen edge in one piece, accelerating. */
 body{--stow:96px 0}body[data-edge="left"]{--stow:-96px 0}body[data-edge="top"]{--stow:0 -96px}body[data-edge="bottom"]{--stow:0 96px}
-#root{translate:var(--stow);transition:translate .24s cubic-bezier(.55,0,.8,.3)}
+#root{translate:var(--stow);transition:translate .24s cubic-bezier(.55,0,.8,.3) .18s}
 #root.visible{translate:0 0;transition:none}
 /* The black is shape.js's SVG outline; the pill box only lays out the rings and takes the pointer.
    Arriving, the outline wells out of the edge on a spring (--open, 0 to a little past 1) and the rings ride
    out on it, from about half the notch's depth toward the edge. */
 #shape{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;fill:var(--pill)}
+#pill,body.folded #pill{clip-path:none}
 #pill{background:transparent!important;border:0!important;--ride-x:1;--ride-y:0}
 #pill::before,#pill::after{display:none}
 body[data-edge="left"] #pill{--ride-x:-1}body[data-edge="top"] #pill{--ride-x:0;--ride-y:-1}body[data-edge="bottom"] #pill{--ride-x:0;--ride-y:1}
@@ -24,13 +25,14 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
    Disc and glyph are sized to the notch's own rings (56 px) rather than the Mac's larger orb. */
 .handle{z-index:4;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;appearance:none}
 .handle:focus-visible{outline:1px solid #aaa;outline-offset:-4px;border-radius:50%}
-.h-disc{width:38px;height:38px;margin:-19px 0 0 -19px}
+.h-disc{display:none}
 .h-glyph{width:18px;height:18px;margin:-9px 0 0 -9px}
 #move{cursor:grab}#move.armed{cursor:grabbing}
 /* The resting arms are drawn with the notch (shape.js #shape .arm), so they can bud out of its flares;
-   the handles keep their disc and glyph. Carrying the notch, those are taken back in too. */
+   their discs share the same SVG and goo filter, with HTML glyphs above the ink. */
 .h-rest{display:none}
-#shape .arm{fill:none;stroke:var(--pill);stroke-linecap:round}
+#shape .arm,#shape .neck{fill:none;stroke:var(--pill);stroke-linecap:round;stroke-linejoin:round}
+#root:not(.visible) .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .18s ease-in}
 #root.carrying .handle .h-disc,#root.carrying .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .2s ease-in}
 #card{z-index:2}#tail{z-index:1}
 /* The card comes out of the notch: a short fade and an 8 px travel away from the edge, once per opening */
