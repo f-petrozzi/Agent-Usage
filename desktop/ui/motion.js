@@ -42,13 +42,17 @@ function animate(now){
 function loadAccounts(value){agentAccounts=value||[];renderRing();if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
 window.agentUsage.on('agent_accounts',loadAccounts);
 invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
-window.agentUsage.on('layout',value=>{layout=value;window.agentTracking=value.tracking;setShown(!!value.visible);aim(value.edge,value.along,position===null);});
+window.agentUsage.on('layout',value=>{
+  layout=value;window.agentTracking=value.tracking;
+  const appearing=!!value.visible&&!shown; // arrives just before `appear`: place it now, never glide in from where it was hidden
+  aim(value.edge,value.along,position===null||appearing);setShown(!!value.visible,value.edge);
+});
 window.agentUsage.on('edge_cursor',value=>{
   window.agentTracking=true;layout.edge=value.edge;
   layout.along=['top','bottom'].includes(value.edge)?value.x/layout.scale/innerWidth:value.y/layout.scale/innerHeight;
   hideCard();aim(value.edge,layout.along);
 });
-window.agentUsage.on('appear',()=>{position=null;setShown(true);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
+window.agentUsage.on('appear',()=>{position=null;setShown(true,layout.edge);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
 window.agentUsage.on('disappear',()=>{hideCard();setShown(false);});
 window.agentUsage.on('release',()=>{window.agentTracking=false;aim(layout.edge,layout.along);});
 window.addEventListener('resize',()=>aim(layout.edge,layout.along,true));

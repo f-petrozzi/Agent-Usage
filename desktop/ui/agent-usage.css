@@ -6,6 +6,8 @@
 #pill{max-height:calc(100vh - 110px);max-width:calc(100vw - 110px);transition:border-radius .18s ease}
 /* The clip springs only while folding or unfolding, so an edge change mid-glide does not tween the fillets */
 body.fold-motion #pill{transition:clip-path .36s cubic-bezier(.32,.72,.24,1),border-radius .18s ease}
+/* Held for one style flush while the folded notch is moved to the edge it will open from */
+body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:none!important}
 #pill .cell{flex-shrink:0}
 #card{width:310px!important;max-width:calc(100vw - 110px)!important;max-height:calc(100vh - 24px);font-size:13px;margin:0}
 #rest{display:none!important}
@@ -16,7 +18,19 @@ body.fold-motion #pill{transition:clip-path .36s cubic-bezier(.32,.72,.24,1),bor
 .handle:focus-visible{outline:1px solid #aaa;outline-offset:-4px;border-radius:50%}
 .h-glyph.control-icon{fill:none;stroke:var(--ink-2);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 #move{cursor:grab}#move.armed{cursor:grabbing}
+/* No resting arcs beside the fillets: next to the curve they read as a second contour stopping short of
+   the screen edge. The handles surface small while the pointer is on the notch and bloom under it. */
+.h-rest{display:none}
+body.pointer-in .handle:not(.hover) .h-disc{opacity:.9;transform:scale(.72)}
+body.pointer-in .handle:not(.hover) .h-glyph{opacity:.55;transform:rotate(calc(var(--spins,0) * 360deg)) scale(.72)}
 #card{z-index:2}#tail{z-index:1}
+/* The card comes out of the notch: a short fade and an 8 px travel away from the edge, once per opening */
+#card.show{animation:card-in .2s cubic-bezier(.32,.72,.24,1)}
+#card.show + #tail{animation:tail-in .2s ease-out}
+body{--card-from:8px 0}body[data-edge="left"]{--card-from:-8px 0}body[data-edge="top"]{--card-from:0 -8px}body[data-edge="bottom"]{--card-from:0 8px}
+@keyframes card-in{from{opacity:0;translate:var(--card-from)}}
+@keyframes tail-in{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){#card.show,#card.show + #tail{animation:none}}
 .account-extra{margin-top:12px;border-top:1px solid #252525;padding-top:8px}
 .extra-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:5px 0;background:none;border:0;color:#aaa;font:inherit;font-size:12px;cursor:pointer;text-align:left}
 .extra-toggle svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;transition:transform .22s}

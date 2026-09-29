@@ -46,6 +46,14 @@ Settings live at `%APPDATA%\Agent Usage\settings.json`; the migrated app stays a
 `%LOCALAPPDATA%\AgentUsage`. Sign-in startup can be changed in Settings. Uninstall
 using Windows Installed apps; collector data and settings are retained.
 
+Session arcs (3.0.2) come from one long-lived `agent-usage --watch-sessions`
+over the same WSL or SSH route. A white arc spins while an agent works; a
+yellow ring pulses while Claude waits on you, and the card lists each session.
+Claude state is Claude Code's own `~/.claude/sessions/<pid>.json`, so no hooks
+are installed. Codex state is the open turn in each profile's rollout; Codex
+does not record approval waits, so it only ever shows working. A collector older
+than 3.0.2 leaves the arcs off until you reinstall it.
+
 ## Build and review scope
 
 Dependencies are pinned in `desktop/package-lock.json`. Compile
@@ -75,9 +83,11 @@ reposition, then release to drop. Both controls have full square hit regions
 and a Windows input-helper fallback for overlays that do not receive clicks.
 
 Since 3.0.1 the notch uses CodeNotch's fold as its entrance and exit: it springs
-out of the edge with the rings following a beat apart, and folds back before
-hiding. The controls are CodeNotch's handles again, quarter arcs in the fillet
-pockets that fill into a disc on hover; Settings spins and presses on click.
+out of the edge it opens on, with the rings following a beat apart, and folds
+back before hiding. The fillets taper fully into the screen edge. The Settings
+and Move handles sit in the fillet pockets: they surface small while the pointer
+is on the notch and bloom under it; Settings spins and presses on click. The
+card eases out of the notch, and a ring eases to a new reading.
 
 Cards keep usage and resets visible; hover Account details to expand credits,
 banked resets, expiration dates, and plan information. Click also toggles it.

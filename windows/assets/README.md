@@ -1,5 +1,6 @@
 # App icon
 
-The user-provided `../../docs/agent-usage.png` is the app icon source.
-`agent-usage.png` is its copy, and `agent-usage.ico` contains 16, 24, 32,
-48, 64, 128, and 256 pixel sizes for the Windows executable and shortcuts.
+The notch leaving a screen edge, holding one usage ring. The source is
+`../../desktop/resources/icon.svg`, with `icon-small.svg` drawn for 32 px and
+below. `../../docs/agent-usage.png` and `agent-usage.png` are 1024 px renders;
+`agent-usage.ico` matches `desktop/resources/icon.ico` (16 to 256 px).

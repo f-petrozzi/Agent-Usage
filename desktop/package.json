@@ -1,6 +1,6 @@
 {
   "name": "agent-usage-desktop",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "private": true,
   "description": "Agent Usage with the CodeNotch Windows frontend",
   "author": "Agent Usage contributors",
@@ -37,8 +37,8 @@
     },
     "win": {
       "icon": "resources/icon.ico",
-      "signAndEditExecutable": false,
-      "target": "nsis"
+      "target": "nsis",
+      "signExecutable": false
     },
     "publish": [
       {

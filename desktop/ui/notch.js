@@ -73,7 +73,7 @@ let glmSnap={status:'absent',windows:[],fetched_at:0,note:''};
 let opencodeSnap={status:'absent',windows:[],fetched_at:0,note:''};
 let agSnap={status:'absent',windows:[],fetched_at:0,note:''};
 let glyphs={}; // id → {kind:'mark'|'appicon', url}
-let activity=[]; // working state of the non-Claude providers: {provider,state:'busy'|'waiting',name,detail,since}
+let activity=[]; // live sessions from the collector's feed: {provider,account,state:'busy'|'waiting',name,detail,since}
 /* Which screen edge the notch is pinned to. Rust owns it (it is what placed the window); the page is
    told so it can mirror or rotate itself to match. 'right' is the default and the pre-edge layout. */
 let notchEdge='right';
@@ -666,16 +666,9 @@ function setUiLanguage(lang){
   renderRing();
   if(card&&card.classList.contains('show')) renderCard();
 }
-// "Is it working?" per provider: Claude from the four-state engine, the others from the activity probe. Returns running | attention | idle
-function workState(id){
-  if(id==='claude'){
-    if(stateSnap.agg==='running') return 'running';
-    if(stateSnap.agg==='attention') return 'attention';
-    // The engine cannot see cloud sessions: fall back to the desktop app's network activity
-    if(activity.some(a=>a.provider==='claude'&&a.state==='busy')) return 'running';
-    return 'idle';
-  }
-  const acts=activity.filter(a=>a.provider===id);
+// "Is it working?" per account, from the collector's session feed. Returns running | attention | idle
+function workState(p){
+  const acts=activity.filter(a=>a.account===p.id);
   if(acts.some(a=>a.state==='waiting')) return 'attention';
   if(acts.some(a=>a.state==='busy')) return 'running';
   return 'idle';
@@ -801,11 +794,19 @@ function renderRing(){
     const h=headlineOf(p.snap,p.base);
     let inner=`<circle cx="28" cy="28" r="22" fill="${HOLE}"/><circle cx="28" cy="28" r="25" fill="none" stroke="${TRACK}" stroke-width="5"/>`;
     wrap.classList.toggle('pressed',!!refreshing[p.id]);
-    reading.innerHTML=h && h.count==null?svgArc(25,Math.min(h.used,1),tone(h.used),5):'';
+    const used=h&&h.count==null?Math.min(h.used,1):null, prev=reading.dataset.used?Number(reading.dataset.used):null;
+    reading.innerHTML=used==null?'':svgArc(25,used,tone(used),5);
+    reading.dataset.used=used==null?'':String(used);
+    // A new reading while the notch is open: the arc eases from the old value, so what changed is visible
+    const arc=reading.querySelector('circle');
+    if(arc&&shown&&prev!=null&&Math.abs(used-prev)>=0.005&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+      const C=2*Math.PI*25, dash=f=>`${(C*f).toFixed(2)} ${C.toFixed(2)}`;
+      arc.animate([{strokeDasharray:dash(prev),stroke:tone(prev)},{strokeDasharray:dash(used),stroke:tone(used)}],{duration:700,easing:'cubic-bezier(.32,.72,.24,1)'});
+    }
     if(weeklyRing!=='off'){ // the week, thinner and at its own radius, in its own colour: a session at 12% beside a week at 91% is the case this exists for
       const wk=weeklyOf(p.snap,p.base);
       // Inside, it shares the gap with the working indicator, so it stands down while that is showing
-      const taken=weeklyRing==='inside'&&workState(p.base)!=='idle';
+      const taken=weeklyRing==='inside'&&workState(p)!=='idle';
       if(wk&&(!h||wk.id!==h.id)&&!taken){
         const r=weeklyRing==='inside'?16:31;
         inner+=`<circle cx="28" cy="28" r="${r}" fill="none" stroke="${TRACK}" stroke-width="2.4" opacity="0.7"/>`
@@ -815,7 +816,7 @@ function renderRing(){
     svg.innerHTML=inner;
     { // thin inner arc: spinning white = working, yellow pulse = waiting on you (one animation for all four, different sources)
       // Its own layer, so a stale reading can dim around it without dimming it: see `.ringwrap.stale`
-      const ws=workState(p.base);
+      const ws=workState(p);
       if(ws==='running') activity.innerHTML=`<g class="arc-spin">${svgArc(19,0.28,INK,2.5)}</g>`;
       else if(ws==='attention') activity.innerHTML=`<g class="arc-pulse"><circle cx="28" cy="28" r="19" fill="none" stroke="${WATCH}" stroke-width="2.5"/></g>`;
       else activity.innerHTML='';
@@ -854,7 +855,6 @@ function ago(ms){
   return ui().ago(m);
 }
 
-const STATE_DOT={running:INK,attention:WATCH,done:AMPLE,idle:TRACK};
 // The card is clipped, not scrolled, so rows past this would push its title off the top; the rest are counted, as on the Mac
 const SESSION_ROWS=5;
 function moreRow(n){ return n>0?`<div class="s-more">${ui().andMore(n)}</div>`:''; }
@@ -904,18 +904,8 @@ function renderCard(){
     <button class="extra-toggle" type="button" aria-expanded="false">Account details <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 5 5-5 5"/></svg></button>
     <div class="extra-fold"><div class="extra-content">${snap.details.map(detail=>`<div class="extra-row">${esc(detail)}</div>`).join('')}</div></div>
   </section>`;
-  if(p.base==='claude'){ // live sessions (a full list with jump-to-session is a follow-up)
-    const act=stateSnap.sessions.filter(s=>s.state!=='idle');
-    if(act.length){
-      html+=`<div class="c-sessions">`;
-      for(const s of act.slice(0,SESSION_ROWS)){
-        html+=`<div class="s-row"><span class="s-dot" style="background:${STATE_DOT[s.state]||'#666'}"></span>${esc(s.title)}</div>`;
-      }
-      html+=moreRow(act.length-SESSION_ROWS)+`</div>`;
-    }
-  }else{ // other providers: detected activity rows (Cursor reports state; Codex/Antigravity are inferred from recent writes)
-    // Waiting before busy, newest first within each, so what gets cut is what matters least
-    const acts=activity.filter(a=>a.provider===p.base).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
+  { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
+    const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
     if(acts.length){
       html+=`<div class="c-sessions">`;
       for(const a of acts.slice(0,SESSION_ROWS)){
@@ -1217,6 +1207,15 @@ document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_m
    so there is no resting pill to hover open. The pill folds into the edge as it hides and springs open
    as it appears, the rings following a beat apart. Nothing but appear/disappear decides it. */
 let shown=false, foldMotionTimer=0;
+/* Lay the folded notch out on the edge it is about to open from, transitions off, so it unfolds out of
+   that edge. Folded on another edge (or at startup, on the default one) it would otherwise open from
+   that edge's geometry, which reads as sliding in from the middle of the screen. */
+function settleOnEdge(edge){
+  document.body.classList.add('no-motion');
+  if(edge&&edge!==notchEdge){ applyEdge(edge); renderRing(); }
+  void pill.offsetWidth; // commit the folded layout before anything animates from it
+  document.body.classList.remove('no-motion');
+}
 function setFolded(f){
   if(f===folded) return;
   folded=f;
@@ -1226,18 +1225,20 @@ function setFolded(f){
 }
 function unfold(){ clearTimeout(foldTimer); if(shown) setFolded(false); }
 function scheduleFold(){ clearTimeout(foldTimer); setFolded(!shown); }
-function setShown(on){
+function setShown(on,edge){
   if(on===shown) return;
   shown=on;
+  if(on) settleOnEdge(edge);
   if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
     document.body.classList.add('fold-motion');clearTimeout(foldMotionTimer);
     foldMotionTimer=setTimeout(()=>document.body.classList.remove('fold-motion'),420);
   }
   setFolded(!on);
+  if(!on) document.body.classList.remove('pointer-in');
   document.getElementById('root').classList.toggle('visible',on);
 }
 function applyUiFlags(){ scheduleFold(); }
-listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
+listen('notch_pointer',e=>{ pointerIn=e.payload===true; document.body.classList.toggle('pointer-in',pointerIn&&shown); if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{
   if(e.payload==='dark'||e.payload==='light') document.body.dataset.behind=e.payload;

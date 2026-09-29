@@ -5,7 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { createUpdates } = require('./updates.cjs');
-const { Collector, validHost } = require('./collector.cjs');
+const { Collector, SessionFeed, validHost } = require('./collector.cjs');
 
 app.setName('Agent Usage');
 app.setPath('userData', path.join(app.getPath('appData'), 'Agent Usage'));
@@ -16,7 +16,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
     require('electron').dialog.showErrorBox('Agent Usage could not start', error.message); app.quit();
   });
 }
-let win, settings, tray, input, collector, config, configPath, timer, updates;
+let win, settings, tray, input, collector, feed, config, configPath, timer, updates;
 let visible = false, held = false, escape = false, mouseDown = false, carrying = false, dismissed = false;
 let pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
@@ -87,6 +87,10 @@ function restartCollector() {
   collector.on('change', value => { broadcast('agent_accounts', value); broadcast('glyphs', glyphs()); broadcast('state', stateSnapshot()); });
   broadcast('agent_accounts', accounts());
   collector.refresh();
+  feed?.close();
+  feed = new SessionFeed(() => config);
+  feed.on('change', value => broadcast('activity', value));
+  feed.start();
 }
 function useMonitor(display) {
   monitor = display; hot = []; controls = {}; lastCursor = ''; inside = false; config.display = String(display.id);
@@ -273,7 +277,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_usage': return accounts().find(a => a.base === 'claude')?.snap || absent();
     case 'get_codex': return accounts().find(a => a.base === 'codex')?.snap || absent();
     case 'get_cursor': case 'get_grok': case 'get_glm': case 'get_opencode': case 'get_antigravity': return absent();
-    case 'get_activity': return [];
+    case 'get_activity': return feed?.sessions || [];
     case 'get_claude_auth': return { available: false, busy: false, can_sign_in: false };
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
@@ -328,11 +332,10 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'show_notch_menu': return contextMenu();
     case 'begin_move': case 'drag_begin': beginMove(); return null;
     case 'open_data_dir': await shell.openPath(app.getPath('userData')); return null;
-    case 'open_author_page': await shell.openExternal('https://github.com/vinzdg/codenotch'); return null;
     case 'quit_app': app.quit(); return null;
     case 'report_dpr': case 'log_js': case 'notch_hidden': return null;
     default: throw new Error('This feature is not supplied by the remote collector');
   }
 });
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { clearInterval(timer); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); updates?.close(); });
+app.on('before-quit', () => { clearInterval(timer); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });

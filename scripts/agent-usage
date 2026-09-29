@@ -740,6 +740,150 @@ def latest_activity(codex_homes: list[Path], include_claude: bool) -> int | None
     return newest
 
 
+# ------------------------------------------------------------- sessions ----
+#
+# Live "is it working?" state for the notch's session arcs, streamed by
+# --watch-sessions. Only local files are read, never a credential:
+#
+# * Claude - Claude Code keeps <config>/sessions/<pid>.json up to date with
+#            status busy | waiting | idle. The neighbouring *.key files hold
+#            peer tokens and are never opened. A file whose process is gone,
+#            or whose pid now belongs to another process, is left behind by a
+#            crash and ignored.
+# * Codex  - each turn appends task_started, then task_complete or
+#            turn_aborted, to the session's rollout. Codex does not record
+#            approval waits there, so Codex only ever reports busy.
+
+SESSION_POLL_SECONDS = 1.5
+SESSION_HEARTBEAT_SECONDS = 15.0
+CODEX_QUIET_SECONDS = 30 * 60  # a busy rollout this quiet is a turn that died without closing
+SESSION_TAIL_BYTES = 256 * 1024
+CLAUDE_STATES = {"busy": "busy", "waiting": "waiting"}
+CODEX_TURN_EVENTS = {"task_started": "busy", "task_complete": None, "turn_aborted": None}
+
+
+def _process_matches(pid: Any, proc_start: Any) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    if proc_start is None:
+        return True
+    # Field 22 is the start time; the name in field 2 may contain spaces, so count from its ")"
+    fields = stat[stat.rfind(")") + 2 :].split()
+    return len(fields) > 19 and fields[19] == str(proc_start)
+
+
+def claude_sessions(config_dir: Path) -> list[dict[str, Any]]:
+    sessions: list[dict[str, Any]] = []
+    for path in sorted((config_dir / "sessions").glob("*.json"))[:64]:
+        try:
+            if path.stat().st_size > 64 * 1024:
+                continue
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        state = CLAUDE_STATES.get(record.get("status"))
+        if state is None or not _process_matches(record.get("pid"), record.get("procStart")):
+            continue
+        since = record.get("statusUpdatedAt")
+        waiting_for = record.get("waitingFor")
+        sessions.append({
+            "provider": "claude",
+            "account": "claude",
+            "id": _short(record.get("sessionId") or path.stem),
+            "name": _short(record.get("name") or Path(str(record.get("cwd") or "Claude")).name),
+            "state": state,
+            "waitingFor": _short(waiting_for) if state == "waiting" and isinstance(waiting_for, str) else None,
+            "since": int(since / 1000) if isinstance(since, (int, float)) else None,
+        })
+    return sessions
+
+
+def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
+    """Return (state, turn start, cwd) from the tail of one rollout."""
+    size = path.stat().st_size
+    with path.open("rb") as handle:
+        first = handle.readline(64 * 1024)
+        handle.seek(max(0, size - SESSION_TAIL_BYTES))
+        tail = handle.read()
+    cwd = None
+    try:
+        meta = json.loads(first)
+        if meta.get("type") == "session_meta" and isinstance(meta.get("payload"), dict):
+            cwd = meta["payload"].get("cwd")
+    except ValueError:
+        pass
+    for line in reversed(tail.splitlines()):
+        if b'"event_msg"' not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue  # the first line of the window may be cut
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        kind = payload.get("type") if isinstance(payload, dict) else None
+        if kind in CODEX_TURN_EVENTS:
+            state = CODEX_TURN_EVENTS[kind]
+            started = _parse_iso(entry.get("timestamp")) if state else None
+            return state, started, cwd if isinstance(cwd, str) else None
+    return None, None, None
+
+
+def codex_sessions(profiles: list[tuple[str, Path]], now: float) -> list[dict[str, Any]]:
+    sessions: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    days = {dt.datetime.fromtimestamp(now - offset).strftime("%Y/%m/%d") for offset in (0, 86400)}
+    for name, home in profiles:
+        for day in sorted(days):
+            for path in sorted((home / "sessions" / day).glob("rollout-*.jsonl")):
+                try:
+                    real = path.resolve()
+                    if real in seen or now - path.stat().st_mtime > CODEX_QUIET_SECONDS:
+                        continue
+                    seen.add(real)
+                    state, started, cwd = _codex_turn_state(path)
+                except OSError:
+                    continue
+                if state is None:
+                    continue
+                sessions.append({
+                    "provider": "codex",
+                    "account": f"codex:{name}",
+                    "id": _short(path.stem),
+                    "name": _short(Path(cwd).name if cwd else "Codex"),
+                    "state": state,
+                    "waitingFor": None,
+                    "since": started,
+                })
+    return sessions
+
+
+def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool) -> int:
+    """Print one JSON line per change, and at least every heartbeat, until the reader goes away."""
+    last_sent, last_line = 0.0, ""
+    while True:
+        now = time.time()
+        sessions = (claude_sessions(claude_config_dir()) if include_claude else []) + codex_sessions(profiles, now)
+        sessions.sort(key=lambda s: (s["provider"], s["account"], s["id"]))
+        line = json.dumps({"schema": 1, "sessions": sessions[:40]}, separators=(",", ":"))
+        if line != last_line or now - last_sent >= SESSION_HEARTBEAT_SECONDS:
+            try:
+                sys.stdout.write(line + "\n")
+                sys.stdout.flush()
+            except (BrokenPipeError, ValueError):
+                # The SSH or WSL session that asked has ended; point stdout at nothing so the
+                # interpreter's own flush on the way out does not report the broken pipe again
+                os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+                return 0
+            last_sent, last_line = now, line
+        time.sleep(SESSION_POLL_SECONDS)
+
+
 # ----------------------------------------------------------------- main ----
 
 
@@ -866,6 +1010,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=20.0, help="per-provider timeout")
     parser.add_argument("--compact", action="store_true", help="emit JSON without indentation")
     parser.add_argument("--self-test", action="store_true", help="check the parsers and exit")
+    parser.add_argument(
+        "--watch-sessions",
+        action="store_true",
+        help="stream live session state as JSON lines instead of reading usage",
+    )
     return parser.parse_args(argv)
 
 
@@ -880,6 +1029,11 @@ def main(argv: list[str] | None = None) -> int:
         include_claude = not args.no_claude
         if not profiles and not include_claude:
             raise UsageError("Nothing to read: no Codex accounts and Claude is disabled.")
+        if args.watch_sessions:
+            try:
+                return watch_sessions(profiles, include_claude)
+            except KeyboardInterrupt:
+                return 0
         document = collect(profiles, include_claude, args.timeout)
     except UsageError as exc:
         print(f"Error: {exc}", file=sys.stderr)

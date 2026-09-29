@@ -1,17 +1,26 @@
 'use strict';
-const { execFile } = require('node:child_process');
+const { execFile, spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const crypto = require('node:crypto');
 
 const clean = (value, limit = 500) => String(value ?? '').replace(/\s*\u2014\s*/g, '. ').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').slice(0, limit);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const validHost = value => typeof value === 'string' && value.length <= 120 && /^[A-Za-z0-9_][A-Za-z0-9._-]*(?:@[A-Za-z0-9_][A-Za-z0-9._-]*)?$/.test(value);
+// The app's id for a collector account; the session feed names accounts the same way the usage snapshot does
+const accountId = (base, raw) => base + '_' + crypto.createHash('sha256').update(String(raw)).digest('hex').slice(0, 12);
+// [executable, args] reaching the collector over WSL or SSH, or null when no SSH host is set
+function collectorCommand(cfg, flags, sshOptions = []) {
+  if (cfg.source !== 'ssh') return ['wsl.exe', ['--exec', 'sh', '-lc', `exec "$HOME/.local/bin/agent-usage" ${flags}`]];
+  if (!validHost(cfg.sshTarget)) return null;
+  return ['ssh.exe', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', ...sshOptions,
+    cfg.sshTarget, `~/.local/bin/agent-usage ${flags}`]];
+}
 function normalize(raw) {
   if (raw.schema !== 2 || !Array.isArray(raw.accounts)) throw new Error('Unsupported collector snapshot');
   const timestamp = finite(raw.generatedAt) ? raw.generatedAt * 1000 : Date.now();
   return raw.accounts.slice(0, 40).map((a, index) => {
     const base = a.provider === 'claude' ? 'claude' : 'codex';
-    const id = base + '_' + crypto.createHash('sha256').update(String(a.id || index)).digest('hex').slice(0, 12);
+    const id = accountId(base, a.id || index);
     const name = clean(base === 'codex' ? `Codex ${a.label || ''}`.trim() : a.label || 'Claude', 100);
     const details = [];
     if (a.plan) details.push(clean(a.plan, 100));
@@ -42,14 +51,9 @@ class Collector extends EventEmitter {
     if (this.busy || this.closed) return false;
     this.busy = true;
     clearTimeout(this.timer);
-    const cfg = this.config();
-    let executable = 'wsl.exe', args = ['--exec', 'sh', '-lc', 'exec "$HOME/.local/bin/agent-usage" --timeout 20 --compact'];
-    if (cfg.source === 'ssh') {
-      if (!validHost(cfg.sshTarget)) { this.busy = false; this.failed(new Error('Set a valid collector SSH host in Settings → General')); return false; }
-      executable = 'ssh.exe';
-      args = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', cfg.sshTarget,
-        '~/.local/bin/agent-usage --timeout 20 --compact'];
-    }
+    const command = collectorCommand(this.config(), '--timeout 20 --compact');
+    if (!command) { this.busy = false; this.failed(new Error('Set a valid collector SSH host in Settings → General')); return false; }
+    const [executable, args] = command;
     this.child = execFile(executable, args, { windowsHide: true, timeout: 90000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
       this.child = null; this.busy = false;
       if (this.closed) return;
@@ -74,4 +78,65 @@ class Collector extends EventEmitter {
   schedule(delay) { this.timer = setTimeout(() => this.refresh(), delay); }
   close() { this.closed = true; clearTimeout(this.timer); this.child?.kill(); }
 }
-module.exports = { Collector, validHost };
+// One line of `agent-usage --watch-sessions`: the sessions working or waiting right now, as notch activity
+function parseSessions(line) {
+  const raw = JSON.parse(line);
+  if (raw.schema !== 1 || !Array.isArray(raw.sessions)) throw new Error('Unsupported session feed');
+  return raw.sessions.slice(0, 40)
+    .filter(s => s && ['claude', 'codex'].includes(s.provider) && ['busy', 'waiting'].includes(s.state) && typeof s.account === 'string')
+    .map(s => {
+      const reason = s.state === 'waiting' && typeof s.waitingFor === 'string' ? clean(s.waitingFor, 60) : '';
+      return { provider: s.provider, account: accountId(s.provider, s.account), state: s.state,
+        name: clean(s.name || (s.provider === 'claude' ? 'Claude' : 'Codex'), 80),
+        detail: s.state === 'busy' ? 'Working' : reason ? reason[0].toUpperCase() + reason.slice(1) : 'Waiting',
+        since: finite(s.since) ? s.since * 1000 : 0 };
+    });
+}
+// A long-lived collector process streaming session state; reconnects with backoff and never shows stale arcs
+class SessionFeed extends EventEmitter {
+  constructor(config, command = cfg => collectorCommand(cfg, '--watch-sessions', ['-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3'])) {
+    super(); this.config = config; this.command = command; this.sessions = []; this.failures = 0; this.closed = false; this.child = null;
+  }
+  start() {
+    if (this.closed || this.child) return;
+    const command = this.command(this.config());
+    if (!command) return this.retry(60000);
+    let buffer = '', stderr = '', done = false;
+    const child = this.child = spawn(command[0], command[1], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const end = () => { if (!done) { done = true; this.ended(child, stderr); } };
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', data => {
+      buffer += data;
+      let at;
+      while ((at = buffer.indexOf('\n')) >= 0) { this.line(buffer.slice(0, at)); buffer = buffer.slice(at + 1); }
+      if (buffer.length > 256 * 1024) child.kill();
+    });
+    child.stderr.on('data', data => { stderr = (stderr + data).slice(-2000); });
+    child.on('error', end);
+    child.on('close', end);
+    this.watchdog();
+  }
+  line(text) {
+    let sessions;
+    try { sessions = parseSessions(text); } catch { return; }
+    this.failures = 0; this.watchdog();
+    this.set(sessions);
+  }
+  set(sessions) {
+    if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return;
+    this.sessions = sessions; this.emit('change', sessions);
+  }
+  // The collector writes at least every 15 s; silence past that is a connection that died quietly
+  watchdog() { clearTimeout(this.quiet); this.quiet = setTimeout(() => this.child?.kill(), 45000); }
+  ended(child, stderr) {
+    if (this.child === child) this.child = null;
+    clearTimeout(this.quiet); this.set([]);
+    if (this.closed) return;
+    // A collector from before --watch-sessions: check back rarely rather than reconnecting every few seconds
+    if (/unrecognized arguments/.test(stderr)) return this.retry(600000);
+    this.retry(Math.min(60000, 3000 * 2 ** Math.min(this.failures++, 5)));
+  }
+  retry(delay) { clearTimeout(this.timer); this.timer = setTimeout(() => this.start(), delay); }
+  close() { this.closed = true; clearTimeout(this.timer); clearTimeout(this.quiet); this.child?.kill(); }
+}
+module.exports = { Collector, SessionFeed, parseSessions, accountId, validHost };

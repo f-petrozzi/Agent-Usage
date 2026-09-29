@@ -10,7 +10,8 @@
      a soft fill with an accent bar for the selected section, outlined toggles, the system accent.
      The panel is translucent so Mica shows through; without Mica, body.solid draws the same tones. */
   :root{
-    --accent:#0a7aff; --on-accent:#ffffff;
+    /* Colour means usage in this app, so the chrome itself is black and white: the selected state is ink */
+    --accent:#f2f2f4; --on-accent:#000000;
     --text:#f2f2f4; --text2:rgba(235,235,245,.62); --text3:rgba(235,235,245,.38);
     --pane:rgba(255,255,255,.13); --side:rgba(0,0,0,.40); --group:rgba(255,255,255,.06);
     --line:rgba(255,255,255,.08); --hi:rgba(255,255,255,.05); --sep:rgba(255,255,255,.08);
@@ -21,6 +22,7 @@
   /* Rust says which appearance this is (get_theme_resolved), so a forced Light or Dark lands here
      whatever Windows is set to. WebView2's own scheme does not follow a live theme change. */
   :root[data-theme="light"]{
+      --accent:#1d1d1f; --on-accent:#ffffff;
       --text:#1d1d1f; --text2:rgba(60,60,67,.70); --text3:rgba(60,60,67,.45);
       --pane:rgba(255,255,255,.50); --side:rgba(0,0,0,.06); --group:rgba(255,255,255,.72);
       --line:rgba(0,0,0,.07); --hi:rgba(255,255,255,.80); --sep:rgba(0,0,0,.07);
@@ -50,12 +52,12 @@
   .row:hover{background:var(--hover)}
   .row.sel{background:var(--sel-soft)}
   .row.sel::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--accent)}
-  .badge{width:20px;height:20px;border-radius:5.5px;display:grid;place-items:center;flex:none}
-  .badge svg{width:12px;height:12px;fill:#fff}
-  .b-blue{background:linear-gradient(#4fa6ff,#0a6cff)}
-  .b-indigo{background:linear-gradient(#8784ff,#5856d6)}
-  .b-gray{background:linear-gradient(#a6a6ab,#727277)}
-  .b-red{background:linear-gradient(#ff6d62,#dd3328)}
+  /* Line icons in the notch's own vocabulary: a reading, the notch leaving the edge, its settings sliders */
+  .ico{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;color:var(--text2)}
+  .ico .dim{opacity:.35}
+  .ico .solid{fill:currentColor;stroke:none}
+  .row.sel .ico,.row:hover .ico{color:var(--text)}
+  #quit:hover .ico{color:var(--danger)}
 
   /* ---- pane ---- */
   #pane{flex:1;display:flex;flex-direction:column;min-width:0}
@@ -80,14 +82,14 @@
      still on the right, rather than running out of the window */
   .item:has(> .seg){flex-wrap:wrap;row-gap:8px}
   .item > .seg{margin-left:auto}
-  .item.cap{min-height:0;padding:8px 12px;font-size:12px;color:var(--text2);display:block}
-  .item .hint{font-size:12px;color:var(--text2)}
-  .value{color:var(--text2)}
+  .value{color:var(--text2);font-variant-numeric:tabular-nums}
 
   /* ---- account rows ---- */
   .acct{padding:9px 12px}
   .acct-line{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px}
   .acct-name{display:flex;align-items:center;gap:10px;min-width:0}
+  .acct-line .glyph{margin-right:10px}
+  .acct-label{display:flex;align-items:center;min-width:0}
   .acct.off .acct-name{color:var(--text2)}
   .acct.off .glyph{opacity:.5}
   .acct-detail{margin:4px 0 0 26px;font-size:12px;color:var(--text2)}
@@ -98,22 +100,30 @@
   .glyph.letter{font-size:10px;font-weight:700;background:var(--seg-bg);border-radius:4px}
 
   /* ---- controls: Windows 11 cues in the system accent ---- */
-  .switch{width:40px;height:20px;border-radius:10px;border:1px solid var(--text2);background:transparent;position:relative;flex:none;padding:0}
-  .switch::after{content:"";position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:6px;background:var(--text2);transition:left .12s}
-  .switch.on{border-color:transparent;background:var(--accent)}
-  .switch.on::after{left:23px;background:var(--on-accent)}
+  /* The knob travels with a little overshoot and stretches while pressed, so the click is felt */
+  .switch{width:40px;height:22px;border-radius:11px;border:1px solid var(--text3);background:transparent;position:relative;flex:none;padding:0;cursor:pointer;
+    transition:background-color .18s ease,border-color .18s ease}
+  .switch::after{content:"";position:absolute;top:4px;left:4px;width:12px;height:12px;border-radius:6px;background:var(--text2);
+    transition:transform .3s cubic-bezier(.34,1.4,.64,1),width .16s ease,background-color .18s ease}
+  .switch:active::after{width:15px}
+  .switch.on{background:var(--accent);border-color:var(--accent)}
+  .switch.on::after{transform:translateX(18px);background:var(--on-accent)}
+  .switch.on:active::after{transform:translateX(15px)}
   .switch:disabled,.switch.locked{opacity:.5}
-  .seg{display:inline-flex;background:var(--seg-bg);border-radius:7px;padding:2px;gap:2px;flex:none}
-  .seg button{border:0;background:transparent;font-size:13px;padding:3px 14px;border-radius:5px}
+  /* One selection pill slides between the options rather than each button repainting */
+  .seg{position:relative;display:inline-flex;background:var(--seg-bg);border-radius:7px;padding:2px;gap:2px;flex:none}
+  .seg::before{content:"";position:absolute;top:2px;bottom:2px;left:0;width:var(--seg-w,0);transform:translateX(var(--seg-x,0));
+    border-radius:5px;background:var(--accent);transition:transform .3s cubic-bezier(.32,.72,.24,1),width .3s cubic-bezier(.32,.72,.24,1)}
+  .seg:not(.placed)::before{transition:none}
+  .seg button{position:relative;z-index:1;border:0;background:transparent;font-size:13px;padding:3px 14px;border-radius:5px;transition:color .18s ease}
   .seg button:hover:not(.on):not(:disabled){background:var(--hover)}
-  .seg button.on{background:var(--accent);color:var(--on-accent)}
+  .seg button.on{color:var(--on-accent)}
   .seg button:disabled{opacity:.45}
+  @media (prefers-reduced-motion: reduce){.switch,.switch::after,.seg::before,.seg button{transition:none}}
   .btn{border:0;background:var(--btn);font-size:13px;padding:5px 12px;border-radius:6px;flex:none}
   .btn:hover{background:var(--btn-hover)}
   select{font:inherit;font-size:13px;color:var(--text);background:var(--seg-bg);border:0;border-radius:6px;padding:4px 8px}
   select option{color:#000}
-  .link{border:0;background:none;padding:0;color:var(--accent);cursor:pointer;font-size:12px}
-  .link:hover{text-decoration:underline}
 
   #toast{position:fixed;right:18px;bottom:14px;background:var(--side);border:1px solid var(--line);border-radius:8px;
     padding:5px 10px;font-size:12px;color:var(--text2);opacity:0;transition:opacity .3s;pointer-events:none}
@@ -125,11 +135,11 @@
 <div id="app">
   <nav id="side" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
     <div class="band" data-tauri-drag-region></div>
-    <button class="row" id="tab-accounts" role="tab" aria-controls="pane-accounts" aria-selected="false" tabindex="-1"><span class="badge b-blue"><svg viewBox="0 0 12 12"><circle cx="6" cy="4" r="2.4"/><path d="M1.5 11.2c.4-2.5 2.3-3.9 4.5-3.9s4.1 1.4 4.5 3.9z"/></svg></span><span>Accounts</span></button>
-    <button class="row" id="tab-appearance" role="tab" aria-controls="pane-appearance" aria-selected="false" tabindex="-1"><span class="badge b-indigo"><svg viewBox="0 0 12 12"><path d="M10 .9a.8.8 0 0 1 1.1 1.1L6.4 6.7 5.3 5.6zM4.6 6.3l1.1 1.1c.2 1.9-1.9 3.6-4.7 3.1.9-.4 1.2-1 1.3-1.8.1-1.3 1.1-2.3 2.3-2.4z"/></svg></span><span>Appearance</span></button>
-    <button class="row" id="tab-general" role="tab" aria-controls="pane-general" aria-selected="false" tabindex="-1"><span class="badge b-gray"><svg viewBox="0 0 12 12"><path fill-rule="evenodd" d="M5.1.6h1.8l.3 1.5 1.1.5 1.3-.8 1.3 1.3-.8 1.3.5 1.1 1.5.3v1.8l-1.5.3-.5 1.1.8 1.3-1.3 1.3-1.3-.8-1.1.5-.3 1.5H5.1l-.3-1.5-1.1-.5-1.3.8-1.3-1.3.8-1.3-.5-1.1L.6 6.9V5.1l1.5-.3.5-1.1-.8-1.3 1.3-1.3 1.3.8 1.1-.5zM6 4.1a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8z"/></svg></span><span>General</span></button>
+    <button class="row" id="tab-accounts" role="tab" aria-controls="pane-accounts" aria-selected="false" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" class="dim"/><path d="M8 2.5a5.5 5.5 0 0 1 5.2 7.3"/></svg>Accounts</button>
+    <button class="row" id="tab-appearance" role="tab" aria-controls="pane-appearance" aria-selected="false" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path class="solid" d="M15 1.2c0 1.8-1.2 2.9-2.9 2.9h-1.6A3.6 3.6 0 0 0 6.9 7.7v.6a3.6 3.6 0 0 0 3.6 3.6h1.6c1.7 0 2.9 1.1 2.9 2.9z"/></svg>Appearance</button>
+    <button class="row" id="tab-general" role="tab" aria-controls="pane-general" aria-selected="false" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h3m3 0h5m-11 4h7m3 0h1m-11 4h1m3 0h7"/><circle cx="7" cy="4.5" r="1.5"/><circle cx="11" cy="8.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/></svg>General</button>
     <div class="grow" data-tauri-drag-region></div>
-    <button class="row" id="quit"><span class="badge b-red"><svg viewBox="0 0 12 12"><path d="M6 1.2v4.3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M3.4 3.1a3.9 3.9 0 1 0 5.2 0" stroke="#fff" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></span><span>Quit Agent Usage</span></button>
+    <button class="row" id="quit"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v5.5"/><path d="M4.8 4.2a5 5 0 1 0 6.4 0"/></svg>Quit Agent Usage</button>
   </nav>
 
   <main id="pane">
@@ -153,57 +163,41 @@
         <div class="sec">Notch</div>
         <div class="group">
           <div class="item"><span>Show</span><span class="seg" id="seg-show"><button data-v="show">Pin open</button><button data-v="hover">Hold to reveal</button><button data-v="hide">Hide</button></span></div>
-          <div class="item cap" id="cap-show" data-dynamic></div>
           <div class="item"><span>Size</span><span class="seg" id="seg-size"><button data-v="0.8">Small</button><button data-v="1">Medium</button><button data-v="1.25">Large</button></span></div>
-          <div class="item cap" id="cap-size" data-dynamic></div>
           <div class="item"><span>Theme</span><span class="seg" id="seg-theme"><button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button></span></div>
-          <div class="item cap" id="cap-theme" data-dynamic></div>
           <div class="item"><span>Weekly ring</span><span class="seg" id="seg-weekly"><button data-v="off">Off</button><button data-v="inside">Inside</button><button data-v="outside">Outside</button></span></div>
-          <div class="item cap" id="cap-weekly" data-dynamic></div>
           <div class="item"><span>Colour transition</span><span class="seg" id="seg-transition"><button data-v="hard_step">Hard step</button><button data-v="ramp">Colour ramp</button></span></div>
-          <div class="item cap" id="cap-transition" data-dynamic></div>
+        </div>
+        <div class="sec">Position</div>
+        <div class="group">
           <div class="item"><span>Edge</span><span class="seg" id="seg-edge"><button data-v="left">Left</button><button data-v="right">Right</button><button data-v="top">Top</button><button data-v="bottom">Bottom</button></span></div>
-          <div class="item cap" id="cap-edge" data-dynamic></div>
+          <div class="item" id="row-screen" hidden><label for="screen">Screen</label><select id="screen"></select></div>
           <div class="item"><span>Show move handle</span><button class="switch" id="sw-move" role="switch" aria-checked="false" aria-label="Show move handle"></button></div>
-          <div class="item cap">Hold the four-arrow button to move the notch. Release to drop it.</div>
-          <div class="item" id="row-screen" hidden><span>Screen</span>
-            <select id="screen" aria-label="Screen"></select>
-          </div>
-          <div class="item cap" id="cap-screen" data-dynamic hidden></div>
-          <div class="item"><span class="hint">Hold your shortcut to follow the nearest edge. Release to inspect. Recentre moves it to the middle of its current edge.</span><button class="btn" id="btn-recentre">Recentre</button></div>
+          <div class="item"><span>Centre on its edge</span><button class="btn" id="btn-recentre">Recentre</button></div>
         </div>
         <div class="sec">App</div>
         <div class="group">
-          <div class="item"><span>App icon</span><span class="seg" id="seg-tray"><button data-v="tray">System tray</button><button data-v="none">Neither</button></span></div>
-          <div class="item cap" id="cap-tray" data-dynamic></div>
-          <div class="item cap" id="flags-fix" data-dynamic hidden></div>
-
+          <div class="item"><span>Tray icon</span><button class="switch" id="sw-tray" role="switch" aria-checked="false" aria-label="Tray icon"></button></div>
         </div>
       </section>
 
       <section class="pane" id="pane-general" role="tabpanel" aria-labelledby="tab-general" hidden>
-        <div class="sec">Collector and held shortcut</div>
+        <div class="sec">Collector</div>
         <div class="group">
           <div class="item"><label for="source">Source</label><select id="source"><option value="wsl">Local WSL</option><option value="ssh">SSH</option></select></div>
           <div class="item"><label for="ssh">SSH host</label><input id="ssh" placeholder="user@host" maxlength="120" spellcheck="false"></div>
-          <div class="item"><span>Collector</span><button class="btn" id="save-collector">Save and refresh</button></div>
+          <div class="item"><span>Apply collector settings</span><button class="btn" id="save-collector">Save and refresh</button></div>
+        </div>
+        <div class="sec">Startup and shortcut</div>
+        <div class="group">
           <div class="item"><label for="shortcut">Held shortcut</label><select id="shortcut"><option>Ctrl+Shift+Space</option><option>F13</option><option>F14</option><option>F15</option></select></div>
-          <div class="item cap">Map your G815 G-key to a held shortcut: key-down on press, key-up on release. Release the key to inspect; right-click the notch to pin it.</div>
-        </div>
-        <div class="group">
           <div class="item"><span>Open Agent Usage at login</span><button class="switch" id="sw-autostart" role="switch" aria-checked="false" aria-label="Open Agent Usage at login"></button></div>
-          <div class="item cap">Starts completely invisible. Hold your shortcut to reveal it, or open Agent Usage again from Start.</div>
+        </div>
+        <div class="sec">About</div>
+        <div class="group">
           <div class="item"><span>Version</span><span class="value" id="about-version" data-dynamic></span></div>
-        </div>
-        <div class="group">
           <div class="item"><span id="update-status" role="status">Updates</span><button class="btn" id="update-action">Check</button></div>
-        </div>
-        <div class="group">
-          <div class="item"><span>Data folder</span><button class="btn" id="btn-data">Open folder</button></div>
-          <div class="item cap">Open the folder containing your collector and appearance settings.</div>
-        </div>
-        <div class="group">
-          <div class="item cap"><span>Frontend adapted from CodeNotch by</span> <button class="link" id="author">@hivinz_</button></div>
+          <div class="item"><span>Settings and data</span><button class="btn" id="btn-data">Open folder</button></div>
         </div>
       </section>
 
