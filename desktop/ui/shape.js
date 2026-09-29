@@ -1,72 +1,150 @@
 'use strict';
-/* The notch's black, drawn as one SVG outline instead of a CSS box with gradient fillets, so its shape can
-   move: it wells out of the edge on a spring when it appears, and closes up square into a corner when it
-   is carried round one. The #pill box stays for layout and hit testing, transparent; this draws under it.
+/* The notch's black, drawn as SVG instead of a CSS box with gradient fillets, so its shape can move: it
+   wells out of the edge on a spring, its resting arms bud out of its flares and are drawn back in, and
+   round a corner it is two parts that run together like liquid. The #pill box stays for layout and
+   hit testing, transparent; this draws under it.
 
-   The outline is worked out in edge space, u along the screen edge and v in from it, then turned onto the
-   edge the notch is on. Measures are the notch's own: 70 deep, 20 round at its far corners, and flares of
-   38.7 that meet the screen edge at a tangent (the Mac's NotchLayout). */
-const SHAPE={depth:70,flare:38.7,corner:20,bleed:40};
+   Shapes are worked out in edge space, u along a screen edge and v in from it, then turned onto the page.
+   Measures are the notch's own: 70 deep, 20 round at its far corners, flares of 38.7 meeting the screen
+   edge at a tangent, and resting arms 28.5 out from each flare's centre (the Mac's NotchLayout).
+
+   "Goo" is the Mac's technique: blur the black, then cut it back at half strength. Where two shapes are
+   close they melt into one round body, the way two drops do; elsewhere they keep their own outline. It
+   only runs while something is dividing or merging, over the notch's own area. */
+const SHAPE={depth:70,flare:38.7,corner:20,bleed:40,arm:28.5,armStroke:8.8};
 const SVG_NS='http://www.w3.org/2000/svg';
 const shapeSvg=document.createElementNS(SVG_NS,'svg');
 shapeSvg.id='shape';shapeSvg.setAttribute('aria-hidden','true');
-shapeSvg.innerHTML=`<defs><filter id="goo" filterUnits="userSpaceOnUse" x="-400" y="-400" width="2000" height="2000" color-interpolation-filters="sRGB">
-  <feGaussianBlur in="SourceGraphic" stdDeviation="0" result="b"/>
-  <feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -12"/></filter></defs><path/>`;
-const shapePath=shapeSvg.querySelector('path'), gooBlur=shapeSvg.querySelector('feGaussianBlur');
+shapeSvg.innerHTML=`<defs><filter id="goo" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+  <feGaussianBlur in="SourceGraphic" stdDeviation="0"/>
+  <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -12"/></filter></defs>
+  <g id="shape-body"><path class="part"/><path class="part"/><path class="arm"/><path class="arm"/></g>`;
+const gooFilter=shapeSvg.querySelector('#goo'), gooBlur=shapeSvg.querySelector('feGaussianBlur');
+const shapeBody=shapeSvg.querySelector('#shape-body');
+const [partA,partB]=shapeSvg.querySelectorAll('.part'), [armStart,armEnd]=shapeSvg.querySelectorAll('.arm');
 pill.before(shapeSvg);
 
-// How far open (0 closed against the edge, 1 open; a spring takes it a little past), and the corner squeeze
+// How far open (0 closed against the edge, 1 open; a spring takes it a little past)
 let openness=1, openVelocity=0, openFrame=0, openLast=0;
-let squeezeLength=null, squeezeNearStart=true, squeezeAmount=0;
+// How far the arms have come away from the flares (0 in the black, 1 at their place), and the tween moving it
+let armsOut=0, armsFrame=0;
+// A corner being rounded ({corner, first, second, before, after}), and how close to one the notch is (0 to 1)
+let passage=null, cornerNear=0, pillTransform='';
 
-function drawShape(){
+const n=v=>+v.toFixed(2);
+const smooth=x=>{ x=Math.max(0,Math.min(1,x)); return x*x*(3-2*x); };
+// One part of the notch on one edge, u0 to u1 along it, d deep, each end with its own corner and flare
+function partPath(u0,u1,d,r0,f0,r1,f1){
+  const room=u1-u0, k=r0+r1>room&&r0+r1>0?room/(r0+r1):1; r0*=k; r1*=k;
+  f0=Math.min(f0,Math.max(0,d-r0)); f1=Math.min(f1,Math.max(0,d-r1));
+  const b=-SHAPE.bleed;
+  return `M${n(u0-f0)} ${b}V0A${n(f0)} ${n(f0)} 0 0 1 ${n(u0)} ${n(f0)}V${n(d-r0)}A${n(r0)} ${n(r0)} 0 0 0 ${n(u0+r0)} ${n(d)}`
+    +`H${n(u1-r1)}A${n(r1)} ${n(r1)} 0 0 0 ${n(u1)} ${n(d-r1)}V${n(f1)}A${n(f1)} ${n(f1)} 0 0 1 ${n(u1+f1)} 0V${b}Z`;
+}
+// Edge space onto a w×h surface: u runs down or across, v in from the edge
+function edgeMatrix(edge,w,h){
+  return edge==='right'?[0,1,-1,0,w,0]:edge==='left'?[0,1,1,0,0,0]:edge==='bottom'?[1,0,0,-1,0,h]:[1,0,0,1,0,0];
+}
+function setGoo(blur,x,y,w,h){
+  gooBlur.setAttribute('stdDeviation',n(blur));
+  for(const [k,v] of Object.entries({x,y,width:w,height:h})) gooFilter.setAttribute(k,n(v));
+  if(blur>0.3) shapeBody.setAttribute('filter','url(#goo)'); else shapeBody.removeAttribute('filter');
+}
+
+function drawShape(){ if(passage) drawPassage(); else drawStraight(); }
+
+/* On an edge: one part the length of the pill, and an arm off each end. At 0 an arm lies a full stroke
+   past its flare, inside the black; going out it swells from the flare on a neck of goo and lets go. */
+function drawStraight(){
   const w=pill.offsetWidth, h=pill.offsetHeight;
   if(!w||!h) return;
   const vertical=notchEdge==='left'||notchEdge==='right', L=vertical?h:w;
-  const d=Math.max(0,SHAPE.depth*openness), grown=Math.min(1,d/SHAPE.depth), sq=squeezeAmount;
-  // Opening, it spreads along the edge a little as well as out from it, so it swells like a drop
-  const spread=Math.min(1.02,.75+.25*openness);
-  const Ls=(squeezeLength==null?L:Math.min(L,squeezeLength))*spread, u0=(L-Ls)/2, u1=u0+Ls;
-  // Squeezed toward a corner the flares draw in and the corner end closes up square, so at the corner itself
-  // it is the same box on both edges, round only at its inside corner
-  const flare=SHAPE.flare*grown*(1-sq);
-  const nearCorner=SHAPE.corner*grown*(1-sq), farCorner=SHAPE.corner*grown;
-  const r0=sq>0&&squeezeNearStart?nearCorner:farCorner, r1=sq>0&&!squeezeNearStart?nearCorner:farCorner;
-  const b=-SHAPE.bleed, n=v=>+v.toFixed(2);
-  shapePath.setAttribute('d',[
-    `M${n(u0-flare)} ${b}V0`,
-    `A${n(flare)} ${n(flare)} 0 0 1 ${n(u0)} ${n(flare)}`,
-    `V${n(d-r0)}A${n(r0)} ${n(r0)} 0 0 0 ${n(u0+r0)} ${n(d)}`,
-    `H${n(u1-r1)}A${n(r1)} ${n(r1)} 0 0 0 ${n(u1)} ${n(d-r1)}`,
-    `V${n(flare)}A${n(flare)} ${n(flare)} 0 0 1 ${n(u1+flare)} 0V${b}Z`].join(''));
-  // Edge space onto the page: u runs down or across, v in from the edge
-  const m=notchEdge==='right'?[0,1,-1,0,w,0]:notchEdge==='left'?[0,1,1,0,0,0]:notchEdge==='bottom'?[1,0,0,-1,0,h]:[1,0,0,1,0,0];
-  shapePath.setAttribute('transform',`matrix(${m.join(' ')})`);
+  const d=Math.max(0,SHAPE.depth*openness), grown=Math.min(1,d/SHAPE.depth);
+  const spread=Math.min(1.02,.75+.25*openness); // opening, it spreads along the edge a little too
+  const Ls=L*spread, u0=(L-Ls)/2, u1=u0+Ls, F=SHAPE.flare*grown, r=SHAPE.corner*grown;
+  shapeSvg.style.transform=pillTransform;
   shapeSvg.setAttribute('width',w);shapeSvg.setAttribute('height',h);
-  // A little goo while it squeezes, so the closing-up reads as liquid; none at rest or in the corner itself
-  const goo=sq>0&&sq<1?6*4*sq*(1-sq):0;
-  gooBlur.setAttribute('stdDeviation',goo.toFixed(2));
-  shapePath.setAttribute('filter',goo>0.3?'url(#goo)':'');
+  shapeBody.setAttribute('transform',`matrix(${edgeMatrix(notchEdge,w,h).join(' ')})`);
+  partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
+  // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
+  const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4);
+  const armR=SHAPE.arm+(F+SHAPE.armStroke-SHAPE.arm)*(1-out), stroke=SHAPE.armStroke*grown;
+  const arc=(cx,a0,hidden)=>{
+    if(hidden||grown<.5) return '';
+    const t0=a0*Math.PI/180, t1=t0+Math.PI/2;
+    return `M${n(cx+armR*Math.cos(t0))} ${n(F+armR*Math.sin(t0))}A${n(armR)} ${n(armR)} 0 0 1 ${n(cx+armR*Math.cos(t1))} ${n(F+armR*Math.sin(t1))}`;
+  };
+  armStart.setAttribute('d',arc(u0-F,-90,moveHandle.classList.contains('hover')||!showMove));
+  armEnd.setAttribute('d',arc(u1+F,180,orb.classList.contains('hover')));
+  for(const a of [armStart,armEnd]) a.setAttribute('stroke-width',n(stroke));
+  // Goo while an arm is dividing or going back in: strong on the flare, gone by the time it is at its place
+  const dividing=out>.01&&out<.97?SHAPE.armStroke*.55*(1-smooth((out-.35)/.6)):0;
+  setGoo(dividing,-300,-300,L+600,d+600);
 }
-function setShapeSqueeze(length,nearStart,amount){ squeezeLength=amount>0?length:null; squeezeNearStart=nearStart; squeezeAmount=amount; }
+
+/* Round a corner: the part still on the edge it is leaving, shortening, and the part on the edge it is
+   coming onto, growing. Each keeps the notch's own rounded, flared end at its far end; its end in the
+   corner closes up square only as the other part grows, and runs on past the screen edge so the goo has
+   black to work with right up to the bezel. Blurred together at most half way round, they meet in the
+   bend as one round body with no seam and no point (the Mac's CornerPassage). */
+function drawPassage(){
+  const W=innerWidth, H=innerHeight, D=SHAPE.depth, L=passage.before+passage.after;
+  shapeSvg.style.transform='none';
+  shapeSvg.setAttribute('width',W);shapeSvg.setAttribute('height',H);
+  shapeBody.removeAttribute('transform');
+  const {corner,first,second,before,after}=passage, bleed=SHAPE.bleed;
+  const part=(el,edge,length,other,cornerAtStart)=>{
+    if(length<1){ el.removeAttribute('d'); return; }
+    const len=edge==='top'||edge==='bottom'?W:H, at=cornerAtStart?0:len;
+    const square=smooth(other/D), size=smooth(length/D);
+    const rc=SHAPE.corner*(1-square), fc=SHAPE.flare*(1-square), ext=bleed*square;
+    const rf=SHAPE.corner*size, ff=SHAPE.flare*size;
+    const d=cornerAtStart
+      ? partPath(at-ext,at+length,D,rc,fc,rf,ff)
+      : partPath(at-length,at+ext,D,rf,ff,rc,fc);
+    el.setAttribute('d',d); el.setAttribute('transform',`matrix(${edgeMatrix(edge,W,H).join(' ')})`);
+  };
+  // Where the corner is along each edge: at its start (u = 0) or its end
+  const atStart={tr:{top:false,right:true},br:{right:false,bottom:false},bl:{bottom:true,left:false},tl:{left:true,top:true}}[corner];
+  part(partA,first,before,after,atStart[first]);
+  part(partB,second,after,before,atStart[second]);
+  armStart.removeAttribute('d'); armEnd.removeAttribute('d');
+  const share=Math.min(1,4*Math.min(before,after)/L), blur=D*.22*share*share*(3-2*share);
+  const cx=corner==='tr'||corner==='br'?W:0, cy=corner==='br'||corner==='bl'?H:0;
+  setGoo(blur,cx-L-120,cy-L-120,2*L+240,2*L+240);
+}
+function setShapePassage(p,near,transform){ passage=p; cornerNear=near; pillTransform=transform; }
 
 /* Opening: the Mac's unfold spring (response 0.62 s, damping 0.72). The small overshoot is the whole
    effect, the notch swelling a few points past its depth and settling like a body of liquid. The rings
-   ride out with it (--open in agent-usage.css). */
+   ride out with it (--open in agent-usage.css), and the arms divide from the flares once it is open. */
 function setOpenness(v){ openness=v; document.getElementById('root').style.setProperty('--open',v.toFixed(4)); drawShape(); }
 function openShape(){
   cancelAnimationFrame(openFrame); openFrame=0;
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ setOpenness(1); return; }
+  cancelAnimationFrame(armsFrame); armsOut=0;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=1; setOpenness(1); return; }
   openVelocity=0; openLast=0; setOpenness(0);
   const omega=2*Math.PI/0.62, zeta=0.72;
+  let armsStarted=false;
   const step=now=>{
     const dt=Math.min(.032,(now-(openLast||now-16))/1000); openLast=now;
     openVelocity+=(-omega*omega*(openness-1)-2*zeta*omega*openVelocity)*dt;
     const next=openness+openVelocity*dt;
+    if(!armsStarted&&next>.9){ armsStarted=true; moveArms(1,.46,t=>1-Math.pow(1-t,3)); }
     if(Math.abs(next-1)<.0015&&Math.abs(openVelocity)<.02){ openFrame=0; setOpenness(1); reportHot(); return; }
     setOpenness(next); openFrame=requestAnimationFrame(step);
   };
   openFrame=requestAnimationFrame(step);
 }
-new ResizeObserver(drawShape).observe(pill);
+// Arms out to `to` over `seconds`: out easing off as they arrive, back in accelerating as they are taken in
+function moveArms(to,seconds,ease=t=>t*t){
+  cancelAnimationFrame(armsFrame);
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=to; drawShape(); return; }
+  const from=armsOut, t0=performance.now();
+  const step=now=>{
+    const t=Math.min(1,(now-t0)/(seconds*1000)); armsOut=from+(to-from)*ease(t); drawShape();
+    armsFrame=t<1?requestAnimationFrame(step):0;
+  };
+  armsFrame=requestAnimationFrame(step);
+}
+new ResizeObserver(()=>drawShape()).observe(pill);

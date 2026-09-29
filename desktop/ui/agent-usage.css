@@ -27,9 +27,11 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 .h-disc{width:38px;height:38px;margin:-19px 0 0 -19px}
 .h-glyph{width:18px;height:18px;margin:-9px 0 0 -9px}
 #move{cursor:grab}#move.armed{cursor:grabbing}
-/* Arriving, the arms sweep a quarter turn into their pockets as the notch grows; leaving, they wind back */
-#root:not(.visible) .h-rest,#root.growing .h-rest{opacity:0;transform:rotate(calc(var(--arc) - 90deg)) scale(.7)}
-#root.visible .handle:not(.hover) .h-rest{transition:opacity .2s ease .22s,transform .55s cubic-bezier(.34,1.3,.64,1) .22s}
+/* The resting arms are drawn with the notch (shape.js #shape .arm), so they can bud out of its flares;
+   the handles keep their disc and glyph. Carrying the notch, those are taken back in too. */
+.h-rest{display:none}
+#shape .arm{fill:none;stroke:var(--pill);stroke-linecap:round}
+#root.carrying .handle .h-disc,#root.carrying .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .2s ease-in}
 #card{z-index:2}#tail{z-index:1}
 /* The card comes out of the notch: a short fade and an 8 px travel away from the edge, once per opening */
 #card.show{animation:card-in .2s cubic-bezier(.32,.72,.24,1)}
@@ -55,17 +57,17 @@ svg.reading{transform-origin:50% 50%}
 /* The gear: eight identical teeth, corners eased by a hairline of its own colour, so it turns evenly */
 .h-glyph.gear path{stroke:var(--ink-2);stroke-width:.9;stroke-linejoin:round}
 
-/* The same notch on every edge: 70 deep and about as long. Lying flat, each reading sits beside its ring
-   instead of under it, so the row is as thick as the column is wide. */
-body[data-edge="top"] #pill,body[data-edge="bottom"] #pill{padding:0 18px;height:70px;align-items:center;gap:10px}
-body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{flex-direction:row;gap:5px}
-body[data-edge="top"] .pct,body[data-edge="bottom"] .pct{min-width:3.1ch}
+/* The same notch on every edge: 70 deep and 228 long. Lying flat, each reading stays under its ring, set
+   tight enough to fit the depth (44 + 2 + 15 in 70), and the rings keep the side edges' spacing along it:
+   39 between items puts them 83 apart and the ends 18 in, exactly where the column has them. */
+body[data-edge="top"] #pill,body[data-edge="bottom"] #pill{padding:0 18px;height:70px;align-items:center;gap:39px}
+body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{gap:2px}
+body[data-edge="top"] .pct,body[data-edge="bottom"] .pct{line-height:15px}
 
-/* Rounding a corner the notch squeezes into it and out along the next edge (motion.js sets --sq, 0 to 1):
-   its contents, its flares and its handles step back while it is compressed, so nothing is seen squashed */
-/* The rings come in once the black is deep enough to hold them (their 44 px in its 70), not before */
-#pill .cell,#pill .ctl{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--sq,0) * 2.4)}
-.handle.placed{opacity:calc(1 - var(--sq,0) * 3)}
+/* Near a corner the handles step back (--hf, 0 to 1, from motion.js); carried round one whose two edges
+   order the rings oppositely, the rings dip out mid-bend (--cross) rather than pass through each other */
+#pill .cell,#pill .ctl{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--cross,0) - var(--bend,0))}
+.handle.placed{opacity:calc(1 - var(--hf,0))}
 
 /* Pin and refresh, one click each, at the end of the notch beside the Settings pocket */
 .ctl{display:flex;gap:4px;justify-content:center;align-items:center}

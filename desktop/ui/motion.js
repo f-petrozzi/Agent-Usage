@@ -23,6 +23,47 @@ function aim(edge,along,snap=false){
   if(position===null||snap) position=target;
   if(!frame) frame=requestAnimationFrame(animate);
 }
+/* Carried round a corner, each ring (and the pin/refresh row) keeps its offset from the notch's middle along
+   the border, clockwise, and follows a line half the notch's depth in that takes the corner on one cubic
+   rather than stepping across it (the Mac's ringPoint). Where the two edges lay the rings out in opposite
+   orders (bottom-right and top-left), they dip out mid-bend instead of passing through each other. */
+const HEADING={top:[1,0],right:[0,1],bottom:[-1,0],left:[0,-1]}, CLOCKWISE={top:1,right:1,bottom:-1,left:-1};
+function trackPoint(t){
+  const w=innerWidth,h=innerHeight,total=2*(w+h),d=35,round=1.6*d;
+  const inset=t=>{ t=((t%total)+total)%total;
+    if(t<w) return [t,d]; if(t<w+h) return [w-d,t-w]; if(t<2*w+h) return [2*w+h-t,h-d]; return [d,total-t]; };
+  for(const [at0,first,second] of [[w,'top','right'],[w+h,'right','bottom'],[2*w+h,'bottom','left'],[0,'left','top']]){
+    let off=((t-at0)%total+total)%total; if(off>total/2) off-=total;
+    if(Math.abs(off)>=round) continue;
+    const a=inset(at0-round), b=inset(at0+round), da=HEADING[first], db=HEADING[second], k=(round-d)*.8, u=(off+round)/(2*round), v=1-u;
+    const c1=[a[0]+da[0]*k,a[1]+da[1]*k], c2=[b[0]-db[0]*k,b[1]-db[1]*k];
+    return [0,1].map(i=>v*v*v*a[i]+3*v*v*u*c1[i]+3*v*u*u*c2[i]+u*u*u*b[i]);
+  }
+  return inset(t);
+}
+let carriedRound=false;
+function carryItems(pass,px,py,vertical,L){
+  const items=[...pill.querySelectorAll('.cell,.ctl')], root=document.getElementById('root');
+  if(!pass){
+    if(carriedRound){ for(const el of items){ el.style.transform=''; el.style.removeProperty('--bend'); } root.style.setProperty('--cross','0'); carriedRound=false; }
+    return;
+  }
+  carriedRound=true;
+  const w=innerWidth,h=innerHeight,total=2*(w+h), cornerAt={tr:w,br:w+h,bl:2*w+h,tl:0}[pass.corner];
+  const p=pass.after/(pass.before+pass.after), mix=p*p*(3-2*p), s1=CLOCKWISE[pass.first], s2=CLOCKWISE[pass.second];
+  root.style.setProperty('--cross',(s1===s2?0:clamp(1-Math.abs(1-2*p)*2.2,0,1)).toFixed(3));
+  for(const el of items){
+    el.style.transform='';
+    const cx=px+el.offsetLeft+el.offsetWidth/2, cy=py+el.offsetTop+el.offsetHeight/2;
+    const a=(vertical?el.offsetTop+el.offsetHeight/2:el.offsetLeft+el.offsetWidth/2)-L/2;
+    const t=position+(s1+(s2-s1)*mix)*a, [tx,ty]=trackPoint(t);
+    el.style.transform=`translate(${(tx-cx).toFixed(1)}px,${(ty-cy).toFixed(1)}px)`;
+    // The line in from the border is shorter round the bend than the border, so rings would crowd there:
+    // each goes through the bend inside the black instead, fading out and back as it passes the corner
+    let off=((t-cornerAt)%total+total)%total; if(off>total/2) off-=total;
+    const f=clamp((Math.abs(off)-30)/50,0,1); el.style.setProperty('--bend',(1-f*f*(3-2*f)).toFixed(3));
+  }
+}
 function animate(now){
   frame=0;
   const w=innerWidth,h=innerHeight,total=2*(w+h), dt=Math.min(40,now-(last||now-16));last=now;
@@ -39,22 +80,27 @@ function animate(now){
   const pw=pill.offsetWidth,ph=pill.offsetHeight;
   // Snap settled text to physical pixels. Layout itself is never rotated or raster-scaled.
   const pixel=v=>Math.abs(delta)>.3?v:Math.round(v*devicePixelRatio)/devicePixelRatio;
-  /* Rounding a corner: within reach of it the notch shortens and slides into it, until it is a D×D cap in
-     the corner itself. That cap is the same shape on both edges, so the edge changes inside it instead of
-     the notch jumping from one edge to the other. */
   const vertical=edge==='left'||edge==='right';
-  const L=vertical?ph:pw, D=vertical?pw:ph, len=vertical?h:w, at=vertical?y:x;
-  const zone=L/2+CORNER, reach=Math.min(at,len-at);
-  const squeeze=zone>D/2?clamp((zone-reach)/(zone-D/2),0,1):0;
-  const Ls=L-(L-D)*squeeze;
-  const start=squeeze>0?(at<len/2?CORNER*(1-squeeze):len-CORNER*(1-squeeze)-Ls):clamp(at-L/2,CORNER,len-L-CORNER);
-  const along=pixel(start+Ls/2-L/2), across=vertical?(edge==='left'?0:w-pw):(edge==='top'?0:h-ph);
+  const L=vertical?ph:pw, len=vertical?h:w, at=vertical?y:x;
+  /* A corner being rounded: the notch's middle within half its length of one. It is drawn there as two
+     parts running together (shape.js), and the rings are carried round the corner on a curve. At rest it
+     never sits here (restingAlong); only while the shortcut carries it round. */
+  let pass=null;
+  for(const [corner,at0,first,second] of [['tr',w,'top','right'],['br',w+h,'right','bottom'],['bl',2*w+h,'bottom','left'],['tl',0,'left','top']]){
+    let d=((at0-position)%total+total)%total; if(d>total/2) d-=total;
+    if(Math.abs(d)<L/2){ pass={corner,first,second,before:d+L/2,after:L/2-d}; break; }
+  }
+  // The handles and arms step back as the notch's end nears a corner, where they would leave the screen
+  const reach=Math.min(at,len-at), near=pass?1:clamp(1-(reach-L/2)/CORNER,0,1);
+  const start=pass?clamp(at-L/2,0,len-L):at-L/2;
+  const along=pixel(start), across=vertical?(edge==='left'?0:w-pw):(edge==='top'?0:h-ph);
   const px=vertical?across:along, py=vertical?along:across;
   pill.style.left='0';pill.style.top='0';pill.style.right='auto';pill.style.bottom='auto';
-  pill.style.transform=shapeSvg.style.transform=`translate(${px}px,${py}px)`;
-  // The box keeps its length; the outline is drawn Ls long within it, closing up into the corner (shape.js)
-  setShapeSqueeze(Ls,at<len/2,squeeze);drawShape();
-  document.getElementById('root').style.setProperty('--sq',squeeze.toFixed(3));
+  pill.style.transform=`translate(${px}px,${py}px)`;
+  setShapePassage(pass,near,pill.style.transform);drawShape();
+  carryItems(pass,px,py,vertical,L);
+  const root=document.getElementById('root');
+  root.style.setProperty('--hf',near.toFixed(3));
   if(card.classList.contains('show')) placeCard();
   reportHot();
   if(Math.abs(delta)>.3) frame=requestAnimationFrame(animate);else last=0;

@@ -82,20 +82,26 @@ The sliders button opens Settings. Hold the four-arrow move button and drag to
 reposition, then release to drop. Both controls have full square hit regions
 and a Windows input-helper fallback for overlays that do not receive clicks.
 
-Since 3.0.5 the notch's black is one SVG outline (`desktop/ui/shape.js`) rather
-than a CSS box with gradient fillets, so its shape can move. It wells out of the
-screen edge on the Mac's unfold spring, spreading a little along the edge and
-settling past a slight overshoot, and slides away past the edge when it hides.
-The notch window is shown once and parked off every screen when closed, so
-opening only moves it: Windows zooms a window in from its middle whenever it is
-shown, which made the notch float in to the edge. It is raised above the
-taskbar when it opens and every two seconds while open. It is 70 px deep on every
-edge; lying flat, each reading sits beside its ring. While the shortcut is held
-it closes up square into a corner, a little gooey on the way, and out along the
-next edge. The Settings and Move handles rest as quarter arcs in the fillet
-pockets and become a gear and a move disc under the pointer. Pin and Refresh sit
-at the end of the notch; Settings → Appearance → Controls hides either, and the
-move handle. The card eases out of the notch, and a ring eases to a new reading.
+Since 3.0.7 the notch's black, its flares and its resting arms are drawn as SVG
+(`desktop/ui/shape.js`), so they can move like liquid, using the Mac's "goo":
+the black is blurred and cut back at half strength, so shapes close together
+melt into one body. The notch wells out of the screen edge on the Mac's unfold
+spring, and the arms then bud out of its flares as drops and let go. Closing,
+the arms go back in and the notch slides away past the edge. Carried round a
+corner while the shortcut is held, it is two parts, the one leaving shortening
+and the one arriving growing, gooed into one round body in the bend, with the
+rings carried round on a curve and passing through the bend inside the black.
+Grabbing the six dots draws the arms and buttons back into the notch until you
+let go. The notch window is shown once and parked off every screen when
+closed, so opening only moves it: Windows zooms a window in from its middle
+whenever it is shown, which made the notch float in to the edge. It is raised
+above the taskbar when it opens and every two seconds while open. It is 70 px
+deep and 228 long on every edge; lying flat, each reading sits under its ring,
+set tight, with the side edges' spacing. The Settings and Move handles rest as
+arms in the flare pockets and become a gear and six dots under the pointer. Pin
+and Refresh sit at the end of the notch; Settings → Appearance → Controls hides
+either, and the move handle. The card eases out of the notch, and a ring eases
+to a new reading.
 
 Cards keep usage and resets visible; hover Account details to expand credits,
 banked resets, expiration dates, and plan information. Click also toggles it.
