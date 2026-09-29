@@ -39,3 +39,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Locally served review builds
+preview/downloads/
+
+# Electron development dependencies and package output
+desktop/node_modules/
+desktop/dist/

@@ -2,15 +2,21 @@ name: Windows build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  compile:
+  package:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Parse installers, compile icon, and run self-test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Compile helper and parse installers
         shell: powershell
         run: |
           Get-ChildItem windows/*.ps1 | ForEach-Object {
@@ -18,8 +24,44 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors) { throw ($errors | Out-String) }
           }
-          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          & $csc /nologo /target:winexe /codepage:65001 /out:AgentUsageFrame.exe /win32icon:windows\assets\agent-usage.ico /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Windows.Forms.dll .\windows\AgentUsageFrame.cs
-          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
-          $check = Start-Process .\AgentUsageFrame.exe -ArgumentList '--self-test' -Wait -PassThru
-          if ($check.ExitCode -ne 0) { throw 'Self-test failed' }
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /optimize+ /out:desktop\resources\InputMonitor.exe desktop\InputMonitor.cs
+          if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
+      - run: npm ci
+        working-directory: desktop
+      - run: node --test tests/test-updates.cjs
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match package version' }
+      - run: npm run pack:windows
+        working-directory: desktop
+      - run: python scripts/package-release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentUsage-Windows
+          path: |
+            preview/downloads/AgentUsage-Setup-*.exe
+            preview/downloads/*.blockmap
+            preview/downloads/latest.yml
+            preview/downloads/SHA256SUMS.txt
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: AgentUsage-Windows
+          path: release
+      - name: Publish matching installer and update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/* --verify-tag --draft --title "Agent Usage ${RELEASE_TAG#v}" --generate-notes
+          gh release edit "$RELEASE_TAG" --draft=false --latest

@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-"""Package a reviewable, source-built Windows installer; no credentials or state."""
+"""Stage the NSIS installer and its matching update feed without publishing."""
 from pathlib import Path
 import hashlib
+import json
+import shutil
 import sys
-import zipfile
 root = Path(__file__).resolve().parents[1]
-out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('/tmp/agent-usage-release')
+out = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'preview/downloads'
+version = json.loads((root / 'desktop/package.json').read_text())['version']
+names = [f'AgentUsage-Setup-{version}.exe', f'AgentUsage-Setup-{version}.exe.blockmap', 'latest.yml']
+dist = root / 'desktop/dist'
+for name in names:
+    if not (dist / name).is_file():
+        raise SystemExit(f'Missing {name}; run npm run pack:windows in desktop first')
 out.mkdir(parents=True, exist_ok=True)
-files = ['Install.cmd', 'README.md', 'LICENSE', 'docs/expanded.png', 'docs/compact.png', 'windows/AgentUsageFrame.cs',
-         'windows/install.ps1', 'windows/uninstall.ps1', 'windows/update.ps1',
-         'windows/assets/agent-usage.ico', 'scripts/agent-usage', 'scripts/install-agent-usage.sh']
-archive = out / 'AgentUsage-Windows.zip'
-with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
-    for name in files:
-        package.write(root / name, 'AgentUsage/' + name)
-(out / 'SHA256SUMS.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
-print(archive)
+checksums = []
+for name in names:
+    temporary = out / (name + '.tmp')
+    shutil.copyfile(dist / name, temporary)
+    temporary.replace(out / name)
+    checksums.append(hashlib.sha256((out / name).read_bytes()).hexdigest() + '  ' + name)
+(out / 'SHA256SUMS.txt').write_text('\n'.join(checksums) + '\n')
+print(out / names[0])

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<title>Agent Usage Settings</title>
+<style>
+  /* The Mac's Settings (Sources/Settings/SettingsView.swift) over Windows 11's Mica: a sidebar card
+     darker than the pane, grouped sections with captions as rows, and Windows' own control cues : 
+     a soft fill with an accent bar for the selected section, outlined toggles, the system accent.
+     The panel is translucent so Mica shows through; without Mica, body.solid draws the same tones. */
+  :root{
+    --accent:#0a7aff; --on-accent:#ffffff;
+    --text:#f2f2f4; --text2:rgba(235,235,245,.62); --text3:rgba(235,235,245,.38);
+    --pane:rgba(255,255,255,.13); --side:rgba(0,0,0,.40); --group:rgba(255,255,255,.06);
+    --line:rgba(255,255,255,.08); --hi:rgba(255,255,255,.05); --sep:rgba(255,255,255,.08);
+    --seg-bg:rgba(255,255,255,.09); --hover:rgba(255,255,255,.06); --sel-soft:rgba(255,255,255,.08);
+    --btn:rgba(255,255,255,.10); --btn-hover:rgba(255,255,255,.16);
+    --danger-bg:rgba(255,99,99,.14); --danger:#ff8a8a;
+  }
+  /* Rust says which appearance this is (get_theme_resolved), so a forced Light or Dark lands here
+     whatever Windows is set to. WebView2's own scheme does not follow a live theme change. */
+  :root[data-theme="light"]{
+      --text:#1d1d1f; --text2:rgba(60,60,67,.70); --text3:rgba(60,60,67,.45);
+      --pane:rgba(255,255,255,.50); --side:rgba(0,0,0,.06); --group:rgba(255,255,255,.72);
+      --line:rgba(0,0,0,.07); --hi:rgba(255,255,255,.80); --sep:rgba(0,0,0,.07);
+      --seg-bg:rgba(0,0,0,.06); --hover:rgba(0,0,0,.04); --sel-soft:rgba(0,0,0,.05);
+      --btn:rgba(0,0,0,.05); --btn-hover:rgba(0,0,0,.09);
+      --danger-bg:rgba(196,43,28,.10); --danger:#c42b1c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none}
+  body{font:13.5px/1.35 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:var(--text)}
+  body.solid{--pane:#3d3d40;--side:#1f2022;--group:#48484b;--hi:transparent;background:#2b2b2e}
+  :root[data-theme="light"] body.solid{--pane:#f0f0f2;--side:#e2e2e6;--group:#ffffff;background:#f0f0f2}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button{font:inherit;color:inherit}
+  html[lang="ko"] body{word-break:keep-all}
+  [hidden]{display:none!important}
+
+  #app{display:flex;height:100%;background:var(--pane)}
+
+  /* ---- sidebar: a card inset from the window, as on the Mac ---- */
+  #side{width:196px;margin:4px;border-radius:14px;background:var(--side);border:1px solid var(--line);
+    box-shadow:inset 0 1px 0 var(--hi);display:flex;flex-direction:column;padding:0 8px 8px;flex:none}
+  #side .band{height:48px;flex:none}
+  #side .grow{flex:1}
+  .row{position:relative;display:flex;align-items:center;gap:9px;width:100%;height:32px;padding:0 8px;margin-bottom:2px;
+    border:0;border-radius:8px;background:transparent;text-align:left;font-size:13.5px}
+  .row:hover{background:var(--hover)}
+  .row.sel{background:var(--sel-soft)}
+  .row.sel::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--accent)}
+  .badge{width:20px;height:20px;border-radius:5.5px;display:grid;place-items:center;flex:none}
+  .badge svg{width:12px;height:12px;fill:#fff}
+  .b-blue{background:linear-gradient(#4fa6ff,#0a6cff)}
+  .b-indigo{background:linear-gradient(#8784ff,#5856d6)}
+  .b-gray{background:linear-gradient(#a6a6ab,#727277)}
+  .b-red{background:linear-gradient(#ff6d62,#dd3328)}
+
+  /* ---- pane ---- */
+  #pane{flex:1;display:flex;flex-direction:column;min-width:0}
+  #head{height:52px;display:flex;align-items:center;padding-left:24px;position:relative;flex:none}
+  #head h1{font-size:22px;font-weight:600;margin:0}
+  #close{position:absolute;top:0;right:0;width:46px;height:34px;border:0;background:transparent;color:var(--text2);
+    display:grid;place-items:center;border-top-right-radius:8px}
+  #close svg{width:10px;height:10px;stroke:currentColor;stroke-width:1.2}
+  #close:hover{background:#c42b1c;color:#fff}
+  #strip{margin:0 20px 8px;padding:7px 10px;border-radius:8px;background:var(--danger-bg);color:var(--danger);font-size:12px;overflow-wrap:anywhere}
+  #body{flex:1;overflow:auto;padding:0 20px 20px;scrollbar-width:none}
+  #body::-webkit-scrollbar{display:none}
+
+  .sec{font-size:13.5px;font-weight:600;margin:18px 12px 8px}
+  .pane > .sec:first-child{margin-top:6px}
+  .group{background:var(--group);border:1px solid var(--line);border-radius:10px;box-shadow:inset 0 1px 0 var(--hi)}
+  .group + .group{margin-top:14px}
+  .pane > .group:first-child{margin-top:6px}
+  .group > * + *{border-top:1px solid var(--sep)}
+  .item{padding:9px 12px;min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  /* A segmented control that does not fit beside its label (three Russian options do not) moves under it,
+     still on the right, rather than running out of the window */
+  .item:has(> .seg){flex-wrap:wrap;row-gap:8px}
+  .item > .seg{margin-left:auto}
+  .item.cap{min-height:0;padding:8px 12px;font-size:12px;color:var(--text2);display:block}
+  .item .hint{font-size:12px;color:var(--text2)}
+  .value{color:var(--text2)}
+
+  /* ---- account rows ---- */
+  .acct{padding:9px 12px}
+  .acct-line{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px}
+  .acct-name{display:flex;align-items:center;gap:10px;min-width:0}
+  .acct.off .acct-name{color:var(--text2)}
+  .acct.off .glyph{opacity:.5}
+  .acct-detail{margin:4px 0 0 26px;font-size:12px;color:var(--text2)}
+  .acct-sub{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 0 26px;font-size:13px}
+  .glyph{width:16px;height:16px;display:inline-grid;place-items:center;flex:none;color:var(--text)}
+  .glyph svg{width:16px;height:16px;fill:currentColor}
+  .glyph img{width:16px;height:16px;border-radius:4px;display:block}
+  .glyph.letter{font-size:10px;font-weight:700;background:var(--seg-bg);border-radius:4px}
+
+  /* ---- controls: Windows 11 cues in the system accent ---- */
+  .switch{width:40px;height:20px;border-radius:10px;border:1px solid var(--text2);background:transparent;position:relative;flex:none;padding:0}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:12px;height:12px;border-radius:6px;background:var(--text2);transition:left .12s}
+  .switch.on{border-color:transparent;background:var(--accent)}
+  .switch.on::after{left:23px;background:var(--on-accent)}
+  .switch:disabled,.switch.locked{opacity:.5}
+  .seg{display:inline-flex;background:var(--seg-bg);border-radius:7px;padding:2px;gap:2px;flex:none}
+  .seg button{border:0;background:transparent;font-size:13px;padding:3px 14px;border-radius:5px}
+  .seg button:hover:not(.on):not(:disabled){background:var(--hover)}
+  .seg button.on{background:var(--accent);color:var(--on-accent)}
+  .seg button:disabled{opacity:.45}
+  .btn{border:0;background:var(--btn);font-size:13px;padding:5px 12px;border-radius:6px;flex:none}
+  .btn:hover{background:var(--btn-hover)}
+  select{font:inherit;font-size:13px;color:var(--text);background:var(--seg-bg);border:0;border-radius:6px;padding:4px 8px}
+  select option{color:#000}
+  .link{border:0;background:none;padding:0;color:var(--accent);cursor:pointer;font-size:12px}
+  .link:hover{text-decoration:underline}
+
+  #toast{position:fixed;right:18px;bottom:14px;background:var(--side);border:1px solid var(--line);border-radius:8px;
+    padding:5px 10px;font-size:12px;color:var(--text2);opacity:0;transition:opacity .3s;pointer-events:none}
+  #toast.show{opacity:1}
+[data-tauri-drag-region]{-webkit-app-region:drag}button,input,select{-webkit-app-region:no-drag}input{font:inherit;color:var(--text);background:var(--seg-bg);border:1px solid var(--line);border-radius:5px;padding:5px}
+</style>
+</head>
+<body class="solid">
+<div id="app">
+  <nav id="side" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+    <div class="band" data-tauri-drag-region></div>
+    <button class="row" id="tab-accounts" role="tab" aria-controls="pane-accounts" aria-selected="false" tabindex="-1"><span class="badge b-blue"><svg viewBox="0 0 12 12"><circle cx="6" cy="4" r="2.4"/><path d="M1.5 11.2c.4-2.5 2.3-3.9 4.5-3.9s4.1 1.4 4.5 3.9z"/></svg></span><span>Accounts</span></button>
+    <button class="row" id="tab-appearance" role="tab" aria-controls="pane-appearance" aria-selected="false" tabindex="-1"><span class="badge b-indigo"><svg viewBox="0 0 12 12"><path d="M10 .9a.8.8 0 0 1 1.1 1.1L6.4 6.7 5.3 5.6zM4.6 6.3l1.1 1.1c.2 1.9-1.9 3.6-4.7 3.1.9-.4 1.2-1 1.3-1.8.1-1.3 1.1-2.3 2.3-2.4z"/></svg></span><span>Appearance</span></button>
+    <button class="row" id="tab-general" role="tab" aria-controls="pane-general" aria-selected="false" tabindex="-1"><span class="badge b-gray"><svg viewBox="0 0 12 12"><path fill-rule="evenodd" d="M5.1.6h1.8l.3 1.5 1.1.5 1.3-.8 1.3 1.3-.8 1.3.5 1.1 1.5.3v1.8l-1.5.3-.5 1.1.8 1.3-1.3 1.3-1.3-.8-1.1.5-.3 1.5H5.1l-.3-1.5-1.1-.5-1.3.8-1.3-1.3.8-1.3-.5-1.1L.6 6.9V5.1l1.5-.3.5-1.1-.8-1.3 1.3-1.3 1.3.8 1.1-.5zM6 4.1a1.9 1.9 0 1 0 0 3.8 1.9 1.9 0 0 0 0-3.8z"/></svg></span><span>General</span></button>
+    <div class="grow" data-tauri-drag-region></div>
+    <button class="row" id="quit"><span class="badge b-red"><svg viewBox="0 0 12 12"><path d="M6 1.2v4.3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" fill="none"/><path d="M3.4 3.1a3.9 3.9 0 1 0 5.2 0" stroke="#fff" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></span><span>Quit Agent Usage</span></button>
+  </nav>
+
+  <main id="pane">
+    <div id="head" data-tauri-drag-region>
+      <h1 id="title" data-tauri-drag-region data-dynamic>Accounts</h1>
+      <button id="close" title="Close" aria-label="Close"><svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9"/></svg></button>
+    </div>
+    <div id="strip" data-dynamic hidden></div>
+    <div id="body">
+
+      <section class="pane" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
+        <div class="sec">Connected</div>
+        <div class="group" id="acc-on" data-dynamic></div>
+        <div id="acc-off-wrap" hidden>
+          <div class="sec">Not connected</div>
+          <div class="group" id="acc-off" data-dynamic></div>
+        </div>
+      </section>
+
+      <section class="pane" id="pane-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden>
+        <div class="sec">Notch</div>
+        <div class="group">
+          <div class="item"><span>Show</span><span class="seg" id="seg-show"><button data-v="show">Pin open</button><button data-v="hover">Hold to reveal</button><button data-v="hide">Hide</button></span></div>
+          <div class="item cap" id="cap-show" data-dynamic></div>
+          <div class="item"><span>Size</span><span class="seg" id="seg-size"><button data-v="0.8">Small</button><button data-v="1">Medium</button><button data-v="1.25">Large</button></span></div>
+          <div class="item cap" id="cap-size" data-dynamic></div>
+          <div class="item"><span>Theme</span><span class="seg" id="seg-theme"><button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button></span></div>
+          <div class="item cap" id="cap-theme" data-dynamic></div>
+          <div class="item"><span>Weekly ring</span><span class="seg" id="seg-weekly"><button data-v="off">Off</button><button data-v="inside">Inside</button><button data-v="outside">Outside</button></span></div>
+          <div class="item cap" id="cap-weekly" data-dynamic></div>
+          <div class="item"><span>Colour transition</span><span class="seg" id="seg-transition"><button data-v="hard_step">Hard step</button><button data-v="ramp">Colour ramp</button></span></div>
+          <div class="item cap" id="cap-transition" data-dynamic></div>
+          <div class="item"><span>Edge</span><span class="seg" id="seg-edge"><button data-v="left">Left</button><button data-v="right">Right</button><button data-v="top">Top</button><button data-v="bottom">Bottom</button></span></div>
+          <div class="item cap" id="cap-edge" data-dynamic></div>
+          <div class="item"><span>Show move handle</span><button class="switch" id="sw-move" role="switch" aria-checked="false" aria-label="Show move handle"></button></div>
+          <div class="item cap">Hold the four-arrow button to move the notch. Release to drop it.</div>
+          <div class="item" id="row-screen" hidden><span>Screen</span>
+            <select id="screen" aria-label="Screen"></select>
+          </div>
+          <div class="item cap" id="cap-screen" data-dynamic hidden></div>
+          <div class="item"><span class="hint">Hold your shortcut to follow the nearest edge. Release to inspect. Recentre moves it to the middle of its current edge.</span><button class="btn" id="btn-recentre">Recentre</button></div>
+        </div>
+        <div class="sec">App</div>
+        <div class="group">
+          <div class="item"><span>App icon</span><span class="seg" id="seg-tray"><button data-v="tray">System tray</button><button data-v="none">Neither</button></span></div>
+          <div class="item cap" id="cap-tray" data-dynamic></div>
+          <div class="item cap" id="flags-fix" data-dynamic hidden></div>
+
+        </div>
+      </section>
+
+      <section class="pane" id="pane-general" role="tabpanel" aria-labelledby="tab-general" hidden>
+        <div class="sec">Collector and held shortcut</div>
+        <div class="group">
+          <div class="item"><label for="source">Source</label><select id="source"><option value="wsl">Local WSL</option><option value="ssh">SSH</option></select></div>
+          <div class="item"><label for="ssh">SSH host</label><input id="ssh" placeholder="user@host" maxlength="120" spellcheck="false"></div>
+          <div class="item"><span>Collector</span><button class="btn" id="save-collector">Save and refresh</button></div>
+          <div class="item"><label for="shortcut">Held shortcut</label><select id="shortcut"><option>Ctrl+Shift+Space</option><option>F13</option><option>F14</option><option>F15</option></select></div>
+          <div class="item cap">Map your G815 G-key to a held shortcut: key-down on press, key-up on release. Release the key to inspect; right-click the notch to pin it.</div>
+        </div>
+        <div class="group">
+          <div class="item"><span>Open Agent Usage at login</span><button class="switch" id="sw-autostart" role="switch" aria-checked="false" aria-label="Open Agent Usage at login"></button></div>
+          <div class="item cap">Starts completely invisible. Hold your shortcut to reveal it, or open Agent Usage again from Start.</div>
+          <div class="item"><span>Version</span><span class="value" id="about-version" data-dynamic></span></div>
+        </div>
+        <div class="group">
+          <div class="item"><span id="update-status" role="status">Updates</span><button class="btn" id="update-action">Check</button></div>
+        </div>
+        <div class="group">
+          <div class="item"><span>Data folder</span><button class="btn" id="btn-data">Open folder</button></div>
+          <div class="item cap">Open the folder containing your collector and appearance settings.</div>
+        </div>
+        <div class="group">
+          <div class="item cap"><span>Frontend adapted from CodeNotch by</span> <button class="link" id="author">@hivinz_</button></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+<div id="toast" data-dynamic>Saved</div>
+
+<script src="bridge.js"></script>
+<script src="settings.js"></script>
+</body></html>

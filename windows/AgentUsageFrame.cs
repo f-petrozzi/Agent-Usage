@@ -26,10 +26,32 @@ namespace AgentUsageFrame
                 return;
             }
 
+            if (args.Length >= 1 && args[0] == "--notch-self-test")
+            {
+                Environment.ExitCode = NotchTests.Run(args.Length > 1 ? args[1] : null) ? 0 : 1;
+                return;
+            }
             Native.EnableDpiAwareness();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new UsageForm());
+            using (System.Threading.EventWaitHandle reveal = new System.Threading.EventWaitHandle(false,
+                System.Threading.EventResetMode.AutoReset, @"Local\AgentUsageFrame.Reveal"))
+            using (System.Threading.EventWaitHandle quit = new System.Threading.EventWaitHandle(false,
+                System.Threading.EventResetMode.AutoReset, @"Local\AgentUsageFrame.Quit"))
+            {
+                if (args.Length == 1 && args[0] == "--quit") { quit.Set(); return; }
+                bool first;
+                using (System.Threading.Mutex instance = new System.Threading.Mutex(true, @"Local\AgentUsageFrame.Instance", out first))
+                {
+                    if (!first) { reveal.Set(); return; }
+                    try
+                    {
+                        if (args.Length == 1 && args[0] == "--panel") Application.Run(new UsageForm());
+                        else Application.Run(new NotchApp(reveal, quit));
+                    }
+                    finally { instance.ReleaseMutex(); }
+                }
+            }
         }
     }
 
@@ -767,6 +789,7 @@ namespace AgentUsageFrame
         public bool Compact { get; set; }
         public bool Weekly { get; set; }
         public bool StayOnTop { get; set; }
+        public string NotchHotkey { get; set; }
 
         /// <summary>"wsl" reads the collector in the local WSL distribution;
         /// "ssh" reads it on the machine named by <see cref="SshTarget"/>.</summary>
@@ -775,6 +798,7 @@ namespace AgentUsageFrame
 
         public FrameState()
         {
+            NotchHotkey = "Control, Shift, Space";
             Weekly = true;
             X = Int32.MinValue;
             Y = Int32.MinValue;
@@ -1602,9 +1626,7 @@ namespace AgentUsageFrame
 
             try
             {
-                string fileName, arguments;
-                BuildCommand(out fileName, out arguments);
-                string output = await Task.Run(() => RunCollector(fileName, arguments));
+                string output = await Task.Run(() => ReadCollector(state));
                 Snapshot parsed = SnapshotParser.Parse(output);
 
                 string fingerprint = parsed.Fingerprint;
@@ -1686,15 +1708,6 @@ namespace AgentUsageFrame
         /// same server-side quota, but only that box knows when a prompt ran,
         /// so pointing the frame at it keeps the activity signal honest.
         /// </summary>
-        private bool UsesSsh
-        {
-            get
-            {
-                return String.Equals(state.Source, "ssh", StringComparison.OrdinalIgnoreCase)
-                    && IsValidSshTarget(state.SshTarget);
-            }
-        }
-
         public static bool IsValidSshTarget(string target)
         {
             return !String.IsNullOrEmpty(target)
@@ -1702,9 +1715,11 @@ namespace AgentUsageFrame
                 && Regex.IsMatch(target, "^[A-Za-z0-9._-]+(@[A-Za-z0-9._-]+)?$");
         }
 
-        private void BuildCommand(out string fileName, out string arguments)
+        internal static string ReadCollector(FrameState state)
         {
-            if (UsesSsh)
+            string fileName, arguments;
+            if (String.Equals(state.Source, "ssh", StringComparison.OrdinalIgnoreCase)
+                && IsValidSshTarget(state.SshTarget))
             {
                 fileName = "ssh.exe";
                 arguments =
@@ -1716,6 +1731,7 @@ namespace AgentUsageFrame
                 fileName = "wsl.exe";
                 arguments = "--exec sh -lc \"" + WslCommand.Replace("\"", "\\\"") + "\"";
             }
+            return RunCollector(fileName, arguments);
         }
 
         private static string RunCollector(string fileName, string arguments)

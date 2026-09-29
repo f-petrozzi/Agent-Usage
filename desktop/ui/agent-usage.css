@@ -1,0 +1,30 @@
+/* Keep the adopted SVG/HTML at native Chromium resolution, never a scaled bitmap. */
+:root,:root[data-theme="light"]{--pill:#000;--edge:#000;--ink:#fff;--ink-2:#e8e8ea;--card:#080808;--ink-3:#ccc;--ink-4:#bbb;--bar:#292929;--track:#303030;--hole:#252525}
+#root{opacity:0;transition:opacity .18s ease}
+#root.visible{opacity:1}
+#pill{max-height:calc(100vh - 110px);max-width:calc(100vw - 110px);transition:border-radius .18s ease}
+#pill .cell{flex-shrink:0}
+#card{width:310px!important;max-width:calc(100vw - 110px)!important;max-height:calc(100vh - 24px);font-size:13px;margin:0}
+#rest{display:none!important}
+#notice{pointer-events:none}
+@media(prefers-reduced-motion:reduce){#root,#pill{transition:none}}
+/* Small conventional controls with a full rectangular hit target. */
+.handle{z-index:4;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:#080808;color:#aaa;cursor:pointer;opacity:.65;transition:opacity .16s,background .16s}
+.handle:hover,.handle.hover,.handle:focus-visible{opacity:1;background:#222;color:#fff}
+.handle:focus-visible{outline:1px solid #aaa;outline-offset:2px}
+.handle .control-icon{position:static;display:block;width:19px;height:19px;margin:auto;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transform:none;pointer-events:none}
+#move{cursor:grab}#move.armed{cursor:grabbing;color:#fff;background:#292929}
+#card{z-index:2}#tail{z-index:1}
+.account-extra{margin-top:12px;border-top:1px solid #252525;padding-top:8px}
+.extra-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:5px 0;background:none;border:0;color:#aaa;font:inherit;font-size:12px;cursor:pointer;text-align:left}
+.extra-toggle svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;transition:transform .22s}
+.extra-fold{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .24s ease,opacity .2s ease}
+.extra-content{min-height:0;overflow:hidden}
+.extra-row{font-size:12px;line-height:1.5;color:#b8b8bb;padding:4px 0}
+.account-extra.expanded .extra-fold{grid-template-rows:1fr;opacity:1}
+.account-extra.expanded .extra-toggle svg{transform:rotate(90deg)}
+.account-extra.expanded .extra-toggle{color:#eee}
+svg.reading{transform-origin:50% 50%}
+@media(prefers-reduced-motion:reduce){.extra-fold,.extra-toggle svg,.handle{transition:none}}
+
+#orb.update-available::after{content:"";position:absolute;right:3px;top:3px;width:6px;height:6px;border:2px solid #000;border-radius:50%;background:#8bafff;pointer-events:none}

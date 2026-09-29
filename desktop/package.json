@@ -1,0 +1,69 @@
+{
+  "name": "agent-usage-desktop",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Agent Usage with the CodeNotch Windows frontend",
+  "author": "Agent Usage contributors",
+  "license": "MIT",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "pack:windows": "electron-builder --win nsis --x64 --publish never",
+    "prepack:windows": "node -e \"require('fs').accessSync('resources/InputMonitor.exe')\""
+  },
+  "build": {
+    "appId": "ink.petro.agent-usage",
+    "productName": "Agent Usage",
+    "executableName": "AgentUsage",
+    "asar": true,
+    "files": [
+      "*.cjs",
+      "ui/**",
+      "vendor/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/InputMonitor.exe",
+        "to": "InputMonitor.exe"
+      },
+      {
+        "from": "resources/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "resources/icon.ico",
+      "signAndEditExecutable": false,
+      "target": "nsis"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "f-petrozzi",
+        "repo": "Agent-Usage",
+        "releaseType": "release"
+      }
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": false,
+      "shortcutName": "Agent Usage",
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "artifactName": "AgentUsage-Setup-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  }
+}

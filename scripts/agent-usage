@@ -129,15 +129,23 @@ def _wait_for_response(
     deadline = time.monotonic() + timeout
     while True:
         remaining = deadline - time.monotonic()
-        if remaining <= 0 or not selector.select(remaining):
-            raise UsageError(f"Timed out waiting for Codex response {request_id}")
         if proc.stdout is None:
             raise UsageError("Codex app-server stdout is unavailable")
-        line = proc.stdout.readline()
-        if not line:
-            raise UsageError(
-                f"Codex app-server exited before responding (status {proc.poll()})"
-            )
+        # A TextIOWrapper can prefetch several JSON lines, leaving select() with
+        # no readable OS bytes even though the response is already buffered.
+        # Keep framing on the raw descriptor; preserve surplus lines across RPCs.
+        pending = getattr(proc, "_usage_pending", b"")
+        while b"\n" not in pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not selector.select(remaining):
+                raise UsageError(f"Timed out waiting for Codex response {request_id}")
+            chunk = os.read(proc.stdout.fileno(), 65536)
+            if not chunk:
+                raise UsageError(f"Codex app-server exited before responding (status {proc.poll()})")
+            pending += chunk
+            if len(pending) > 4 * 1024 * 1024:
+                raise UsageError("Codex response is too large")
+        line, proc._usage_pending = pending.split(b"\n", 1)
         try:
             message = json.loads(line)
         except json.JSONDecodeError:
