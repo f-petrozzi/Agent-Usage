@@ -78,7 +78,7 @@ let activity=[]; // working state of the non-Claude providers: {provider,state:'
    told so it can mirror or rotate itself to match. 'right' is the default and the pre-edge layout. */
 let notchEdge='right';
 // Show on hover. the logic is beside the move handle below; declared here, since reportHot reads `folded` from the first frame
-let onHover=false, folded=false, pointerIn=false, menuOpen=false, foldTimer=null;
+let folded=true, pointerIn=false, menuOpen=false, foldTimer=null;
 /* How much of the window the taskbar covers, in CSS px, from Rust: top, right, bottom, left. The pill
    stays against the screen edge; the card is kept out of these. */
 let insets=[0,0,0,0];
@@ -952,9 +952,17 @@ function placeCard(){
   if(notchEdge==='right') x=r.left-w-28;
   if(notchEdge==='top') y=r.bottom+28;
   if(notchEdge==='bottom') y=r.top-h-28;
-  card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${Math.round(Math.max(8,Math.min(innerWidth-w-8,x)))}px;top:${Math.round(Math.max(8,Math.min(innerHeight-h-8,y)))}px`;
-  tail.style.left=(edgeIsVertical()?(notchEdge==='left'?r.right-1:r.left-31):cr.left+cr.width/2-18)+'px';
-  tail.style.top=(edgeIsVertical()?cr.top+cr.height/2-18:(notchEdge==='top'?r.bottom-1:r.top-31))+'px';
+  x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
+  card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x}px;top:${y}px`;
+  // The point sits on the ring, not the cell, which includes the label below it; clamped to the card's straight edge
+  const rr=(cell.querySelector('.ringwrap')||cell).getBoundingClientRect();
+  if(edgeIsVertical()){
+    const th=tail.offsetHeight||36, ty=Math.max(y+16+th/2,Math.min(y+h-16-th/2,rr.top+rr.height/2));
+    tail.style.left=(notchEdge==='left'?r.right-1:r.left-31)+'px';tail.style.top=Math.round(ty-th/2)+'px';
+  }else{
+    const tw=tail.offsetWidth||36, tx=Math.max(x+16+tw/2,Math.min(x+w-16-tw/2,rr.left+rr.width/2));
+    tail.style.left=Math.round(tx-tw/2)+'px';tail.style.top=(notchEdge==='top'?r.bottom-1:r.top-31)+'px';
+  }
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
@@ -1076,7 +1084,7 @@ function pointerInHot(x,y){
 let hideLogged=0;
 document.addEventListener('mousemove',e=>{
   // Folded, the page is sent events only over the pill, so any movement at all is the pointer reaching it
-  if(folded){ pointerIn=true; unfold(); }
+  if(folded) return; // folded is put away or on its way out here; only the shortcut brings it back
   if(window.agentTracking)return;
   if(dragging)return; // no card while dragging
   if(carrying) return; // the notch is in hand; the card would only be in the way
@@ -1171,19 +1179,22 @@ function notice(msg){
    centre, as on the Mac, not the whole box; the card gives way while either is under the pointer.
    A click on the settings orb opens Settings; holding the move handle carries the notch. */
 const orb=document.getElementById('orb'), moveHandle=document.getElementById('move');
-const HANDLE_REACH=18;
-let orbAt=null,moveAt=null,hovered=null,showMove=true,carrying=false;
+const HANDLE_REACH=28.5; // the Mac's hot zone, half of 57; square, so it matches the rect main.cjs tests
+let orbAt=null,moveAt=null,hovered=null,orbSpins=0,moveSpins=0,showMove=true,carrying=false;
 function put(el,x,y){
   el.style.left=Math.round(x-HANDLE_REACH)+'px';el.style.top=Math.round(y-HANDLE_REACH)+'px';
   el.classList.add('placed');return {x,y,reach:HANDLE_REACH};
 }
 function placeHandles(){
   const r=pill.getBoundingClientRect();if(!r.width)return false;
-  const margin=22,gap=25,clampPoint=(v,max)=>Math.max(margin,Math.min(max-margin,v));
-  const vertical=edgeIsVertical();
-  const centerX=clampPoint(r.left+r.width/2,innerWidth),centerY=clampPoint(r.top+r.height/2,innerHeight);
-  orbAt=put(orb,vertical?centerX:clampPoint(r.right+gap,innerWidth),vertical?clampPoint(r.bottom+gap,innerHeight):centerY);
-  moveAt=showMove?put(moveHandle,vertical?centerX:clampPoint(r.left-gap,innerWidth),vertical?clampPoint(r.top-gap,innerHeight):centerY):null;
+  const R=parseFloat(getComputedStyle(pill).getPropertyValue('--fillet'))||38.7;
+  // Each fillet's centre: the corner of its square diagonally opposite the one on the screen edge
+  const far=notchEdge==='left'?[r.left+R,r.bottom+R]:notchEdge==='top'?[r.right+R,r.top+R]
+    :notchEdge==='bottom'?[r.right+R,r.bottom-R]:[r.right-R,r.bottom+R];
+  const close=notchEdge==='left'?[r.left+R,r.top-R]:notchEdge==='top'?[r.left-R,r.top+R]
+    :notchEdge==='bottom'?[r.left-R,r.bottom-R]:[r.right-R,r.top-R];
+  orbAt=put(orb,far[0],far[1]);
+  moveAt=showMove?put(moveHandle,close[0],close[1]):null;
   if(!showMove)moveHandle.classList.remove('placed','hover');return true;
 }
 function near(at,x,y){return !!at&&Math.abs(x-at.x)<=at.reach&&Math.abs(y-at.y)<=at.reach;}
@@ -1192,15 +1203,20 @@ function setHovered(which){hovered=which;orb.classList.toggle('hover',which==='o
 orb.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'settings'}).catch(()=>{});});
 orb.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'settings'}).catch(()=>{});});
 moveHandle.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'move'}).catch(()=>{});});
-listen('move_begin',()=>{carrying=true;window.agentTracking=true;moveHandle.classList.add('armed','hover');clearTimeout(hideTimer);hideCard();});
+// The Mac's press: down fast, back with a little bounce
+function pressIn(el){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  el.animate([{transform:'scale(1)',easing:'ease-out'},{transform:'scale(.84)',offset:.21,easing:'cubic-bezier(.34,1.56,.64,1)'},{transform:'scale(1)'}],{duration:430});
+}
+// main.cjs confirms an activation from either click path (page or input helper), so both animate once
+listen('control_pressed',e=>{if(e.payload==='settings'){orb.style.setProperty('--spins',++orbSpins);pressIn(orb);}});
+listen('move_begin',()=>{carrying=true;window.agentTracking=true;moveHandle.classList.add('armed','hover');moveHandle.style.setProperty('--spins',++moveSpins);clearTimeout(hideTimer);hideCard();});
 listen('move_end',()=>{carrying=false;window.agentTracking=false;moveHandle.classList.remove('armed');setHovered(null);reportHot();});
 document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_move').catch(()=>{});});
-/* Show on hover, the Mac's .onHover. It opens on contact and folds a moment after the pointer has gone.
-   Rust says which (notch_pointer): once click-through is back on, the page is sent nothing at all. It
-   never folds mid-carry, mid-drag or under the right-click menu, all of which take the pointer off the
-   notch on purpose. folding under them is what #239's reviewers caught, so it is ruled out here. */
-const FOLD_GRACE=450; // NotchWindowController.foldGrace
-function foldAllowed(){ return onHover&&!pointerIn&&!carrying&&!dragging&&!menuOpen; }
+/* The Mac's .onHover fold, used as the entrance and exit: Agent Usage stays hidden until its shortcut,
+   so there is no resting pill to hover open. The pill folds into the edge as it hides and springs open
+   as it appears, the rings following a beat apart. Nothing but appear/disappear decides it. */
+let shown=false, foldMotionTimer=0;
 function setFolded(f){
   if(f===folded) return;
   folded=f;
@@ -1208,13 +1224,19 @@ function setFolded(f){
   document.body.classList.toggle('folded',f);
   reportHot();
 }
-function unfold(){ clearTimeout(foldTimer); setFolded(false); }
-function scheduleFold(){
-  clearTimeout(foldTimer);
-  if(!onHover){ setFolded(false); return; }
-  if(foldAllowed()) foldTimer=setTimeout(()=>{ if(foldAllowed()) setFolded(true); },FOLD_GRACE);
+function unfold(){ clearTimeout(foldTimer); if(shown) setFolded(false); }
+function scheduleFold(){ clearTimeout(foldTimer); setFolded(!shown); }
+function setShown(on){
+  if(on===shown) return;
+  shown=on;
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    document.body.classList.add('fold-motion');clearTimeout(foldMotionTimer);
+    foldMotionTimer=setTimeout(()=>document.body.classList.remove('fold-motion'),420);
+  }
+  setFolded(!on);
+  document.getElementById('root').classList.toggle('visible',on);
 }
-function applyUiFlags(f){ onHover=false; unfold(); }
+function applyUiFlags(){ scheduleFold(); }
 listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{

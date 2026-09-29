@@ -74,6 +74,11 @@ The sliders button opens Settings. Hold the four-arrow move button and drag to
 reposition, then release to drop. Both controls have full square hit regions
 and a Windows input-helper fallback for overlays that do not receive clicks.
 
+Since 3.0.1 the notch uses CodeNotch's fold as its entrance and exit: it springs
+out of the edge with the rings following a beat apart, and folds back before
+hiding. The controls are CodeNotch's handles again, quarter arcs in the fillet
+pockets that fill into a disc on hover; Settings spins and presses on click.
+
 Cards keep usage and resets visible; hover Account details to expand credits,
 banked resets, expiration dates, and plan information. Click also toggles it.
 The gauge sweeps briefly on reveal and turns once when you request a refresh.

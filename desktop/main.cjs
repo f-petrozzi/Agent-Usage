@@ -115,7 +115,8 @@ function hide() {
   visible = false; phase = 'hiding'; pinned = false; hot = [];
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); broadcast('ui_flags', flags());
-  setTimeout(() => { if (!visible) { win.hide(); phase = 'hidden'; } }, 230);
+  // Long enough for the pill to fold into the edge and the page to fade (agent-usage.css)
+  setTimeout(() => { if (!visible) { win.hide(); phase = 'hidden'; } }, 400);
 }
 function nearestEdge(point) {
   const b = monitor.bounds;
@@ -211,7 +212,7 @@ function endMove() {
 function activateControl(name) {
   if(!visible||!['settings','move'].includes(name))return;
   const now=Date.now();if(lastControl.name===name&&now-lastControl.at<300)return;
-  lastControl={name,at:now};
+  lastControl={name,at:now};send('control_pressed',name);
   if(name==='settings')openSettings(['available','downloading','ready','error'].includes(updates?.get().status)?'general':'accounts');else beginMove();
 }
 function requestRefresh() {

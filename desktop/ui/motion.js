@@ -4,6 +4,8 @@
 let layout={scale:1,edge:'right',along:.5}, target=0, position=null, frame=0, last=0;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+// The handles sit a fillet past each end of the pill (38.7 + their 28.5 reach), so it stops short of the corners
+const CORNER=68;
 function perimeterAt(edge,along){
   const w=innerWidth,h=innerHeight;
   return edge==='top'?along*w:edge==='right'?w+along*h:edge==='bottom'?w+h+(1-along)*w:2*w+h+(1-along)*h;
@@ -29,8 +31,8 @@ function animate(now){
   const pw=pill.offsetWidth,ph=pill.offsetHeight;
   // Snap settled text to physical pixels. Layout itself is never rotated or raster-scaled.
   const pixel=v=>Math.abs(delta)>.3?v:Math.round(v*devicePixelRatio)/devicePixelRatio;
-  const px=pixel(edge==='left'?0:edge==='right'?w-pw:clamp(x-pw/2,45,w-pw-45));
-  const py=pixel(edge==='top'?0:edge==='bottom'?h-ph:clamp(y-ph/2,45,h-ph-45));
+  const px=pixel(edge==='left'?0:edge==='right'?w-pw:clamp(x-pw/2,CORNER,w-pw-CORNER));
+  const py=pixel(edge==='top'?0:edge==='bottom'?h-ph:clamp(y-ph/2,CORNER,h-ph-CORNER));
   pill.style.left='0';pill.style.top='0';pill.style.right='auto';pill.style.bottom='auto';
   pill.style.transform=`translate(${px}px,${py}px)`;
   if(card.classList.contains('show')) placeCard();
@@ -40,14 +42,14 @@ function animate(now){
 function loadAccounts(value){agentAccounts=value||[];renderRing();if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
 window.agentUsage.on('agent_accounts',loadAccounts);
 invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
-window.agentUsage.on('layout',value=>{layout=value;window.agentTracking=value.tracking;document.getElementById('root').classList.toggle('visible',value.visible);aim(value.edge,value.along,position===null);});
+window.agentUsage.on('layout',value=>{layout=value;window.agentTracking=value.tracking;setShown(!!value.visible);aim(value.edge,value.along,position===null);});
 window.agentUsage.on('edge_cursor',value=>{
   window.agentTracking=true;layout.edge=value.edge;
   layout.along=['top','bottom'].includes(value.edge)?value.x/layout.scale/innerWidth:value.y/layout.scale/innerHeight;
   hideCard();aim(value.edge,layout.along);
 });
-window.agentUsage.on('appear',()=>{position=null;document.getElementById('root').classList.add('visible');aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
-window.agentUsage.on('disappear',()=>{hideCard();document.getElementById('root').classList.remove('visible');});
+window.agentUsage.on('appear',()=>{position=null;setShown(true);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
+window.agentUsage.on('disappear',()=>{hideCard();setShown(false);});
 window.agentUsage.on('release',()=>{window.agentTracking=false;aim(layout.edge,layout.along);});
 window.addEventListener('resize',()=>aim(layout.edge,layout.along,true));
 // Keep an arbitrary number of accounts accessible without clipping the screen.
