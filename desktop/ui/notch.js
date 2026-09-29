@@ -78,7 +78,7 @@ let activity=[]; // live sessions from the collector's feed: {provider,account,s
    told so it can mirror or rotate itself to match. 'right' is the default and the pre-edge layout. */
 let notchEdge='right';
 // Show on hover. the logic is beside the move handle below; declared here, since reportHot reads `folded` from the first frame
-let folded=true, pointerIn=false, menuOpen=false, foldTimer=null;
+let folded=false, pointerIn=false, menuOpen=false, foldTimer=null;
 /* How much of the window the taskbar covers, in CSS px, from Rust: top, right, bottom, left. The pill
    stays against the screen edge; the card is kept out of these. */
 let insets=[0,0,0,0];
@@ -935,6 +935,8 @@ function renderCard(){
 // On the upright edges that means matching its vertical centre; on the flat ones, its horizontal centre,
 // and the card is pushed clear of a pill whose thickness follows the cells it holds.
 function placeCard(){
+  // Measured on screen, written inside #root, which is offset while it slides
+  const o=document.getElementById('root').getBoundingClientRect();
   const r=pill.getBoundingClientRect(), cell=pill.querySelector(`.cell[data-p="${hoverId}"]`)||pill;
   const cr=cell.getBoundingClientRect(), w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
@@ -943,15 +945,15 @@ function placeCard(){
   if(notchEdge==='top') y=r.bottom+28;
   if(notchEdge==='bottom') y=r.top-h-28;
   x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
-  card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x}px;top:${y}px`;
+  card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
   // The point sits on the ring, not the cell, which includes the label below it; clamped to the card's straight edge
   const rr=(cell.querySelector('.ringwrap')||cell).getBoundingClientRect();
   if(edgeIsVertical()){
     const th=tail.offsetHeight||36, ty=Math.max(y+16+th/2,Math.min(y+h-16-th/2,rr.top+rr.height/2));
-    tail.style.left=(notchEdge==='left'?r.right-1:r.left-31)+'px';tail.style.top=Math.round(ty-th/2)+'px';
+    tail.style.left=(notchEdge==='left'?r.right-1:r.left-31)-o.left+'px';tail.style.top=Math.round(ty-th/2)-o.top+'px';
   }else{
     const tw=tail.offsetWidth||36, tx=Math.max(x+16+tw/2,Math.min(x+w-16-tw/2,rr.left+rr.width/2));
-    tail.style.left=Math.round(tx-tw/2)+'px';tail.style.top=(notchEdge==='top'?r.bottom-1:r.top-31)+'px';
+    tail.style.left=Math.round(tx-tw/2)-o.left+'px';tail.style.top=(notchEdge==='top'?r.bottom-1:r.top-31)-o.top+'px';
   }
 }
 
@@ -1074,7 +1076,7 @@ function pointerInHot(x,y){
 let hideLogged=0;
 document.addEventListener('mousemove',e=>{
   // Folded, the page is sent events only over the pill, so any movement at all is the pointer reaching it
-  if(folded) return; // folded is put away or on its way out here; only the shortcut brings it back
+  if(!shown) return; // stowed or on its way out; only the shortcut brings it back
   if(window.agentTracking)return;
   if(dragging)return; // no card while dragging
   if(carrying) return; // the notch is in hand; the card would only be in the way
@@ -1171,8 +1173,10 @@ function notice(msg){
 const orb=document.getElementById('orb'), moveHandle=document.getElementById('move');
 const HANDLE_REACH=28.5; // the Mac's hot zone, half of 57; square, so it matches the rect main.cjs tests
 let orbAt=null,moveAt=null,hovered=null,orbSpins=0,moveSpins=0,showMove=true,carrying=false;
+// x and y are on screen; the handles live in #root, which is offset while it slides
 function put(el,x,y){
-  el.style.left=Math.round(x-HANDLE_REACH)+'px';el.style.top=Math.round(y-HANDLE_REACH)+'px';
+  const o=document.getElementById('root').getBoundingClientRect();
+  el.style.left=Math.round(x-o.left-HANDLE_REACH)+'px';el.style.top=Math.round(y-o.top-HANDLE_REACH)+'px';
   el.classList.add('placed');return {x,y,reach:HANDLE_REACH};
 }
 function placeHandles(){
@@ -1203,13 +1207,11 @@ listen('control_pressed',e=>{if(e.payload==='settings'){orb.style.setProperty('-
 listen('move_begin',()=>{carrying=true;window.agentTracking=true;moveHandle.classList.add('armed','hover');moveHandle.style.setProperty('--spins',++moveSpins);clearTimeout(hideTimer);hideCard();});
 listen('move_end',()=>{carrying=false;window.agentTracking=false;moveHandle.classList.remove('armed');setHovered(null);reportHot();});
 document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_move').catch(()=>{});});
-/* The Mac's .onHover fold, used as the entrance and exit: Agent Usage stays hidden until its shortcut,
-   so there is no resting pill to hover open. The pill folds into the edge as it hides and springs open
-   as it appears, the rings following a beat apart. Nothing but appear/disappear decides it. */
-let shown=false, foldMotionTimer=0;
-/* Lay the folded notch out on the edge it is about to open from, transitions off, so it unfolds out of
-   that edge. Folded on another edge (or at startup, on the default one) it would otherwise open from
-   that edge's geometry, which reads as sliding in from the middle of the screen. */
+/* Appearing and disappearing: the whole notch slides out of the screen edge and back (agent-usage.css).
+   The Mac's resting-pill fold is not used; with nothing on screen at rest it read as a strip growing. */
+let shown=false;
+/* Stow the hidden notch past the edge it is about to open from, transitions off, so it slides out of that
+   edge. Stowed past another edge (or the default one at startup), it would travel in from the side. */
 function settleOnEdge(edge){
   document.body.classList.add('no-motion');
   if(edge&&edge!==notchEdge){ applyEdge(edge); renderRing(); }
@@ -1223,22 +1225,18 @@ function setFolded(f){
   document.body.classList.toggle('folded',f);
   reportHot();
 }
-function unfold(){ clearTimeout(foldTimer); if(shown) setFolded(false); }
-function scheduleFold(){ clearTimeout(foldTimer); setFolded(!shown); }
+function unfold(){ clearTimeout(foldTimer); }
+function scheduleFold(){ clearTimeout(foldTimer); }
 function setShown(on,edge){
   if(on===shown) return;
   shown=on;
   if(on) settleOnEdge(edge);
-  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
-    document.body.classList.add('fold-motion');clearTimeout(foldMotionTimer);
-    foldMotionTimer=setTimeout(()=>document.body.classList.remove('fold-motion'),420);
-  }
-  setFolded(!on);
-  if(!on) document.body.classList.remove('pointer-in');
   document.getElementById('root').classList.toggle('visible',on);
 }
+// Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
+document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });
 function applyUiFlags(){ scheduleFold(); }
-listen('notch_pointer',e=>{ pointerIn=e.payload===true; document.body.classList.toggle('pointer-in',pointerIn&&shown); if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
+listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{
   if(e.payload==='dark'||e.payload==='light') document.body.dataset.behind=e.payload;

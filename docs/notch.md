@@ -82,12 +82,12 @@ The sliders button opens Settings. Hold the four-arrow move button and drag to
 reposition, then release to drop. Both controls have full square hit regions
 and a Windows input-helper fallback for overlays that do not receive clicks.
 
-Since 3.0.1 the notch uses CodeNotch's fold as its entrance and exit: it springs
-out of the edge it opens on, with the rings following a beat apart, and folds
-back before hiding. The fillets taper fully into the screen edge. The Settings
-and Move handles sit in the fillet pockets: they surface small while the pointer
-is on the notch and bloom under it; Settings spins and presses on click. The
-card eases out of the notch, and a ring eases to a new reading.
+Since 3.0.3 the notch slides out of the screen edge in one piece and slides back
+in when it hides; the fillets taper fully into the edge. The Settings and Move
+handles rest as quarter arcs in the fillet pockets, sweeping into place as the
+notch arrives, and become a gear and a move disc under the pointer; the gear
+spins and presses on click. The card eases out of the notch, and a ring eases
+to a new reading.
 
 Cards keep usage and resets visible; hover Account details to expand credits,
 banked resets, expiration dates, and plan information. Click also toggles it.

@@ -119,8 +119,8 @@ function hide() {
   visible = false; phase = 'hiding'; pinned = false; hot = [];
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); broadcast('ui_flags', flags());
-  // Long enough for the pill to fold into the edge and the page to fade (agent-usage.css)
-  setTimeout(() => { if (!visible) { win.hide(); phase = 'hidden'; } }, 400);
+  // Long enough for the notch to slide back into the edge (agent-usage.css)
+  setTimeout(() => { if (!visible) { win.hide(); phase = 'hidden'; } }, 300);
 }
 function nearestEdge(point) {
   const b = monitor.bounds;
