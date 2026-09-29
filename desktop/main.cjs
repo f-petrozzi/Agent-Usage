@@ -5,6 +5,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { createUpdates } = require('./updates.cjs');
+const { pointerPlacement } = require('./perimeter.cjs');
 const { Collector, SessionFeed, validHost } = require('./collector.cjs');
 
 app.setName('Agent Usage');
@@ -121,8 +122,7 @@ function reveal() {
   dismissed = false; visibleUntil = Date.now() + 1800;
   if (!visible) {
     cursor = screen.getCursorScreenPoint(); useMonitor(screen.getDisplayNearestPoint(cursor));
-    config.edge = nearestEdge(cursor);
-    const b = monitor.bounds; config.along = Math.max(0,Math.min(1,['top','bottom'].includes(config.edge)?(cursor.x-b.x)/b.width:(cursor.y-b.y)/b.height));
+    const at=cursorPlacement(cursor);config.edge=at.edge;config.along=at.along;
     visible = true; phase = 'shown'; hot = [];
     place(); raise(); if (!win.isVisible()) win.showInactive();
     sendLayout(); send('appear', { edge: config.edge }); broadcast('ui_flags', flags());
@@ -136,11 +136,9 @@ function hide() {
   // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
   setTimeout(() => { if (!visible) { place(); phase = 'hidden'; } }, 460);
 }
-function nearestEdge(point) {
+function cursorPlacement(point) {
   const b = monitor.bounds;
-  const d = { top: Math.abs(point.y - b.y), right: Math.abs(b.x + b.width - point.x), bottom: Math.abs(b.y + b.height - point.y), left: Math.abs(point.x - b.x) };
-  const next = Object.keys(d).reduce((a, b) => d[a] < d[b] ? a : b);
-  return d[config.edge] <= d[next] + 28 ? config.edge : next;
+  return pointerPlacement(point.x-b.x,point.y-b.y,b.width,b.height);
 }
 function setPinned(value) {
   pinned = value; dismissed = false;
@@ -161,19 +159,17 @@ function tick() {
       transferTimer = setTimeout(() => {
         const point=screen.getCursorScreenPoint();
         useMonitor(screen.getDisplayNearestPoint(point));
-        config.edge=nearestEdge(point);
-        const bounds=monitor.bounds; config.along=Math.max(0,Math.min(1,['top','bottom'].includes(config.edge)?(point.x-bounds.x)/bounds.width:(point.y-bounds.y)/bounds.height));
+        const at=cursorPlacement(point);config.edge=at.edge;config.along=at.along;
         sendLayout();
         transferTimer = null; pendingMonitor = null; phase = 'shown'; send('appear', { edge: config.edge });
       }, 170);
     }
     const b = monitor.bounds;
-    const edge = nearestEdge(cursor);
-    config.edge = edge;
-    config.along = Math.max(0, Math.min(1, ['top','bottom'].includes(edge) ? (cursor.x - b.x) / b.width : (cursor.y - b.y) / b.height));
+    const at=cursorPlacement(cursor),edge=at.edge;
+    config.edge = edge;config.along=at.along;
     const signature=`${display.id}:${cursor.x}:${cursor.y}:${edge}`;
     if (phase !== 'transfer' && signature !== lastCursor) {
-      lastCursor=signature;send('edge_cursor', { x: cursor.x - b.x, y: cursor.y - b.y, edge, tracking: true });
+      lastCursor=signature;send('edge_cursor', { x: cursor.x - b.x, y: cursor.y - b.y, edge, perimeter:at.position, tracking: true });
     }
     visibleUntil = Date.now() + 1800;
   }
@@ -229,13 +225,12 @@ function endMove() {
   carrying=false;send('release');send('move_end');send('drag_end');
   broadcast('ui_flags',flags());visibleUntil=Date.now()+1800;save();
 }
-const CONTROLS = ['settings', 'move', 'pin', 'refresh'];
+const CONTROLS = ['settings', 'pin', 'refresh'];
 function activateControl(name) {
   if(!visible||!CONTROLS.includes(name))return;
   const now=Date.now();if(lastControl.name===name&&now-lastControl.at<300)return;
   lastControl={name,at:now};send('control_pressed',name);
   if(name==='settings')openSettings(['available','downloading','ready','error'].includes(updates?.get().status)?'general':'accounts');
-  else if(name==='move')beginMove();
   else if(name==='pin')setPinned(!pinned);
   else requestRefresh();
 }

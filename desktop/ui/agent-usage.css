@@ -12,7 +12,7 @@ body{--stow:96px 0}body[data-edge="left"]{--stow:-96px 0}body[data-edge="top"]{-
 #pill{background:transparent!important;border:0!important;--ride-x:1;--ride-y:0}
 #pill::before,#pill::after{display:none}
 body[data-edge="left"] #pill{--ride-x:-1}body[data-edge="top"] #pill{--ride-x:0;--ride-y:-1}body[data-edge="bottom"] #pill{--ride-x:0;--ride-y:1}
-#pill .cell,#pill .ctl{translate:calc(var(--ride-x,1) * (1 - var(--open,1)) * 35px) calc(var(--ride-y,0) * (1 - var(--open,1)) * 35px);transition:none}
+#pill .cell{translate:calc(var(--ride-x,1) * (1 - var(--open,1)) * 35px) calc(var(--ride-y,0) * (1 - var(--open,1)) * 35px);transition:none}
 #pill{max-height:calc(100vh - 110px);max-width:calc(100vw - 110px);transition:border-radius .18s ease}
 /* Held for one style flush while the folded notch is moved to the edge it will open from */
 body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:none!important}
@@ -26,12 +26,15 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 .handle{z-index:4;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;appearance:none}
 .handle:focus-visible{outline:1px solid #aaa;outline-offset:-4px;border-radius:50%}
 .h-disc{display:none}
-.h-glyph{width:18px;height:18px;margin:-9px 0 0 -9px}
-#move{cursor:grab}#move.armed{cursor:grabbing}
+.h-glyph{width:18px;height:18px;margin:-9px 0 0 -9px;transform-origin:center;translate:var(--glyph-x,0px) var(--glyph-y,0px)}
+.handle.hover .h-glyph{opacity:var(--disc-glyph,0)}
+.h-glyph.pin{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#pin-handle.on .pin path:first-child{fill:currentColor}
 /* The resting arms are drawn with the notch (shape.js #shape .arm), so they can bud out of its flares;
    their discs share the same SVG and goo filter, with HTML glyphs above the ink. */
 .h-rest{display:none}
-#shape .arm,#shape .neck{fill:none;stroke:var(--pill);stroke-linecap:round;stroke-linejoin:round}
+#shape .arm{fill:none;stroke:var(--pill);stroke-linecap:round;stroke-linejoin:round}
+#shape .neck{fill:var(--pill);stroke:none}
 #root:not(.visible) .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .18s ease-in}
 #root.carrying .handle .h-disc,#root.carrying .handle .h-glyph{opacity:0;transform:scale(.3);transition:opacity .16s ease-in,transform .2s ease-in}
 #card{z-index:2}#tail{z-index:1}
@@ -59,26 +62,14 @@ svg.reading{transform-origin:50% 50%}
 /* The gear: eight identical teeth, corners eased by a hairline of its own colour, so it turns evenly */
 .h-glyph.gear path{stroke:var(--ink-2);stroke-width:.9;stroke-linejoin:round}
 
-/* The same notch on every edge: 70 deep and 228 long. Lying flat, each reading stays under its ring, set
-   tight enough to fit the depth (44 + 2 + 15 in 70), and the rings keep the side edges' spacing along it:
-   39 between items puts them 83 apart and the ends 18 in, exactly where the column has them. */
-body[data-edge="top"] #pill,body[data-edge="bottom"] #pill{padding:0 18px;height:70px;align-items:center;gap:39px}
-body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{gap:2px}
-body[data-edge="top"] .pct,body[data-edge="bottom"] .pct{line-height:15px}
+/* Horizontal notches have room for the same 44 px ring, 6 px gap and 18 px reading,
+   with 11 px above and below. Side notches retain their 70 px depth. */
+#pill{height:var(--length);justify-content:center}
+.pct{line-height:18px}
+body[data-edge="top"] #pill,body[data-edge="bottom"] #pill{padding:0 18px;height:90px;width:var(--length);align-items:center;gap:38px}
+body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{gap:6px}
 
 /* Near a corner the handles step back (--hf, 0 to 1, from motion.js); carried round one whose two edges
    order the rings oppositely, the rings dip out mid-bend (--cross) rather than pass through each other */
-#pill .cell,#pill .ctl{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--cross,0) - var(--bend,0))}
+#pill .cell{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--cross,0) - var(--bend,0))}
 .handle.placed{opacity:calc(1 - var(--hf,0))}
-
-/* Pin and refresh, one click each, at the end of the notch beside the Settings pocket */
-.ctl{display:flex;gap:4px;justify-content:center;align-items:center}
-body[data-edge="top"] .ctl,body[data-edge="bottom"] .ctl{flex-direction:column}
-.ctl-btn{width:26px;height:26px;border:0;border-radius:50%;padding:0;background:transparent;color:var(--ink-4);display:grid;place-items:center;
-  cursor:pointer;transition:background-color .15s ease,color .15s ease}
-.ctl-btn:hover,.ctl-btn:focus-visible{background:#1d1d1f;color:var(--ink)}
-.ctl-btn:focus-visible{outline:1px solid #aaa;outline-offset:1px}
-.ctl-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-.ctl-btn.on{color:var(--ink)}
-.ctl-btn.on .pin-head{fill:currentColor}
-@media(prefers-reduced-motion:reduce){.ctl-btn{transition:none}}

@@ -45,6 +45,7 @@ $('tab-'+(['accounts','appearance','general'].includes(initialTab)?initialTab:'a
 api.on('settings_tab',tab=>{if(['accounts','appearance','general'].includes(tab))$('tab-'+tab).click();});
 $('close').onclick=action(()=>call('close_settings'));
 $('quit').onclick=action(()=>call('quit_app'));
+$('refresh-usage').onclick=action(()=>call('refresh_ring'));
 $('btn-data').onclick=action(()=>call('open_data_dir'));
 $('btn-recentre').onclick=action(()=>call('reset_notch_position'));
 $('save-collector').onclick=action(async()=>{await call('set_collector',{source:$('source').value,sshTarget:$('ssh').value.trim()});$('strip').hidden=false;$('strip').textContent='Collector saved; refreshing…';});
@@ -55,15 +56,15 @@ for(const [id,get,set,key] of [['seg-size','get_scale','set_scale','scale'],['se
   action(async()=>selected(id,await call(get)))();
   $(id).onclick=e=>{const b=e.target.closest('button');if(b)action(async()=>{selected(id,await call(set,{[key]:key==='scale'?Number(b.dataset.v):b.dataset.v}));})()};
 }
-for(const [id,get,set] of [['sw-autostart','get_autostart','set_autostart'],['sw-move','get_move_handle','set_move_handle']]){
+for(const [id,get,set] of [['sw-autostart','get_autostart','set_autostart']]){
   action(async()=>toggle(id,await call(get)))();
   $(id).onclick=action(async()=>toggle(id,await call(set,{on:!$(id).classList.contains('on')})));
 }
 $('screen').onchange=action(()=>call('set_notch_monitor',{id:$('screen').value}));
-// The notch's pin and refresh buttons, each on its own switch
-function renderButtons(v){if(!v)return;toggle('sw-pin-button',v.pin!==false);toggle('sw-refresh-button',v.refresh!==false);}
+// Pin lives in the leading pocket; Refresh lives here in General.
+function renderButtons(v){if(!v)return;toggle('sw-pin-button',v.pin!==false);}
 action(async()=>renderButtons(await call('get_notch_buttons')))();
-for(const [id,key] of [['sw-pin-button','pin'],['sw-refresh-button','refresh']])
+for(const [id,key] of [['sw-pin-button','pin']])
   $(id).onclick=action(async()=>renderButtons(await call('set_notch_buttons',{[key]:!$(id).classList.contains('on')})));
 api.on('notch_buttons',renderButtons);
 api.on('ui_flags',renderFlags);
@@ -79,9 +80,23 @@ action(async()=>{
 })();
 
 let updateState={status:'idle'};
+let updateReadyTimer;
 function renderUpdate(state){
+  const finishing=state.status==='ready'&&updateState.status==='downloading'&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+  clearTimeout(updateReadyTimer);
   updateState=state;
-  const labels={idle:['Updates','Check'],checking:['Checking…','Check'],current:['Up to date','Check'],available:[`Version ${state.version}`,'Update'],downloading:[`Downloading ${state.percent}%`,'Update'],ready:['Ready to update','Restart'],installing:['Restarting…','Restart'],error:['Update failed','Retry'],unavailable:['Updates unavailable','Check']};
+  const percent=state.status==='ready'?100:Math.max(0,Math.min(100,Number(state.percent)||0));
+  const progressing=state.status==='downloading'||state.status==='ready';
+  $('update-row').style.setProperty('--update-progress',`${progressing?percent:0}%`);
+  $('update-progress').hidden=state.status!=='downloading'&&!finishing;
+  $('update-progress').setAttribute('aria-valuenow',percent);
+  if(finishing){
+    $('update-status').textContent='Downloading 100%';
+    $('update-action').disabled=true;
+    updateReadyTimer=setTimeout(()=>renderUpdate(state),220);
+    return;
+  }
+  const labels={idle:['Updates','Check'],checking:['Checking…','Check'],current:['Up to date','Check'],available:[`Version ${state.version}`,'Update'],downloading:[`Downloading ${percent}%`,'Update'],ready:['Ready to update','Restart'],installing:['Restarting…','Restart'],error:['Update failed','Retry'],unavailable:['Updates unavailable','Check']};
   const [label,button]=labels[state.status]||labels.idle;
   $('update-status').textContent=label;$('update-action').textContent=button;
   $('update-action').disabled=['checking','downloading','installing','unavailable'].includes(state.status);

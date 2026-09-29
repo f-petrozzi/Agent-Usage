@@ -78,6 +78,11 @@
   .pane > .group:first-child{margin-top:6px}
   .group > * + *{border-top:1px solid var(--sep)}
   .item{padding:9px 12px;min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  #update-row{position:relative;isolation:isolate;overflow:hidden}
+  #update-progress{position:absolute;inset:0;pointer-events:none}
+  #update-row::before{content:"";position:absolute;inset:0 auto 0 0;width:var(--update-progress,0%);background:var(--accent);opacity:.14;z-index:-1;
+    transition:width .18s linear}
+  @media(prefers-reduced-motion:reduce){#update-row::before{transition:none}}
   /* A segmented control that does not fit beside its label (three Russian options do not) moves under it,
      still on the right, rather than running out of the window */
   .item:has(> .seg){flex-wrap:wrap;row-gap:8px}
@@ -176,9 +181,7 @@
         </div>
         <div class="sec">Controls</div>
         <div class="group">
-          <div class="item"><span>Move handle</span><button class="switch" id="sw-move" role="switch" aria-checked="false" aria-label="Move handle"></button></div>
           <div class="item"><span>Pin button</span><button class="switch" id="sw-pin-button" role="switch" aria-checked="false" aria-label="Pin button"></button></div>
-          <div class="item"><span>Refresh button</span><button class="switch" id="sw-refresh-button" role="switch" aria-checked="false" aria-label="Refresh button"></button></div>
         </div>
         <div class="sec">App</div>
         <div class="group">
@@ -187,6 +190,7 @@
       </section>
 
       <section class="pane" id="pane-general" role="tabpanel" aria-labelledby="tab-general" hidden>
+        <div class="group"><div class="item"><span>Usage</span><button class="btn" id="refresh-usage">Refresh</button></div></div>
         <div class="sec">Collector</div>
         <div class="group">
           <div class="item"><label for="source">Source</label><select id="source"><option value="wsl">Local WSL</option><option value="ssh">SSH</option></select></div>
@@ -201,7 +205,7 @@
         <div class="sec">About</div>
         <div class="group">
           <div class="item"><span>Version</span><span class="value" id="about-version" data-dynamic></span></div>
-          <div class="item"><span id="update-status" role="status">Updates</span><button class="btn" id="update-action">Check</button></div>
+          <div class="item" id="update-row"><span id="update-progress" role="progressbar" aria-label="Update download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden></span><span id="update-status" role="status">Updates</span><button class="btn" id="update-action">Check</button></div>
           <div class="item"><span>Settings and data</span><button class="btn" id="btn-data">Open folder</button></div>
         </div>
       </section>

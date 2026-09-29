@@ -778,27 +778,22 @@ function svgArc(r,frac,color,width,extra=''){
     transform="rotate(-90 28 28)" ${extra}/>`;
 }
 
-// Pin and refresh at the end of the notch; each can be hidden in Settings → Appearance → Controls
-let notchButtons={pin:true,refresh:true}, pinnedNow=false;
-const PIN_ICON='<svg viewBox="0 0 16 16" aria-hidden="true"><path class="pin-head" d="M10.2 1.9l3.9 3.9-1.9.7-2.6 2.6.3 2.9-1.1 1.1-5.9-5.9 1.1-1.1 2.9.3 2.6-2.6z"/><path d="M5.3 10.7 2 14"/></svg>';
-const REFRESH_ICON='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.3 8.4a5.3 5.3 0 1 1-1.6-4.3"/><path d="M12.2 1.6v3h-3"/></svg>';
-function controlsHtml(){
-  if(!notchButtons.pin&&!notchButtons.refresh) return '';
-  return `<div class="ctl">${notchButtons.pin?`<button class="ctl-btn" id="ctl-pin" type="button" aria-label="Pin" aria-pressed="false" title="Pin">${PIN_ICON}</button>`:''}`
-    +`${notchButtons.refresh?`<button class="ctl-btn" id="ctl-refresh" type="button" aria-label="Refresh usage" title="Refresh usage">${REFRESH_ICON}</button>`:''}</div>`;
-}
+// Pin occupies the near flare's pocket; refreshing a ring or Settings refreshes usage.
+let notchButtons={pin:true}, pinnedNow=false;
 function renderRing(){
   const ps=providers();
   // Rebuild the DOM only when the structure changes (never swap the element under the cursor)
-  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}${notchButtons.refresh}`;
+  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}`;
   if(pill.dataset.cells!==want){
     pill.innerHTML=ps.map((p,i)=>`<div class="cell" data-p="${p.id}" style="--i:${i}">
       <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><svg class="activity" viewBox="0 0 56 56"></svg><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
-      <div class="pct">…</div></div>`).join('')+controlsHtml();
+      <div class="pct">…</div></div>`).join('');
     pill.dataset.cells=want;
   }
-  const pinButton=pill.querySelector('#ctl-pin');
-  if(pinButton){ pinButton.classList.toggle('on',pinnedNow); pinButton.setAttribute('aria-pressed',String(pinnedNow)); pinButton.title=pinnedNow?'Unpin':'Pin'; }
+  pill.style.setProperty('--length',`${ps.length*68+Math.max(0,ps.length-1)*14+36}px`);
+  const pinButton=document.getElementById('pin-handle');
+  pinButton.classList.toggle('on',pinnedNow);pinButton.setAttribute('aria-pressed',String(pinnedNow));
+  pinButton.title=pinnedNow?'Unpin':'Pin';pinButton.setAttribute('aria-label',pinButton.title);
   for(const p of ps){
     const cell=pill.querySelector(`.cell[data-p="${p.id}"]`); if(!cell) continue;
     const svg=cell.querySelector('svg.ring'), reading=cell.querySelector('svg.reading'), activity=cell.querySelector('svg.activity'), pct=cell.querySelector('.pct'), glyph=cell.querySelector('.glyph'), wrap=cell.querySelector('.ringwrap');
@@ -1004,9 +999,8 @@ function flushHot(){
   const controls={};
   if(placeHandles()){
     controls.settings=rectOf(orb);rects.push(controls.settings);
-    if(showMove){controls.move=rectOf(moveHandle);rects.push(controls.move);}
+    if(showPin){controls.pin=rectOf(pinHandle);rects.push(controls.pin);}
   }
-  for(const [name,id] of [['pin','ctl-pin'],['refresh','ctl-refresh']]){ const b=document.getElementById(id); if(b) controls[name]=rectOf(b); }
   const data={rects,controls,expanded:open};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
 }
@@ -1179,17 +1173,17 @@ function notice(msg){
 }
 
 /* ---- The handles ----------------------------------------------------------
-   Settings past the far end of the pill, move past the near one. Placed whenever the hot rectangles
+   Settings past the far end of the pill, pin past the near one. Placed whenever the hot rectangles
    are reported, since those follow every change to the pill. Hover is a circle round each fillet's
    centre, as on the Mac, not the whole box; the card gives way while either is under the pointer.
-   A click on the settings orb opens Settings; holding the move handle carries the notch. */
-const orb=document.getElementById('orb'), moveHandle=document.getElementById('move');
+   Settings opens the panel; Pin keeps the notch visible at its current location. */
+const orb=document.getElementById('orb'), pinHandle=document.getElementById('pin-handle');
 const HANDLE_REACH=28.5; // the Mac's hot zone, half of 57; square, so it matches the rect main.cjs tests
-let orbAt=null,moveAt=null,hovered=null,orbSpins=0,moveSpins=0,showMove=true,carrying=false;
+let orbAt=null,pinAt=null,hovered=null,orbSpins=0,showPin=true,carrying=false;
 // x and y are on screen; the handles live in #root, which is offset while it slides
 function put(el,x,y){
   const o=document.getElementById('root').getBoundingClientRect();
-  el.style.left=Math.round(x-o.left-HANDLE_REACH)+'px';el.style.top=Math.round(y-o.top-HANDLE_REACH)+'px';
+  el.style.left=(x-o.left-HANDLE_REACH)+'px';el.style.top=(y-o.top-HANDLE_REACH)+'px';
   el.classList.add('placed');return {x,y,reach:HANDLE_REACH};
 }
 function placeHandles(){
@@ -1201,18 +1195,19 @@ function placeHandles(){
   const close=notchEdge==='left'?[r.left+R,r.top-R]:notchEdge==='top'?[r.left-R,r.top+R]
     :notchEdge==='bottom'?[r.left-R,r.bottom-R]:[r.right-R,r.top-R];
   orbAt=put(orb,far[0],far[1]);
-  moveAt=showMove?put(moveHandle,close[0],close[1]):null;
-  if(!showMove)moveHandle.classList.remove('placed','hover');return true;
+  pinAt=showPin?put(pinHandle,close[0],close[1]):null;
+  if(!showPin)pinHandle.classList.remove('placed','hover');return true;
 }
 function near(at,x,y){return !!at&&Math.abs(x-at.x)<=at.reach&&Math.abs(y-at.y)<=at.reach;}
-function onHandle(x,y){return near(orbAt,x,y)?'orb':near(moveAt,x,y)?'move':null;}
+function onHandle(x,y){return near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;}
 function setHovered(which){
-  const was=hovered;hovered=which;orb.classList.toggle('hover',which==='orb');moveHandle.classList.toggle('hover',which==='move'||carrying);
+  const was=hovered;hovered=which;orb.classList.toggle('hover',which==='orb');pinHandle.classList.toggle('hover',which==='pin');
   if(was!==which&&typeof morphHandles==='function') morphHandles();
 }
 orb.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'settings'}).catch(()=>{});});
 orb.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'settings'}).catch(()=>{});});
-moveHandle.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'move'}).catch(()=>{});});
+pinHandle.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'pin'}).catch(()=>{});});
+pinHandle.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'pin'}).catch(()=>{});});
 // The Mac's press: down fast, back with a little bounce
 function pressIn(el){
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -1221,19 +1216,18 @@ function pressIn(el){
 // main.cjs confirms an activation from either click path (page or input helper), so both animate once
 listen('control_pressed',e=>{
   if(e.payload==='settings'){orb.style.setProperty('--spins',++orbSpins);pressIn(orb);}
-  const b=document.getElementById(e.payload==='pin'?'ctl-pin':e.payload==='refresh'?'ctl-refresh':'');
-  if(b){ pressIn(b); if(e.payload==='refresh'&&!matchMedia('(prefers-reduced-motion: reduce)').matches) b.querySelector('svg').animate([{transform:'rotate(0)'},{transform:'rotate(360deg)'}],{duration:800,easing:'cubic-bezier(.32,.72,.24,1)'}); }
+  if(e.payload==='pin')pressIn(pinHandle);
 });
-pill.addEventListener('pointerdown',e=>{
-  const b=e.target.closest('.ctl-btn'); if(!b||e.button!==0) return;
-  e.preventDefault();e.stopPropagation();
-  callq('activate_control',{control:b.id==='ctl-pin'?'pin':'refresh'}).catch(()=>{});
-});
-listen('notch_buttons',e=>{ if(e.payload){ notchButtons={pin:e.payload.pin!==false,refresh:e.payload.refresh!==false}; renderRing(); reportHot(); } }).catch(()=>{});
-invoke('get_notch_buttons').then(v=>{ if(v){ notchButtons={pin:v.pin!==false,refresh:v.refresh!==false}; renderRing(); reportHot(); } }).catch(()=>{});
-// Taking hold of the six dots draws the arms and buttons back into the notch; letting go, they bud out again
-listen('move_begin',()=>{carrying=true;window.agentTracking=true;document.getElementById('root').classList.add('carrying');moveArms(0,.2);moveHandle.classList.add('armed','hover');moveHandle.style.setProperty('--spins',++moveSpins);clearTimeout(hideTimer);hideCard();});
-listen('move_end',()=>{carrying=false;window.agentTracking=false;document.getElementById('root').classList.remove('carrying');moveHandle.classList.remove('armed');setHovered(null);reportHot();moveArms(1,.45,t=>1-Math.pow(1-t,3));});
+function renderNotchButtons(value){
+  if(!value)return;
+  notchButtons={pin:value.pin!==false};showPin=notchButtons.pin;
+  renderRing();reportHot();if(typeof drawShape==='function')drawShape();
+}
+listen('notch_buttons',e=>renderNotchButtons(e.payload)).catch(()=>{});
+invoke('get_notch_buttons').then(renderNotchButtons).catch(()=>{});
+// Legacy Alt-drag still retracts the handles while carrying; the shortcut moves the notch directly.
+listen('move_begin',()=>{carrying=true;window.agentTracking=true;document.getElementById('root').classList.add('carrying');moveArms(0,.2);setHovered(null);clearTimeout(hideTimer);hideCard();});
+listen('move_end',()=>{carrying=false;window.agentTracking=false;document.getElementById('root').classList.remove('carrying');setHovered(null);reportHot();moveArms(1,.8,smooth);});
 document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_move').catch(()=>{});});
 /* Appearing grows the notch out of the screen edge; disappearing slides it away past the edge
    (agent-usage.css). The Mac's resting-pill fold is not used: with nothing on screen at rest it read as a
@@ -1273,8 +1267,6 @@ listen('pill_backdrop',e=>{
   else delete document.body.dataset.behind;
 }).catch(()=>{});
 invoke('get_ui_flags').then(applyUiFlags).catch(()=>{});
-listen('move_handle',e=>{ showMove=e.payload!==false; reportHot(); }).catch(()=>{});
-invoke('get_move_handle').then(v=>{ showMove=v!==false; reportHot(); }).catch(()=>{});
 
 listen('usage',e=>{usage=e.payload||usage;claudeActionMessage='';settle('claude');renderRing();if(card.classList.contains('show'))renderCard();})
   .catch(e=>notice('listen(usage) failed: '+e));

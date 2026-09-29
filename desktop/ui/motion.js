@@ -23,19 +23,19 @@ function aim(edge,along,snap=false){
   if(position===null||snap) position=target;
   if(!frame) frame=requestAnimationFrame(animate);
 }
-/* Carried round a corner, each ring (and the pin/refresh row) keeps its offset from the notch's middle along
+/* Carried round a corner, each ring keeps its offset from the notch's middle along
    the border, clockwise, and follows a line half the notch's depth in that takes the corner on one cubic
    rather than stepping across it (the Mac's ringPoint). Where the two edges lay the rings out in opposite
    orders (bottom-right and top-left), they dip out mid-bend instead of passing through each other. */
 const HEADING={top:[1,0],right:[0,1],bottom:[-1,0],left:[0,-1]}, CLOCKWISE={top:1,right:1,bottom:-1,left:-1};
 function trackPoint(t){
-  const w=innerWidth,h=innerHeight,total=2*(w+h),d=35,round=1.6*d;
+  const w=innerWidth,h=innerHeight,total=2*(w+h),round=72;
   const inset=t=>{ t=((t%total)+total)%total;
-    if(t<w) return [t,d]; if(t<w+h) return [w-d,t-w]; if(t<2*w+h) return [2*w+h-t,h-d]; return [d,total-t]; };
+    if(t<w) return [t,45]; if(t<w+h) return [w-35,t-w]; if(t<2*w+h) return [2*w+h-t,h-45]; return [35,total-t]; };
   for(const [at0,first,second] of [[w,'top','right'],[w+h,'right','bottom'],[2*w+h,'bottom','left'],[0,'left','top']]){
     let off=((t-at0)%total+total)%total; if(off>total/2) off-=total;
     if(Math.abs(off)>=round) continue;
-    const a=inset(at0-round), b=inset(at0+round), da=HEADING[first], db=HEADING[second], k=(round-d)*.8, u=(off+round)/(2*round), v=1-u;
+    const a=inset(at0-round), b=inset(at0+round), da=HEADING[first], db=HEADING[second], k=27, u=(off+round)/(2*round), v=1-u;
     const c1=[a[0]+da[0]*k,a[1]+da[1]*k], c2=[b[0]-db[0]*k,b[1]-db[1]*k];
     return [0,1].map(i=>v*v*v*a[i]+3*v*v*u*c1[i]+3*v*u*u*c2[i]+u*u*u*b[i]);
   }
@@ -43,7 +43,7 @@ function trackPoint(t){
 }
 let carriedRound=false;
 function carryItems(pass,px,py,vertical,L){
-  const items=[...pill.querySelectorAll('.cell,.ctl')], root=document.getElementById('root');
+  const items=[...pill.querySelectorAll('.cell')], root=document.getElementById('root');
   if(!pass){
     if(carriedRound){ for(const el of items){ el.style.transform=''; el.style.removeProperty('--bend'); } root.style.setProperty('--cross','0'); carriedRound=false; }
     return;
@@ -115,8 +115,17 @@ window.agentUsage.on('layout',value=>{
 });
 window.agentUsage.on('edge_cursor',value=>{
   window.agentTracking=true;layout.edge=value.edge;
-  layout.along=['top','bottom'].includes(value.edge)?value.x/layout.scale/innerWidth:value.y/layout.scale/innerHeight;
-  hideCard();aim(value.edge,layout.along);
+  if(Number.isFinite(value.perimeter)){
+    target=value.perimeter/layout.scale;
+    const w=innerWidth,h=innerHeight;
+    layout.along=value.edge==='top'?target/w:value.edge==='right'?(target-w)/h:value.edge==='bottom'?(2*w+h-target)/w:(2*(w+h)-target)/h;
+    if(position===null)position=target;
+    if(!frame)frame=requestAnimationFrame(animate);
+  }else{
+    layout.along=['top','bottom'].includes(value.edge)?value.x/layout.scale/innerWidth:value.y/layout.scale/innerHeight;
+    aim(value.edge,layout.along);
+  }
+  hideCard();
 });
 window.agentUsage.on('appear',()=>{position=null;setShown(true,layout.edge);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
 window.agentUsage.on('disappear',()=>{hideCard();setShown(false);});
