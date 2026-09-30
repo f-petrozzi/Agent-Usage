@@ -95,6 +95,26 @@ class CodexSessionTests(unittest.TestCase):
         self.rollout('stuck', 'task_started', age=usage.CODEX_QUIET_SECONDS + 60)
         self.assertEqual(usage.codex_sessions([('a', self.home)], self.now), [])
 
+    def test_a_long_turn_stays_busy_past_the_tail_and_its_end_is_seen(self):
+        # A 30-minute Codex turn writes megabytes of tool output after task_started
+        path = self.day / 'rollout-long.jsonl'
+        filler = json.dumps({'type': 'response_item', 'payload': {'type': 'function_call_output', 'output': 'x' * 4000}})
+        lines = [json.dumps({'type': 'session_meta', 'payload': {'cwd': '/mnt/ssd/homelab'}}),
+                 json.dumps({'type': 'event_msg', 'timestamp': '2026-09-30T17:20:51Z', 'payload': {'type': 'task_started'}})]
+        lines += [filler] * (usage.SESSION_TAIL_BYTES // 4000 * 3)
+        path.write_text('\n'.join(lines) + '\n'); os.utime(path, (self.now, self.now))
+        usage._codex_turns.clear()
+        got = usage.codex_sessions([('b', self.home)], self.now, include_terminal=True)
+        self.assertEqual([(s['id'], s['state']) for s in got], [('rollout-long', 'busy')], 'a first look reads back far enough')
+        with path.open('a') as handle:
+            handle.write('\n'.join([filler] * 80) + '\n')
+        got = usage.codex_sessions([('b', self.home)], self.now, include_terminal=True)
+        self.assertEqual([s['state'] for s in got], ['busy'], 'still working as the rollout grows')
+        with path.open('a') as handle:
+            handle.write(json.dumps({'type': 'event_msg', 'timestamp': '2026-09-30T17:53:32Z', 'payload': {'type': 'task_complete'}}) + '\n')
+        got = usage.codex_sessions([('b', self.home)], self.now, include_terminal=True)
+        self.assertEqual([s['state'] for s in got], ['idle'], 'and its end is seen, so it can be announced')
+
     def test_sub_agents_are_part_of_their_parent_not_sessions(self):
         # Codex's guardian reviews an approval in a rollout of its own; its quick tasks must not read as finished work
         lines = [{'type': 'session_meta', 'payload': {'cwd': '/mnt/ssd/homelab', 'source': {'subagent': {'other': 'guardian'}},

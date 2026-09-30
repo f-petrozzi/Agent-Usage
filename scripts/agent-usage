@@ -880,38 +880,70 @@ def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[di
     return sessions
 
 
-def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
-    """Return (state, turn start, cwd) from the tail of one rollout; a sub-agent's rollout has no state of its own."""
-    size = path.stat().st_size
-    with path.open("rb") as handle:
-        first = handle.readline(64 * 1024)
-        handle.seek(max(0, size - SESSION_TAIL_BYTES))
-        tail = handle.read()
-    cwd = None
-    try:
-        meta = json.loads(first)
-        if meta.get("type") == "session_meta" and isinstance(meta.get("payload"), dict):
-            payload = meta["payload"]
-            source = payload.get("source")
-            if (isinstance(source, dict) and "subagent" in source) or payload.get("parent_thread_id"):
-                return None, None, None
-            cwd = payload.get("cwd")
-    except ValueError:
-        pass
-    for line in reversed(tail.splitlines()):
+# What each rollout last said about its turn and how far it has been read. A long turn writes megabytes after its
+# task_started (every tool output goes into the rollout), far past any fixed tail: a session read only from the tail
+# fell out of view mid-turn, came back finished with no "was working" before it, and its end was never announced.
+_codex_turns: dict[str, tuple[int, int, tuple[str | None, int | None, str | None]]] = {}
+
+
+def _latest_turn_event(chunk: bytes) -> tuple[str, int | None] | None:
+    for line in reversed(chunk.splitlines()):
         if b'"event_msg"' not in line:
             continue
         try:
             entry = json.loads(line)
         except ValueError:
-            continue  # the first line of the window may be cut
+            continue  # a line cut by the window, or one still being written
         payload = entry.get("payload") if isinstance(entry, dict) else None
         kind = payload.get("type") if isinstance(payload, dict) else None
         if kind in CODEX_TURN_EVENTS:
-            state = CODEX_TURN_EVENTS[kind]
-            started = _parse_iso(entry.get("timestamp")) if state else None
-            return state, started, cwd if isinstance(cwd, str) else None
-    return None, None, None
+            return CODEX_TURN_EVENTS[kind], _parse_iso(entry.get("timestamp"))
+    return None
+
+
+def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
+    """Return (state, turn start, cwd) for one rollout; a sub-agent's rollout has no state of its own.
+
+    The first look reads back from the end, widening until it finds the turn; after that only what has been
+    written since is read (with an overlap, for a line that was still being written last time)."""
+    stat = path.stat()
+    key, size = str(path), stat.st_size
+    known = _codex_turns.get(key)
+    if known and known[0] == stat.st_ino and known[1] == size:
+        return known[2]
+    with path.open("rb") as handle:
+        first = handle.readline(64 * 1024)
+        cwd = None
+        try:
+            meta = json.loads(first)
+            if meta.get("type") == "session_meta" and isinstance(meta.get("payload"), dict):
+                payload = meta["payload"]
+                source = payload.get("source")
+                if (isinstance(source, dict) and "subagent" in source) or payload.get("parent_thread_id"):
+                    _codex_turns[key] = (stat.st_ino, size, (None, None, None))
+                    return None, None, None
+                cwd = payload.get("cwd")
+        except ValueError:
+            pass
+        cwd = cwd if isinstance(cwd, str) else None
+        if known and known[0] == stat.st_ino and known[1] < size:
+            since = max(0, known[1] - 64 * 1024)
+            handle.seek(since)
+            found = _latest_turn_event(handle.read(size - since))
+            result = (found[0], found[1], cwd) if found else known[2]
+        else:
+            found, window = None, SESSION_TAIL_BYTES
+            while True:
+                handle.seek(max(0, size - window))
+                found = _latest_turn_event(handle.read(min(size, window)))
+                if found or window >= size or window >= 64 * 1024 * 1024:
+                    break
+                window *= 4
+            result = (found[0], found[1], cwd) if found else (None, None, None)
+    if len(_codex_turns) > 512:
+        _codex_turns.clear()
+    _codex_turns[key] = (stat.st_ino, size, result)
+    return result
 
 
 def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_terminal: bool = False) -> list[dict[str, Any]]:
