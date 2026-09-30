@@ -1,6 +1,7 @@
 # App icon
 
-The purple flowing ribbon is reconstructed from the user's selected reference.
+The flowing ribbon is reconstructed from the user's selected reference and recoloured
+blue (3.1.6) so it stands out on a purple taskbar and tray.
 Its six separated sections surround a star-shaped opening. The background and
 opening are transparent; there is no enclosing tile or baked-in JPEG.
 
