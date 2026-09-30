@@ -162,7 +162,7 @@ function drawStraight(){
     h.ink.setAttribute('d',points.join(''));
     // In motion the drop pulls long toward the notch, most at mid-travel, as liquid does between two bodies
     if(p>0&&blend>.5){
-      const x0=cx+centre*Math.cos(mid),y0=F+centre*Math.sin(mid),tail=proportions.disc*.5*Math.sin(Math.PI*p);
+      const x0=cx+centre*Math.cos(mid),y0=F+centre*Math.sin(mid),tail=proportions.disc*.72*Math.pow(Math.sin(Math.PI*p),.8);
       h.ink.setAttribute('d',`M${n(x0)} ${n(y0)}L${n(x0+tail*Math.cos(mid))} ${n(y0+tail*Math.sin(mid))}`);
     }
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
@@ -173,11 +173,11 @@ function drawStraight(){
       :stroke*.55*smooth(out/.12)*(1-smooth((out-.7)/.3));
     // Swapping, the blur is what melts the drop into the notch: nothing at rest, enough at the middle of the way to
     // bridge the gap to the flare, so the drop, its strand and the notch run together as one body
-    const blur=Math.max(goo,7.8*proportions.scale*Math.sin(Math.PI*disc),11*proportions.scale*smooth(p/.55));
+    const blur=Math.max(goo,7.8*proportions.scale*Math.sin(Math.PI*disc),13.5*proportions.scale*smooth(p/.4));
     h.ink.setAttribute('stroke-width',n(width+blur*.4));
     // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
     const armNeck=merging?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
-    const neckWidth=Math.max(armNeck,stroke*1.75*Math.pow(Math.sin(Math.PI*disc),.55));
+    const neckWidth=Math.max(armNeck,stroke*1.75*Math.pow(Math.sin(Math.PI*disc),.55),stroke*2.6*Math.sin(Math.PI*p));
     if(neckWidth>stroke*.18&&out>.01){
       const ax=cx+(F+stroke)*Math.cos(mid), ay=F+(F+stroke)*Math.sin(mid);
       const reach=merging?smooth((.92-out)/.32):1;
@@ -291,11 +291,11 @@ function swapHandle(i,onHome,onSettled){
   // It never quite stops inside the black: the new drop starts to swell as the old one is still arriving
   const inOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2, drip=t=>-(Math.cos(Math.PI*t)-1)/2;
   h.el.classList.add('swapping');
-  leg(.05,.46,inOut,()=>{
+  leg(.1,.38,inOut,()=>{
     onHome();
-    leg(.6,.44,drip,()=>{
+    leg(.6,.36,drip,()=>{
       let last=performance.now(),velocity=2.4;
-      const omega=2*Math.PI/.55,zeta=.42;
+      const omega=2*Math.PI/.5,zeta=.4;
       const step=now=>{
         const dt=Math.min(.032,(now-last)/1000);last=now;
         velocity+=(-omega*omega*(h.swap-1)-2*zeta*omega*velocity)*dt;h.swap+=velocity*dt;
