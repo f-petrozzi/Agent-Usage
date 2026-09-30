@@ -869,16 +869,42 @@ let hoverId='claude';
 let claudeAuth={busy:false,message:''};
 let claudeActionMessage='';
 // Authentication stays on the collector machine.
+function renderUsageWindows(windows){
+  let html='',group=null;
+  for(const w of windows){
+    if((w.group||null)!==group){
+      if(group) html+=`</div>`;
+      group=w.group||null;
+      if(group) html+=`<div class="g-head">${esc(textCopy(group))}</div><div class="g-box">`;
+    }
+    if(w.count!=null){
+      html+=`<div class="win"><div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span></div>
+        <div class="w-used">${w.count>0?`~${w.count} ${textCopy(w.count===1?'request today':'requests today')}`:textCopy('no requests today')}</div></div>`;
+      continue;
+    }
+    html+=`<div class="win">
+      <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-reset">${resetCopy(w.resets_at)}</span></div>
+      <div class="w-track" data-window="${esc(w.id)}"><div class="w-fill" style="width:${(Math.min(w.used,1)*100).toFixed(0)}%;background:${tone(w.used)}"></div></div>
+      <div class="w-used">${esc(usedCopy(w))}</div>
+    </div>`;
+  }
+  if(group) html+=`</div>`;
+  return html;
+}
+
 function renderCard(){
   const c=document.getElementById('card');
   const p=providers().find(x=>x.id===hoverId)||providers()[0];
   if(!p)return;
   const snap=p.snap;
+  const extraWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)==='3p'):[];
+  const mainWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)!=='3p'):snap.windows;
+  const hasExtras=!!snap.details?.length||extraWindows.length>0;
   const headIcon=glyphHtml(p,true);
   // p.name is no longer a constant: for a second account it is built from the home
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
-  let html=`<div class="c-head">${headIcon}${snap.details?.length?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}</div>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -886,26 +912,7 @@ function renderCard(){
   }else if(!snap.windows.length){
     html+=`<div class="c-note">${esc(textCopy(snap.note||'Waiting for first reading…'))}</div>`;
   }else{
-    // Windows that share a group (Antigravity's model families) sit in one box under its name, as on the Mac
-    let group=null;
-    for(const w of snap.windows){
-      if((w.group||null)!==group){
-        if(group) html+=`</div>`;
-        group=w.group||null;
-        if(group) html+=`<div class="g-head">${esc(textCopy(group))}</div><div class="g-box">`;
-      }
-      if(w.count!=null){
-        html+=`<div class="win"><div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span></div>
-          <div class="w-used">${w.count>0?`~${w.count} ${textCopy(w.count===1?'request today':'requests today')}`:textCopy('no requests today')}</div></div>`;
-        continue;
-      }
-      html+=`<div class="win">
-        <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-reset">${resetCopy(w.resets_at)}</span></div>
-        <div class="w-track" data-window="${esc(w.id)}"><div class="w-fill" style="width:${(Math.min(w.used,1)*100).toFixed(0)}%;background:${tone(w.used)}"></div></div>
-        <div class="w-used">${esc(usedCopy(w))}</div>
-      </div>`;
-    }
-    if(group) html+=`</div>`;
+    html+=renderUsageWindows(mainWindows);
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
@@ -922,7 +929,7 @@ function renderCard(){
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;
-  if(typeof setExtraContent==='function')setExtraContent(snap.details||[]);
+  if(typeof setExtraContent==='function')setExtraContent(snap.details||[],extraWindows);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){
     let closeTimer;

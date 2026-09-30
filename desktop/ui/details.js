@@ -110,16 +110,16 @@ function setDetailsShown(on,instant=false){
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
 
-// Account metadata unfolds as its own frame; it never changes the main notch outline.
+// Account metadata and secondary model quotas unfold as their own frame; it never changes the main notch outline.
 const extraCard=document.createElement('div');extraCard.id='extra-card';extraCard.setAttribute('aria-hidden','true');
 card.parentElement.append(extraCard);
 const extraPath=document.createElementNS(SVG_NS,'path');detailSvg.append(extraPath);
 detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}</defs>`);
 const extraFilter=detailSvg.querySelector('#extra-goo');
 let extraOpen=0,extraTarget=0,extraVelocity=0,extraFrame=0,extraLast=0;
-function setExtraContent(rows){
-  extraCard.innerHTML=rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('');
-  if(!rows.length)setExtraShown(false,true);
+function setExtraContent(rows,windows=[]){
+  extraCard.innerHTML=rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('')+renderUsageWindows(windows);
+  if(!rows.length&&!windows.length)setExtraShown(false,true);
   placeExtraCard();
 }
 function placeExtraCard(){
