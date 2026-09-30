@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), vm = require('node:vm');
 const { createRequire } = require('node:module');
+const { pathToFileURL } = require('node:url');
 const main = path.resolve(__dirname, '../desktop/main.cjs');
 function setup(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-usage-monitor-'));
@@ -28,7 +29,7 @@ function setup(t) {
   vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d){win=w;settings=s;config=c;configPath=file;monitor=d;visible=true;}, switchMonitor };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1 };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0]);
-  const event = sender => ({ sender, senderFrame: { url: 'file://' + path.dirname(main) + '/ui/notch.html' } });
+  const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
   return { calls, displays, config, move: context.monitorTest.switchMonitor,
     command: (name, args, sender = win.webContents) => command(event(sender), name, args), settings };
 }

@@ -143,7 +143,7 @@ The bell history scrolls within a 228px list while the heading and switches rema
 
 Validation: 37 desktop checks; browser checks cover history wheel scrolling on every edge, preserved scroll position, per-account testing, hidden-account restoration and reduced motion.
 
-## Account-shaped notifications and monitor changes (3.2.7)
+## Account-shaped notifications and monitor changes (3.2.8)
 
 Side-edge notifications span the gauge and its percentage together (at least 76px before text insets). Top/bottom notifications grow from the account's physical section: the outside flank for each end account, and a centered neck for middle accounts. Smooth shoulders feed into a compact 128–160px text body with the notch's 20px corners. Bottom-edge account order is mirrored correctly; long details still pan without extra rows.
 

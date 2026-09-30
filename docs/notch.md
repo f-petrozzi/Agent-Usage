@@ -200,7 +200,7 @@ Settings → Accounts includes a Test notification toggle for each account. A si
 
 The helper installer resolves the Code CLI entrypoint from `bin/code.cmd`, clears `VSCODE_DEV` as the official wrapper does, verifies the bundled file exists, and waits up to 60 seconds. Errors retain the actual installer reason. The Windows release workflow now installs the packaged helper into isolated Code data/extensions through Electron before publishing.
 
-## Account-shaped lifts and monitor relocation (3.2.7)
+## Account-shaped lifts and monitor relocation (3.2.8)
 
 Side-edge bands are at least 76px tall and centered on the entire gauge/percentage cell. Flat-edge roots follow physical account-section boundaries; the outside accounts taper from the full left/right flank, while middle accounts inflate from a centered neck. Their 128–160px bodies retain two text lines and 20px corners. Curves meet the notch front on a horizontal tangent, and the whole lift stays within its width.
 
