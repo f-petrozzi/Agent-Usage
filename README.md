@@ -1,7 +1,7 @@
 # Agent Usage
 
 A hidden-at-startup Windows edge notch for Codex and Claude usage, reset times,
-and banked resets. Hold **Ctrl+Shift+Space** to reveal it and follow your cursor
+and banked resets. Hold **Shift+F1** to reveal it and follow your cursor
 around either monitor's edges. Release, then hover an agent for scrollable details.
 Colored rings show usage consumed; right-click to switch between 5-hour and weekly
 readings or change the shortcut.

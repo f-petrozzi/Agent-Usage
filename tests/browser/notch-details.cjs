@@ -60,7 +60,12 @@ const answers = {
     await page.mouse.move(ring.x+ring.width/2,ring.y+ring.height/2);
     await page.waitForTimeout(80);
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),false,'hover dwell');
-    await page.waitForTimeout(950);
+    await page.waitForTimeout(100);
+    const morph=await page.evaluate(()=>{const m=gaugeMorphs.get('claude');return {t:m?.t,target:m?.target,d:m?.group.querySelector('.ribbon-fill').getAttribute('d')};});
+    assert.ok(morph.t>0&&morph.t<1,'ring is visibly between ring and bar');
+    assert.equal(morph.target,1);assert.ok(morph.d&&!morph.d.includes('NaN'));
+    await page.screenshot({path:path.join(OUT,edge+'-unrolling.png')});
+    await page.waitForTimeout(850);
     const initial=await page.evaluate(()=>({open:detailOpen,account:card.dataset.account,ink:detailPath.getAttribute('d'),opacity:getComputedStyle(card).opacity,
       box:card.getBoundingClientRect().toJSON(),tail:getComputedStyle(tail).clipPath,background:getComputedStyle(card).backgroundColor}));
     assert.ok(initial.open>.99&&initial.open<1.01);assert.equal(initial.account,'claude');assert.equal(initial.tail,'none');assert.equal(initial.background,'rgba(0, 0, 0, 0)');assert.equal(initial.opacity,'1');assert.ok(initial.ink.includes('V0'));assert.ok(initial.ink.includes('A'));
@@ -70,6 +75,11 @@ const answers = {
       // Both ends of the original notch continue outward as solid black, without a neck.
       return [a0+28,a1-28].every(u=>detailPath.isPointInFill(new DOMPoint(u,depth+8)));
     }),'expansion continues across the original notch width');
+    assert.ok(await page.evaluate(()=>{
+      const m=gaugeMorphs.get('claude'),b=m.track.getBoundingClientRect(),root=document.getElementById('root').getBoundingClientRect();
+      const path=m.group.querySelector('.ribbon-track'),end=path.getPointAtLength(path.getTotalLength());
+      return m.t===1&&Math.abs(end.x-(b.right-root.left))<.01&&Math.abs(end.y-(b.top+b.height/2-root.top))<.01&&getComputedStyle(m.track).opacity==='1'&&m.group.style.display==='none';
+    }),'ribbon lands exactly on the corresponding usage bar');
     await page.screenshot({path:path.join(OUT,edge+'-details.png')});
     const shoulder=await page.evaluate(()=>{
       const matrix=detailPath.getScreenCTM(),u=(detailBox.a0+detailBox.a1)/2,v=12;
@@ -93,7 +103,13 @@ const answers = {
     assert.equal(await page.evaluate(()=>extraTarget),1,'metadata remains readable on hover');
     await page.screenshot({path:path.join(OUT,edge+'-metadata.png')});
     const next=await page.locator('.cell .ringwrap').nth(1).boundingBox();
-    await page.mouse.move(next.x+next.width/2,next.y+next.height/2);await page.waitForTimeout(650);
+    await page.mouse.move(next.x+next.width/2,next.y+next.height/2);await page.waitForTimeout(110);
+    assert.ok(await page.evaluate(()=>{const a=gaugeMorphs.get('claude'),b=gaugeMorphs.get('codex');return card.dataset.account==='codex'&&a.t>0&&a.t<1&&b.t>0&&b.t<1&&detailTarget===1;}),'account handoff overlaps without closing the notch');
+    await page.screenshot({path:path.join(OUT,edge+'-handoff.png')});
+    // Reverse before either ribbon settles; the new spring keeps its live velocity.
+    await page.evaluate(()=>{hoverId='claude';renderCard();});await page.waitForTimeout(35);
+    assert.equal(await page.evaluate(()=>gaugeMorphs.get('claude').target),1);
+    await page.evaluate(()=>{hoverId='codex';renderCard();});await page.waitForTimeout(550);
     assert.equal(await page.evaluate(()=>card.dataset.account),'codex');
     assert.equal(await page.evaluate(()=>extraTarget),0,'switching accounts closes metadata');
     const switched=await page.locator('#card').boundingBox();
@@ -108,8 +124,8 @@ const answers = {
   await sample(1680);await page.evaluate(()=>{window.agentTracking=false;hoverId='claude';showCard();});await page.waitForTimeout(250);
   await page.evaluate(()=>hideCard());await page.waitForTimeout(80);await page.evaluate(()=>showCard());await page.waitForTimeout(1000);
   assert.equal(await page.evaluate(()=>detailOpen),1);
-  await page.evaluate(()=>{window.agentTracking=true;hideCard();});assert.equal(await page.evaluate(()=>detailOpen),0);
-  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.agentTracking=false;showCard();});assert.equal(await page.evaluate(()=>detailOpen),1);
+  await page.evaluate(()=>{window.agentTracking=true;hideCard();});assert.equal(await page.evaluate(()=>detailOpen),0);assert.ok(await page.evaluate(()=>[...gaugeMorphs.values()].every(m=>m.t===0)));
+  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.agentTracking=false;showCard();});assert.equal(await page.evaluate(()=>detailOpen),1);assert.equal(await page.evaluate(()=>getComputedStyle(gaugeMorphSvg).display),'none');
   await page.evaluate(()=>hideCard());assert.equal(await page.evaluate(()=>detailOpen),0);
   await page.setViewportSize({width:360,height:300});
   for(const t of [180,510,840,1170]){

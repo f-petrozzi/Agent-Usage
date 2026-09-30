@@ -901,7 +901,7 @@ function renderCard(){
       }
       html+=`<div class="win">
         <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-reset">${resetCopy(w.resets_at)}</span></div>
-        <div class="w-track"><div class="w-fill" style="width:${(Math.min(w.used,1)*100).toFixed(0)}%;background:${tone(w.used)}"></div></div>
+        <div class="w-track" data-window="${esc(w.id)}"><div class="w-fill" style="width:${(Math.min(w.used,1)*100).toFixed(0)}%;background:${tone(w.used)}"></div></div>
         <div class="w-used">${esc(usedCopy(w))}</div>
       </div>`;
     }
@@ -938,6 +938,7 @@ function renderCard(){
   c.scrollTop=scroll;
   if(changedAccount&&typeof changeDetailAccount==='function')changeDetailAccount();
   placeCard();
+  if(typeof syncGaugeMorph==='function')syncGaugeMorph();
 }
 // Usage stays centered on the notch when the hovered account changes.
 function placeCard(){
@@ -1107,7 +1108,7 @@ document.addEventListener('mousemove',e=>{
         showTimer=setTimeout(()=>{
           pendingAccount=null;hoverId=id;
           if(card.classList.contains('show')){renderCard();armWatchdog();}else showCard();
-        },140);
+        },card.classList.contains('show')?40:100);
       }
     }else{clearTimeout(showTimer);pendingAccount=null;}
   }

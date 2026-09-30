@@ -60,7 +60,7 @@ function detailContains(x,y){
 }
 function detailStep(now){
   const dt=Math.min(.032,(now-(detailLast||now-16))/1000);detailLast=now;
-  const omega=2*Math.PI/(detailTarget?.62:.38),damping=detailTarget?.78:1;
+  const omega=2*Math.PI/(detailTarget?.42:.38),damping=detailTarget?.78:1;
   detailVelocity+=(-omega*omega*(detailOpen-detailTarget)-2*damping*omega*detailVelocity)*dt;
   detailOpen+=detailVelocity*dt;
   let settled=Math.abs(detailOpen-detailTarget)<.002&&Math.abs(detailVelocity)<.025;
@@ -72,9 +72,9 @@ function detailStep(now){
       if(Math.abs(detailBox[key]-detailAim[key])>.1)settled=false;
     }
   }
-  detailReading=Math.min(1,detailReading+dt/.22);card.style.setProperty('--detail-reading',detailReading);
+  detailReading=Math.min(1,detailReading+dt/.12);card.style.setProperty('--detail-reading',detailReading);
   if(detailReading<1)settled=false;
-  card.style.setProperty('--detail-open',Math.max(0,detailOpen));drawDetails();reportHot();
+  card.style.setProperty('--detail-open',Math.max(0,detailOpen));drawDetails();if(typeof drawGaugeMorphs==='function')drawGaugeMorphs();reportHot();
   if(!settled){detailFrame=requestAnimationFrame(detailStep);return;}
   detailFrame=0;detailLast=0;
   if(!detailTarget)card.classList.remove('closing');
@@ -91,6 +91,7 @@ function syncDetails(){
 function reducedDetails(){return matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function setDetailsShown(on,instant=false){
   detailTarget=on?1:0;
+  if(typeof syncGaugeMorph==='function')syncGaugeMorph(instant||reducedDetails());
   if(on)syncDetails();
   if(instant||reducedDetails()){
     cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;
