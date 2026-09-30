@@ -946,8 +946,6 @@ function openResets(row,on){
   if(on){resetsGrowing=true;clearTimeout(resetsGrowTimer);resetsGrowTimer=setTimeout(()=>{resetsGrowing=false;},520);}
 }
 function renderCard(){
-  // An alert holds the card until it is read or turned into this account's usage (notify.js)
-  if(typeof alertShowing!=='undefined'&&alertShowing){renderAlert(alertShowing);return;}
   const c=document.getElementById('card');
   if(hoverId===ALERTS_ID){ // the bell: the alert log in the same lobe
     const changed=!!c.dataset.account&&c.dataset.account!==ALERTS_ID;
@@ -1025,12 +1023,8 @@ function placeCard(){
   if(notchEdge==='top') y=r.bottom;
   if(notchEdge==='bottom') y=r.top-h;
   // The log grows out of the end whose pocket holds the bell: along the edge from there, not centred
-  if(hoverId===ALERTS_ID&&!(typeof alertShowing!=='undefined'&&alertShowing)){
+  if(hoverId===ALERTS_ID){
     if(edgeIsVertical())y=r.top-12;else x=r.left-12; // that pocket is at the top on a side edge, the left end lying flat
-  }
-  // An alert's words sit beside the ring they are about, within the notch's length
-  if(typeof alertShowing!=='undefined'&&alertShowing&&edgeIsVertical()&&cell!==pill){
-    const c=cell.getBoundingClientRect();y=Math.max(r.top,Math.min(r.bottom-h,c.top+c.height/2-h/2));
   }
   x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
   card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
@@ -1090,11 +1084,11 @@ function holdCard(id){
 // The pointer has left the notch: a peek goes after a short grace, a held card only after a longer absence
 function leaveCard(){
   clearTimeout(showTimer);pendingAccount=null;
-  if(!card.classList.contains('show')||(typeof alertShowing!=='undefined'&&alertShowing))return;
+  if(!card.classList.contains('show'))return;
   if(cardHeld){if(!pinnedNow&&!awayTimer)awayTimer=setTimeout(()=>{awayTimer=0;hideCard();},HELD_AWAY);return;}
   scheduleHide();
 }
-function showCard(){clearTimeout(hideTimer);card.classList.remove('closing');card.classList.add('show');renderCard();setDetailsShown(true);armWatchdog();refreshClock();} // show first, then render: placeCard needs offsetHeight
+function showCard(){if(typeof retractSlivers==='function')retractSlivers(); /* a card takes the place of any alert */clearTimeout(hideTimer);card.classList.remove('closing');card.classList.add('show');renderCard();setDetailsShown(true);armWatchdog();refreshClock();} // show first, then render: placeCard needs offsetHeight
 // Nothing is broadcast when the Windows clock format changes, so ask again each time the card opens
 function refreshClock(){
   invoke('get_state').then(s=>{
@@ -1103,7 +1097,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof clearAlert==='function')clearAlert();if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1129,7 +1123,8 @@ function flushHot(){
     controls.settings=rectOf(orb);rects.push(controls.settings);
     if(showPin){const lead=rectOf(pinHandle);controls[leadFace()]=lead;rects.push(lead);} // named for what the pocket holds
   }
-  const data={rects,controls,expanded:open,alerting:typeof alertShowing!=='undefined'&&!!alertShowing};const signature=JSON.stringify(data);
+  if(typeof sliverRects==='function')rects.push(...sliverRects());
+  const data={rects,controls,expanded:open,alerting:typeof slivering==='function'&&slivering()};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
 }
 // Expansion and scrolling alter the clickable card bounds without a cursor move.
@@ -1242,11 +1237,8 @@ document.addEventListener('mousemove',e=>{
   if(hovered==='pin'&&leadFace()==='alerts'&&card.classList.contains('show')&&hoverId===ALERTS_ID){clearTimeout(hideTimer);return;}
   if(hovered||e.target.closest?.('.ctl')){ clearTimeout(showTimer);pendingAccount=null;if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
   const hot=pointerInHot(e.clientX,e.clientY);
-  if(typeof alertShowing!=='undefined'&&alertShowing){
-    const id=hot&&cellAt(e.clientX,e.clientY);
-    if(!id){holdAlert(hot);return;}
-    endAlert(false);renderCard(); // a ring under the pointer: its usage takes the alert's place
-  }
+  // Over an alert's sliver: it holds (and counts as seen), and nothing else under the pointer reacts
+  if(typeof slivering==='function'&&slivering()){const over=sliverAt(e.clientX,e.clientY);holdSlivers(!!over,over);if(over)return;}
   if(hot){
     clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;
     if(cardHeld){clearTimeout(showTimer);pendingAccount=null;return;} // held: rings passed over leave it be
@@ -1270,7 +1262,7 @@ document.addEventListener('mouseout',e=>{if(!e.relatedTarget)leaveCard();}); // 
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
 card.addEventListener('click',e=>{const b=e.target.closest('.c-refresh');if(b&&card.dataset.account){refreshRing(card.dataset.account);b.classList.add('spinning');}});
 // Clicking a card being peeked at holds it
-card.addEventListener('click',()=>{if(!cardHeld&&card.classList.contains('show')&&!(typeof alertShowing!=='undefined'&&alertShowing))holdCard(hoverId);});
+card.addEventListener('click',()=>{if(!cardHeld&&card.classList.contains('show'))holdCard(hoverId);});
 // Card content changes change its height -> report the hot rectangles again
 listen('usage',()=>{if(card.classList.contains('show'))armWatchdog();}).catch(()=>{});
 listen('state',()=>{if(card.classList.contains('show'))armWatchdog();}).catch(()=>{});
@@ -1448,7 +1440,7 @@ function setShown(on,edge){
   if(on===shown) return;
   shown=on;if(on)shownAt=performance.now();
   const root=document.getElementById('root');
-  if(!on){ root.classList.remove('visible'); cancelAnimationFrame(openFrame);openFrame=0;moveArms(0,.18);setHovered(null); return; } // absorb, then slide away
+  if(!on){ if(typeof retractSlivers==='function')retractSlivers(true); root.classList.remove('visible'); cancelAnimationFrame(openFrame);openFrame=0;moveArms(0,.18);setHovered(null); return; } // absorb, then slide away
   /* Arriving: wells out of the edge instead of sliding in, so its base and flares sit on the screen edge
      from the first frame. Laid out in place and closed against the edge with transitions held, then opened. */
   document.body.classList.add('no-motion');
@@ -1462,7 +1454,7 @@ function setShown(on,edge){
 // Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
 document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });
 function applyUiFlags(f){ scheduleFold(); if(f){ pinnedNow=f.notch_on_hover===false&&f.notch_visible!==false; renderRing(); } }
-listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else { scheduleFold(); leaveCard(); } }).catch(()=>{});
+listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else { scheduleFold(); leaveCard(); if(typeof holdSlivers==='function')holdSlivers(false); } }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{
   if(e.payload==='dark'||e.payload==='light') document.body.dataset.behind=e.payload;

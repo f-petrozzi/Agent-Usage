@@ -95,6 +95,19 @@ class CodexSessionTests(unittest.TestCase):
         self.rollout('stuck', 'task_started', age=usage.CODEX_QUIET_SECONDS + 60)
         self.assertEqual(usage.codex_sessions([('a', self.home)], self.now), [])
 
+    def test_sub_agents_are_part_of_their_parent_not_sessions(self):
+        # Codex's guardian reviews an approval in a rollout of its own; its quick tasks must not read as finished work
+        lines = [{'type': 'session_meta', 'payload': {'cwd': '/mnt/ssd/homelab', 'source': {'subagent': {'other': 'guardian'}},
+                  'parent_thread_id': 'parent', 'thread_source': 'guardian_review'}},
+                 {'type': 'event_msg', 'timestamp': '2026-09-30T17:16:05Z', 'payload': {'type': 'task_started'}},
+                 {'type': 'event_msg', 'timestamp': '2026-09-30T17:16:10Z', 'payload': {'type': 'task_complete'}}]
+        path = self.day / 'rollout-guardian.jsonl'
+        path.write_text('\n'.join(json.dumps(line) for line in lines) + '\n')
+        os.utime(path, (self.now, self.now))
+        self.rollout('parent', 'task_started')
+        got = usage.codex_sessions([('a', self.home)], self.now, include_terminal=True)
+        self.assertEqual([(s['id'], s['state']) for s in got], [('rollout-parent', 'busy')])
+
     def test_a_rollout_shared_by_two_profiles_counts_once(self):
         self.rollout('open', 'task_started')
         self.assertEqual(len(usage.codex_sessions([('a', self.home), ('b', self.home)], self.now)), 1)

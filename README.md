@@ -62,18 +62,19 @@ session rollout, and Antigravity's conversation status while its CLI holds the s
 A turn has to run at least 30 seconds (a quick reply was watched as it happened), a
 canceled turn never counts, and the alert says how long it worked.
 
-Since 3.1.4 alerts open out of the notch rather than as Windows toasts. The notch comes
-out where it last rested, keeps the account's ring whole while the others recede, and
-grows the alert beside it: whose it is, one word for what happened (in the colour of
-the usage level, or yellow for an agent waiting on you) and the reading or session.
-It stays about six seconds, for as long as the pointer rests on it, and a click or a
-ring under the pointer turns it into that account's usage. The sound is a short chime
+Alerts appear in the notch, not as Windows toasts. Since 3.2.1 each one grows out of its
+account's ring as a thin sliver of the notch, only as long as its one line: a word in the
+colour of what it reports (the usage level, yellow for an agent waiting on you) and the
+reading or session, such as "Finished homelab · 14 min". Alerts for several accounts come
+out of their own rings together. A sliver stays about six seconds, longer while the
+pointer rests on it; pointing at it counts it as seen, and a click opens that account's
+usage, held. An open card comes first: alerts wait for it. The sound is a short chime
 made by the app.
 
 The notch keeps them too (3.1.8): the pin's pocket holds more than one control. Point
 at the pin and scroll, and it flows back into the notch while a bell buds out of the
-same flare; scroll again for the pin. A yellow dot on that pocket means something
-arrived since you last looked. Press the bell and the last week of alerts (up to 40)
+same flare; scroll again for the pin. A yellow dot on that pocket means an alert you
+have not seen yet: one that came and went without being pointed at. Press the bell and the last week of alerts (up to 40)
 grows out of that end of the notch, newest first, with the alert switches (Usage,
 Waiting, Finished, Sound) along the top. A row turns into that account's usage and
 Clear empties the log. Settings → Appearance → Controls chooses what the pocket holds.

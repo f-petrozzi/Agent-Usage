@@ -1,74 +1,146 @@
 'use strict';
-/* Alerts open out of the notch rather than as Windows toasts. The account's ring stays whole while the others
-   recede, and the notch grows the alert out beside it with the same ink and spring as the usage card. It holds
-   while it is read, and for as long as the pointer rests on it, then draws back in. A ring under the pointer,
-   or a click, turns it into that account's usage. */
-const alertQueue=[];
-let alertShowing=null,alertHeld=false,alertTimer=0,pumpTimer=0;
+/* Alerts grow out of the ring they are about, as a sliver of the notch: a thin tab the height of the ring, joined
+   to the notch by flares of its own, only as long as its one line needs. It springs out a little past its length
+   and settles, liquid while it moves, and its words arrive once there is black under them. Pointing at it holds
+   it and counts it as seen; a click opens that account's usage. Alerts for several accounts come out of their own
+   rings together; a second for the same account takes over its sliver. An open card comes first: alerts wait. */
+const SLIVER={thick:40,flat:38,flare:12,pad:14,max:300,grace:1600};
+const alertQueue=[], slivers=new Map();
+let pumpTimer=0, slivHeld=false, sliverSerial=0;
+const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
+pill.before(sliverSvg);
+const slivering=()=>slivers.size>0;
 listen('alert',e=>{
   const p=e.payload;if(!p||!Array.isArray(p.events)||!p.events.length)return;
   // Already reading the log: the alert is there at the top of it, so it does not open a second time
   if(logShowing()){if(p.sound)chime(p.events[0].kind);ringBell();return;}
   alertQueue.push(p);pumpAlert();
 }).catch(()=>{});
-// Not over something the person is doing: while the notch is arriving, carried, tracking or showing usage
+// Not over something the person is doing: while the notch is arriving, carried, tracking or showing a card
 function alertWaits(){
   return !shown||performance.now()-shownAt<420||window.agentTracking||carrying||dragging||card.classList.contains('show');
 }
 function pumpAlert(){
   clearTimeout(pumpTimer);
-  if(alertShowing||!alertQueue.length)return;
+  if(!alertQueue.length)return;
   if(alertWaits()){pumpTimer=setTimeout(pumpAlert,200);return;}
-  const p=alertQueue.shift();
-  const known=p.events.find(e=>e.account&&providers().some(x=>x.id===e.account));
-  if(known)hoverId=known.account;
-  alertShowing=p;alertHeld=false;
-  clearTimeout(hideTimer);clearTimeout(showTimer);pendingAccount=null;
-  card.classList.remove('closing');card.classList.add('show','alerting');
-  renderAlert(p);setDetailsShown(true);armWatchdog();
-  if(p.sound)chime(p.events[0].kind);
-  alertTimer=setTimeout(()=>endAlert(true),p.hold||6500);
+  while(alertQueue.length){
+    const p=alertQueue.shift(), byAccount=new Map();
+    for(const e of p.events){const key=providers().some(x=>x.id===e.account)?e.account:'';(byAccount.get(key)||byAccount.set(key,[]).get(key)).push(e);}
+    for(const [account,events] of byAccount)showSliver(account,events,p.hold||6500);
+    if(p.sound)chime(p.events[0].kind);
+  }
+  reportHot();
 }
-// Under the pointer it stays; let go, it gives the reader a moment more and then leaves
-function holdAlert(held){
-  if(!alertShowing||held===alertHeld)return;
-  alertHeld=held;clearTimeout(alertTimer);
-  if(!held)alertTimer=setTimeout(()=>endAlert(true),1600);
-}
-function clearAlert(){
-  if(!alertShowing)return;
-  alertShowing=null;alertHeld=false;clearTimeout(alertTimer);card.classList.remove('alerting');reportHot(); // main stops holding the notch out for it
-  ringBell(); // read, it tucks into the bell
-  clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,700); // the next one waits for this one to draw in
-}
-function endAlert(close){ if(!alertShowing)return; if(close)hideCard(); else clearAlert(); }
-card.addEventListener('click',()=>{if(alertShowing){endAlert(false);holdCard(hoverId);renderCard();}}); // clicked, the alert becomes that account's usage, held
-
-function renderAlert(p){
-  const evs=p.events, single=evs.length===1;
-  let html=evs.slice(0,3).map(e=>alertBlock(e,single)).join('');
-  if(evs.length>3)html+=moreRow(evs.length-3);
-  card.innerHTML=`<div class="usage-content alert-content${single?'':' stacked'}">${html}</div>`;
-  card.dataset.account=hoverId;
-  placeCard();
-}
-// Each alert says whose it is, what happened in one word, and the reading or session it is about.
-// The word takes the colour of what it reports: the usage level, or the waiting yellow.
-function alertBlock(e,full){
-  const acct=providers().find(x=>x.id===e.account), kick=(ui().kick||UI.en.kick);
-  const head=(word,colour)=>`<div class="c-head">${acct?glyphHtml(acct,true):''}<span class="c-title">${esc(acct?acct.name:e.session||'Agent Usage')}</span><span class="a-kick" style="color:${colour}">${esc(word)}</span></div>`;
+// The one line an alert gets: a word in the colour of what it reports, then the reading or the session
+const ALERT_RANK={quota100:0,waiting:1,quota80:2,completion:3};
+function sliverLine(events){
+  const kick=ui().kick||UI.en.kick;
+  const e=[...events].sort((a,b)=>ALERT_RANK[a.kind==='quota'?'quota'+(a.level===100?100:80):a.kind]-ALERT_RANK[b.kind==='quota'?'quota'+(b.level===100?100:80):b.kind])[0];
+  const acct=providers().find(x=>x.id===e.account);
+  let word,colour,text;
   if(e.kind==='quota'){
     const w=acct?.snap.windows.find(x=>x.id===e.window);
-    // never calmer than the level it crossed, even if the reading has since been corrected down
-    const word=e.level===100?kick.limit:kick.warning, colour=tone(Math.min(1,Math.max(w?w.used:1,(e.level||80)/100)));
-    if(!full)return `<div class="a-block">${head(word,colour)}${w?`<div class="a-sub">${esc(textCopy(w.label))} · ${esc(usedParts(w)[0])}%</div>`:''}</div>`;
-    return `<div class="a-block">${head(word,colour)}${w?renderUsageWindows([w],false,false):`<div class="c-note">${esc(e.body)}</div>`}</div>`;
-  }
-  const waiting=e.kind==='waiting';
-  const detail=waiting?(e.body&&e.body!=='Waiting for input.'?`<div class="a-sub">${esc(textCopy(e.body))}</div>`:'')
-    :e.took!=null?`<div class="a-sub">${esc(textCopy('Worked'))} ${esc(tookText(e.took))}</div>`:'';
-  return `<div class="a-block">${head(waiting?kick.waiting:kick.finished,waiting?WATCH:INK)}${e.session?`<div class="a-line"><span class="s-dot" style="background:${waiting?WATCH:INK}"></span>${esc(e.session)}</div>`:''}${full?detail:''}</div>`;
+    word=e.level===100?kick.limit:kick.warning;colour=tone(Math.min(1,Math.max(w?w.used:1,(e.level||80)/100)));
+    text=w?`${textCopy(w.label)} · ${usedParts(w)[0]}%`:'';
+  }else if(e.kind==='waiting'){word=kick.waiting;colour=WATCH;text=e.session||'';}
+  else{word=kick.finished;colour=INK;text=[e.session,e.took!=null?tookText(e.took):''].filter(Boolean).join(' · ');}
+  if(!acct)text=[e.session||'',text].filter(Boolean).join(' · ')||text;
+  const more=events.length>1?`<span class="s-more">+${events.length-1}</span>`:'';
+  return `<span class="s-word" style="color:${colour}">${esc(word)}</span>${text?`<span class="s-text">${esc(text)}</span>`:''}${more}`;
 }
+function showSliver(account,events,hold){
+  let s=slivers.get(account);
+  if(!s){
+    const el=document.createElement('div');el.className='sliver';el.dataset.account=account;
+    const path=document.createElementNS(SVG_NS,'path');path.setAttribute('class','sliver-ink');
+    const id='sliver-goo-'+(++sliverSerial);sliverSvg.insertAdjacentHTML('beforeend',`<defs>${gooDefinition(id)}</defs>`);
+    const filter=sliverSvg.querySelector('#'+id);sliverSvg.append(path);
+    card.parentElement.append(el);
+    s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);
+    el.addEventListener('click',()=>{markSeen(s);const id=s.account;retractSlivers();if(id)holdCard(id);});
+  }
+  s.events=[...events,...s.events].slice(0,6);s.to=1;
+  s.el.innerHTML=sliverLine(s.events);
+  // Only as long as the line: measured laid out on one line, then the sliver is cut to it
+  s.el.style.width='auto';const natural=s.el.scrollWidth;
+  s.length=Math.min(SLIVER.max,natural+2*SLIVER.pad);
+  clearTimeout(s.timer);s.hold=hold;if(!slivHeld)s.timer=setTimeout(()=>retract(s),hold);
+  springSliver(s);
+}
+function springSliver(s){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){s.t=s.to;s.v=0;drawSliver(s);if(!s.to)dropSliver(s);return;}
+  if(s.frame)return;
+  let last=performance.now();
+  const step=now=>{
+    const dt=Math.min(.032,(now-last)/1000);last=now;
+    // Out on a loose spring that stretches past its length and settles; back in quickly, without a bounce
+    const omega=2*Math.PI/(s.to?.54:.3),zeta=s.to?.56:1;
+    s.v+=(-omega*omega*(s.t-s.to)-2*zeta*omega*s.v)*dt;s.t+=s.v*dt;
+    const settled=Math.abs(s.t-s.to)<.002&&Math.abs(s.v)<.02;
+    if(settled){s.t=s.to;s.v=0;}
+    drawSliver(s);
+    if(settled){s.frame=0;if(!s.to)dropSliver(s);reportHot();}else s.frame=requestAnimationFrame(step);
+  };
+  s.frame=requestAnimationFrame(step);
+}
+// Drawn in edge space like the notch itself: u along the edge, v in from it. A side edge sends it across the
+// screen beside its ring, a flat edge hangs it below (or above) its ring, spreading to its length as it drops.
+function drawSliver(s){
+  const origin=document.getElementById('root').getBoundingClientRect(), W=innerWidth, H=innerHeight;
+  const matrix=edgeMatrix(notchEdge,W,H), local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
+  const screen=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
+  const anchor=(s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"] .ringwrap`))||pill;
+  const r=anchor.getBoundingClientRect(), [uc]=local(r.left+r.width/2-origin.left,r.top+r.height/2-origin.top);
+  const depth=edgeDepth(notchEdge)-2, t=Math.max(0,s.t), grown=Math.min(1,t), vertical=edgeIsVertical();
+  let u0,u1,d;
+  if(vertical){
+    const thick=SLIVER.thick*(.62+.38*smooth(grown));
+    u0=uc-thick/2;u1=uc+thick/2;d=s.length*t;
+  }else{
+    const span=SLIVER.flat+(s.length-SLIVER.flat)*smooth((grown-.18)/.82), limit=notchEdge==='top'||notchEdge==='bottom'?W:H;
+    u0=Math.max(10,uc-span/2);u1=Math.min(limit-10,u0+span);u0=u1-span;d=SLIVER.flat*Math.min(1.25,t);
+  }
+  if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;return;}
+  const rad=Math.min((u1-u0)/2,d), flare=Math.min(SLIVER.flare,d*.5);
+  s.path.setAttribute('d',partPath(u0,u1,d,rad,flare,rad,flare));
+  s.path.setAttribute('transform',`matrix(${matrix.join(' ')}) translate(0 ${n(depth)})`);
+  // Liquid while it moves, sharp at rest
+  const goo=matchMedia('(prefers-reduced-motion: reduce)').matches?0:4.4*Math.sin(Math.PI*grown)*(s.t===s.to?0:1);
+  if(goo>.25){
+    s.filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(goo));
+    for(const [key,value] of Object.entries({x:u0-40,y:-SHAPE.bleed-40,width:u1-u0+80,height:d+SHAPE.bleed+80}))s.filter.setAttribute(key,n(value));
+    s.path.setAttribute('filter',`url(#${s.filter.id})`);
+  }else s.path.removeAttribute('filter');
+  // Its words sit on the black once there is black to hold them
+  const a=screen(u0,depth+(vertical?SLIVER.pad*.4:0)),b=screen(u1,depth+d-(vertical?SLIVER.pad*.4:0));
+  const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
+  Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
+}
+function dropSliver(s){cancelAnimationFrame(s.frame);clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);reportHot();if(!slivers.size)ringBell();}
+function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
+// Everything back in at once: a card opening over them, or the notch going away (then without the motion)
+function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
+// Only the part of a sliver outside the notch is the sliver: its root overlaps the notch, and the ring it came
+// from has to stay a ring under the pointer
+function sliverAt(x,y){
+  for(const s of slivers.values()){const r=s.el.getBoundingClientRect();if(s.to&&r.width&&x>=r.left-6&&x<=r.right+6&&y>=r.top-6&&y<=r.bottom+6)return s;}
+  return null;
+}
+function sliverRects(){return [...slivers.values()].map(s=>s.el.getBoundingClientRect()).filter(r=>r.width).map(r=>[r.left-6,r.top-6,r.width+12,r.height+12]);}
+// Under the pointer they all stay, and the one pointed at counts as seen; let go, they give a moment more
+function holdSlivers(held,over=null){
+  if(over)markSeen(over);
+  if(held===slivHeld||!slivers.size)return;
+  slivHeld=held;
+  for(const s of slivers.values()){clearTimeout(s.timer);if(!held&&s.to)s.timer=setTimeout(()=>retract(s),SLIVER.grace);}
+}
+// Seen, an alert no longer counts toward the dot on the pocket; only ones that came and went unread do
+function markSeen(s){
+  const ids=s.events.map(e=>e.id).filter(Boolean);if(!ids.length||s.seen)return;
+  s.seen=true;invoke('mark_alerts_read',{ids}).catch(()=>{});
+}
+addEventListener('resize',()=>{for(const s of slivers.values())drawSliver(s);});
 
 // A short glass chime, made here rather than shipped as a file: two sine partials a step apart,
 // rising for someone waiting, falling for a warning, a fifth for a finished turn
@@ -97,10 +169,10 @@ function chime(kind){
    into the widening flare, with the alert switches along the top. A row turns into that account's usage. */
 let alertLogData=[],alertPrefsData=null,markTimer=0;
 const unreadCount=()=>alertLogData.filter(e=>!e.read).length;
-const logShowing=()=>card.classList.contains('show')&&hoverId===ALERTS_ID&&!alertShowing;
+const logShowing=()=>card.classList.contains('show')&&hoverId===ALERTS_ID;
 listen('alert_log',e=>{
   const before=unreadCount();alertLogData=Array.isArray(e.payload)?e.payload:[];
-  paintBell();if(unreadCount()>before&&!alertShowing)ringBell();
+  paintBell();if(unreadCount()>before&&!slivering())ringBell();
   if(logShowing())renderCard();
 }).catch(()=>{});
 invoke('get_alert_log').then(v=>{alertLogData=Array.isArray(v)?v:[];paintBell();}).catch(()=>{});

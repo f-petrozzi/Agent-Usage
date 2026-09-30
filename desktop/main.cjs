@@ -319,9 +319,10 @@ const ALERT_MS = 6500;
 function showAlerts(events) {
   if (!events.length || !win || win.isDestroyed()) return;
   config.alertLog = logAlerts(config.alertLog, events); save(); broadcast('alert_log', config.alertLog);
+  const logged = config.alertLog.slice(-events.length); // their log entries, so the page can mark the ones it showed as seen
   reveal(false);
   visibleUntil = Math.max(visibleUntil, Date.now() + 2500); // until the page has it open and says so
-  send('alert', { events: events.slice(0, 8).map(e => ({ kind: e.kind, account: e.account || null, window: e.window || null,
+  send('alert', { events: events.slice(0, 8).map((e, i) => ({ id: logged[i]?.id || null, kind: e.kind, account: e.account || null, window: e.window || null,
     level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, took: Number.isFinite(e.took) ? e.took : null,
     title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
@@ -363,7 +364,10 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
     case 'get_alert_preferences': return config.alerts;
     case 'get_alert_log': return config.alertLog = alertLog(config.alertLog);
-    case 'mark_alerts_read': config.alertLog = alertLog(config.alertLog).map(e => ({ ...e, read: true })); save(); broadcast('alert_log', config.alertLog); return config.alertLog;
+    case 'mark_alerts_read': { // all of them (the log was opened), or just the ones an alert showed and was pointed at
+      const ids = Array.isArray(args.ids) ? new Set(args.ids.filter(id => typeof id === 'string').slice(0, 40)) : null;
+      config.alertLog = alertLog(config.alertLog).map(e => (!ids || ids.has(e.id) ? { ...e, read: true } : e)); save(); broadcast('alert_log', config.alertLog); return config.alertLog;
+    }
     case 'clear_alert_log': config.alertLog = []; save(); broadcast('alert_log', config.alertLog); return config.alertLog;
     case 'set_alert_preferences': {
       config.alerts = alertPreferences({ ...config.alerts, ...args }); save(); broadcast('alert_preferences', config.alerts); return config.alerts;

@@ -104,7 +104,7 @@ const answers = {
       __emit('alert', { events: [e], sound: true, hold: 1000 }); __emit('alert_log', [...alertLogData, e]);
     });
     await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => alertShowing), null);
+    assert.equal(await page.evaluate(() => slivers.size), 0, 'no sliver over the open log');
     assert.equal(await page.evaluate(() => window.__chimes), 1, 'still heard');
     assert.equal(await page.locator('#card .a-row').first().locator('.a-word').innerText(), 'Needs you');
     // A row turns into that account's usage

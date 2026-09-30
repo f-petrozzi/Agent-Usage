@@ -824,6 +824,9 @@ def latest_activity(codex_homes: list[Path], include_claude: bool) -> int | None
 # * Codex  - each turn appends task_started, then task_complete or
 #            turn_aborted, to the session's rollout. Codex does not record
 #            approval waits there, so Codex cannot report waiting. Terminal states support completion alerts.
+#            Sub-agents (the guardian that reviews an approval, spawned helpers) keep rollouts of their own
+#            whose short tasks start and finish while their parent is still working; they are part of the
+#            parent's turn, never sessions of their own, or each review would read as "finished".
 # * AGY    - locked CLI presence plus its read-only summary database. Pending
 #            transcript steps distinguish explicit questions/permission waits.
 
@@ -878,7 +881,7 @@ def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[di
 
 
 def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
-    """Return (state, turn start, cwd) from the tail of one rollout."""
+    """Return (state, turn start, cwd) from the tail of one rollout; a sub-agent's rollout has no state of its own."""
     size = path.stat().st_size
     with path.open("rb") as handle:
         first = handle.readline(64 * 1024)
@@ -888,7 +891,11 @@ def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
     try:
         meta = json.loads(first)
         if meta.get("type") == "session_meta" and isinstance(meta.get("payload"), dict):
-            cwd = meta["payload"].get("cwd")
+            payload = meta["payload"]
+            source = payload.get("source")
+            if (isinstance(source, dict) and "subagent" in source) or payload.get("parent_thread_id"):
+                return None, None, None
+            cwd = payload.get("cwd")
     except ValueError:
         pass
     for line in reversed(tail.splitlines()):
