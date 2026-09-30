@@ -57,8 +57,9 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     const ring = await ringBox(page, 'claude'), s = await box(page, 'claude');
     assert.ok(s, 'a sliver out of Claude\'s ring');
     assert.equal(s.text, 'Usage warning 5 hours · 83%');
-    assert.ok(s.h >= 42 && s.h < 60, 'a readable band with room around its text');
-    assert.ok(Math.abs((s.y + s.h / 2) - (ring.y + ring.height / 2)) < 2, 'level with its ring');
+    assert.ok(s.h >= 74 && s.h < 80, 'spans the whole gauge and percentage');
+    const cell = await page.locator('.cell[data-p="claude"]').boundingBox();
+    assert.ok(s.y <= cell.y && s.y+s.h >= cell.y+cell.height, 'covers the entire account section');
     assert.ok(s.x + s.w <= ring.x + 2 && s.w < 320, 'beside the ring, only as long as its line');
     assert.ok(s.fits, 'its line fits it');
     assert.equal(await page.evaluate(() => card.classList.contains('show')), false, 'the notch itself does not open');
@@ -95,7 +96,8 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     assert.equal((await box(page, 'codex')).text, 'Needs you agent-usage');
     assert.equal((await box(page, 'claude')).text, 'Limit reached 5 hours · 83% +1', 'the more urgent one leads, the other is counted');
     const [cr, dr] = [await ringBox(page, 'codex'), await box(page, 'codex')];
-    assert.ok(Math.abs((dr.y + dr.h / 2) - (cr.y + cr.height / 2)) < 2, 'from its own ring');
+    const dc=await page.locator('.cell[data-p="codex"]').boundingBox();
+    assert.ok(Math.abs(dr.y+dr.h/2-dc.y-dc.height/2)<2,'centered on its account');
     await page.screenshot({ path: path.join(OUT, 'slivers.png') });
     await page.waitForTimeout(3400);
 
@@ -152,19 +154,19 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
       const [er, es] = [await ringBox(ep, 'claude'), await box(ep, 'claude')];
       assert.ok(es.fits, 'line fits on ' + edge);
       if(edge==='left'){
-        assert.ok(es.h>=42&&es.h<60);
-        assert.ok(Math.abs(es.y+es.h/2-er.y-er.height/2)<2);
+        assert.ok(es.h>=74&&es.h<80);
+        const cell=await ep.locator('.cell[data-p="claude"]').boundingBox();
+        assert.ok(es.y<=cell.y&&es.y+es.h>=cell.y+cell.height);
       }else{
         assert.ok(es.h>=42&&es.h<60, 'a text-sized lift');
         const notch=await ep.locator('#pill').boundingBox();
         assert.ok(es.outline.x>=notch.x-1&&es.outline.x+es.outline.w<=notch.x+notch.width+1, 'end-gauge outline stays inside the notch width');
         const join=await ep.evaluate(() => {
           const path=slivers.get('claude').path.getAttribute('d');
-          return {corner:SHAPE.corner,rounded:path.includes(`A${SHAPE.corner} ${SHAPE.corner}`),shoulders:(path.match(/A12 12/g)||[]).length};
+          return {corner:SHAPE.corner,rounded:path.includes(`A${SHAPE.corner} ${SHAPE.corner}`),shoulders:(path.match(/C/g)||[]).length};
         });
         assert.equal(join.rounded,true,'notification corners use the notch radius');
-        assert.equal(join.shoulders,2,'end accounts retain both fluid shoulders');
-        assert.ok(es.outline.x>=notch.x+join.corner-1&&es.outline.x+es.outline.w<=notch.x+notch.width-join.corner+1,'join avoids the rounded notch ends');
+        assert.equal(join.shoulders,2,'account roots taper smoothly into the text body');
         assert.ok(er.x+er.width/2>=es.x&&er.x+er.width/2<=es.x+es.w);
         assert.ok(edge==='top'?es.y>=er.y+er.height-4:es.y+es.h<=er.y+4, 'outside the ring');
       }
@@ -178,6 +180,32 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
         assert.ok(await ep.evaluate(() => slivers.has('claude')),'the queued account follows');
       }
       assert.deepEqual(ee, []); await ep.close();
+    }
+
+    // Every flat-edge section, including the physical order reversed on the bottom.
+    for(const edge of ['top','bottom']){
+      const flat=await open(browser,edge,'reduce');
+      await flat.page.evaluate(()=>__emit('agent_accounts',[...agentAccounts,
+        {...agentAccounts[0],id:'work',name:'Work'}, {...agentAccounts[1],id:'personal',name:'Personal'}]));
+      await arrive(flat.page,{events:[],hold:4000},edge);
+      await flat.page.waitForTimeout(400);
+      const order=await flat.page.locator('.cell').evaluateAll(es=>es.map(e=>({id:e.dataset.p,x:e.getBoundingClientRect().x})).sort((a,b)=>a.x-b.x).map(e=>e.id));
+      for(let i=0;i<order.length;i++){
+        await flat.page.evaluate(id=>{retractSlivers(true);showSliver(id,[{kind:'waiting',account:id,session:'homelab'}],4000);},order[i]);
+        const g=await flat.page.evaluate(id=>{
+          const s=slivers.get(id),notch=pill.getBoundingClientRect(),cells=[...pill.querySelectorAll('.cell')].sort((a,b)=>a.getBoundingClientRect().x-b.getBoundingClientRect().x);
+          const centers=cells.map(e=>{const r=e.getBoundingClientRect();return r.x+r.width/2;});
+          const index=cells.findIndex(e=>e.dataset.p===id),path=s.path.getAttribute('d'),bounds=s.path.getBoundingClientRect();
+          const root0=+path.match(/^M([\d.]+)/)[1],root1=+path.match(/ ([\d.]+) [\d.]+V/)[1];
+          return {root0,root1,left:index?(centers[index-1]+centers[index])/2:notch.x,right:index<cells.length-1?(centers[index]+centers[index+1])/2:notch.right,
+            x:bounds.x,end:bounds.right,notchX:notch.x,notchEnd:notch.right,width:s.el.getBoundingClientRect().width};
+        },order[i]);
+        assert.ok(Math.abs(g.root0-g.left)<.1&&Math.abs(g.root1-g.right)<.1,'roots follow the physical account section: '+JSON.stringify(g));
+        assert.ok(g.x>=g.notchX-1&&g.end<=g.notchEnd+1,'outer taper stays within the notch');
+        assert.ok(g.width>=128&&g.width<=160,'text body remains compact and readable');
+        await flat.page.screenshot({path:path.join(OUT,`four-${edge}-${i}.png`)});
+      }
+      assert.deepEqual(flat.errors,[]);await flat.page.close();
     }
 
     // Long details pan within a bounded notification; the status and outer shape stay still.
@@ -207,6 +235,6 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     await reduced.page.evaluate(e => showSliver('claude',[e],4000),longEvent);
     assert.equal(await reduced.page.evaluate(() => slivers.get('claude').el.querySelector('.s-scroll').getAnimations().length),0,'reduced motion disables text panning');
     assert.deepEqual(reduced.errors, []);
-    console.log('Passed: waits for arrival, a thin sliver from its ring sized to its line, chime, pointer elsewhere, time out, hold and seen, click to held usage, one per account with the urgent one leading, waits for a card, goes with the notch, flat edge, reduced motion.');
+    console.log('Passed: waits for arrival, a notification spanning its account and sized to its line, chime, pointer elsewhere, time out, hold and seen, click to held usage, one per account with the urgent one leading, waits for a card, goes with the notch, flat edge, reduced motion.');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -27,9 +27,9 @@ const answers = {
   try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: Number(process.env.DPR || 1) });
   await page.addInitScript(({ answers }) => {
-    const listeners = {};
+    const listeners = {};window.__calls=[];
     window.agentUsage = {
-      invoke: c => { return Promise.resolve(c in answers ? answers[c] : c.startsWith('get_') ? { status: 'absent', windows: [], fetched_at: 0, note: '' } : null); },
+      invoke: (c,a={}) => { window.__calls.push([c,a]); return Promise.resolve(c in answers ? answers[c] : c.startsWith('get_') ? { status: 'absent', windows: [], fetched_at: 0, note: '' } : null); },
       on: (n, cb) => { (listeners[n] = listeners[n] || []).push(cb); return () => {}; },
     };
     window.__emit = (n, p) => (listeners[n] || []).forEach(cb => cb(p));
@@ -190,7 +190,33 @@ const answers = {
   assert.equal(await page.evaluate(()=>handles[0].value),1);
   await page.evaluate(()=>__emit('disappear'));
   assert.ok(await page.evaluate(()=>armsOut===0&&handles.every(h=>h.value===0)));
+  // A monitor change can resize asynchronously. Never acknowledge the old layout or travel from its position.
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.evaluate(()=>{
+    __emit('layout',{width:1440,height:900,scale:1,edge:'left',along:.3,visible:true,tracking:false,placement:10});
+  });
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>shown),false,'destination is prepared hidden');
+  assert.equal(await page.evaluate(()=>__calls.filter(c=>c[0]==='monitor_placed').length),0,'wait for the native resize');
+  // A second switch supersedes the first while it is still waiting for resize.
+  await page.evaluate(()=>__emit('layout',{width:2000,height:1250,scale:1.25,edge:'bottom',along:.65,visible:true,tracking:false,placement:11}));
+  await page.setViewportSize({width:1600,height:1000});
+  await page.waitForFunction(()=>__calls.some(c=>c[0]==='monitor_placed'));
+  assert.deepEqual(await page.evaluate(()=>__calls.filter(c=>c[0]==='monitor_placed')), [['monitor_placed',{placement:11}]],'only the newest destination is acknowledged');
+  const destination=await page.evaluate(()=>{const r=pill.getBoundingClientRect(),root=document.getElementById('root').getBoundingClientRect();return {edge:notchEdge,x:r.x-root.x,y:r.y-root.y,w:r.width,h:r.height,pass:passage,shown};});
+  assert.equal(destination.edge,'bottom');assert.equal(destination.shown,false);assert.equal(destination.pass,null);
+  assert.ok(Math.abs(destination.x+destination.w/2-1600*.65)<1&&Math.abs(destination.y+destination.h-1000)<1,'snapped to the new edge before acknowledgment');
+  await page.evaluate(()=>__emit('appear',{edge:'bottom'}));
+  const first=await page.locator('#pill').boundingBox();
+  assert.ok(Math.abs(first.x+first.width/2-1600*.65)<1&&Math.abs(first.y+first.height-1000)<1,'first visible layout is already in position');
+  await page.waitForTimeout(1200);
+  const settled=await page.locator('#pill').boundingBox();assert.deepEqual(settled,first,'opening grows at the destination without flying across the screen');
+  // Same-sized monitors also complete; no resize event is required.
+  await page.evaluate(()=>__emit('layout',{width:2000,height:1250,scale:1.25,edge:'right',along:.5,visible:true,tracking:false,placement:12}));
+  await page.waitForFunction(()=>__calls.some(c=>c[0]==='monitor_placed'&&c[1].placement===12));
+  assert.equal(await page.evaluate(()=>notchEdge),'right');
+  assert.equal(await page.evaluate(()=>frame),0,'no old perimeter motion remains');
   assert.deepEqual(errors,[]);
-  console.log('Passed: four corners in both directions, visible rings over black, pin/settings morphs on every edge, grab/close absorption, interrupted opening, reduced motion.');
+  console.log('Passed: four corners in both directions, visible rings over black, pin/settings morphs on every edge, grab/close absorption, interrupted opening, reduced motion, monitor resize and superseded placement.');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exit(1)});

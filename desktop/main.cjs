@@ -29,6 +29,7 @@ let expanded = false, alerting = false, pinned = false, menuOpen = false, visibl
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
+let placementSerial = 0, pendingPlacement = null;
 const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
@@ -106,8 +107,8 @@ async function start() {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!config.autostart, path: process.execPath });
   nativeTheme.on('updated', () => broadcast('theme_resolved', theme()));
   screen.on('display-added', () => place()); // Windows can pull an off-screen window onto a new display
-  screen.on('display-removed', () => { if (!screen.getAllDisplays().some(d => d.id === monitor.id)) useMonitor(screen.getPrimaryDisplay()); });
-  screen.on('display-metrics-changed', (_event, display) => { if (display.id === monitor.id) useMonitor(display); });
+  screen.on('display-removed', () => { if (!screen.getAllDisplays().some(d => d.id === monitor.id)) switchMonitor(screen.getPrimaryDisplay()); });
+  screen.on('display-metrics-changed', (_event, display) => { if (display.id === monitor.id) switchMonitor(display); });
   timer = setInterval(tick, 16);
   // Reset countdowns in an open tray menu are refreshed on the next opening.
   trayTimer = setInterval(updateTray, 60000);
@@ -139,6 +140,18 @@ function useMonitor(display) {
   place();
   sendLayout();
 }
+function switchMonitor(display, { show = visible, atPointer = false } = {}) {
+  clearTimeout(transferTimer); transferTimer = null; pendingMonitor = null;
+  // Keep the already-shown native window invisible until Chromium paints the destination layout.
+  win.setOpacity(0); win.setIgnoreMouseEvents(true, { forward: true });
+  pendingPlacement = ++placementSerial; visible = show; phase = 'transfer';
+  monitor = display;
+  if (atPointer) {
+    const at = cursorPlacement(screen.getCursorScreenPoint()); config.edge = at.edge; config.along = at.along;
+  }
+  useMonitor(display);
+  if (show) { raise(); visibleUntil = Math.max(visibleUntil, Date.now() + 1800); }
+}
 // Closed, the window is parked just past the leftmost screen, still shown: nothing of it is composited over
 // other apps, and opening moves it back, as moving it between screens always has, with no show animation.
 function parkedBounds() {
@@ -151,7 +164,7 @@ function raise() { win.setAlwaysOnTop(true, 'screen-saver'); win.moveTop(); }
 function sendLayout() {
   if (!config || !monitor) return;
   send('layout', { width: monitor.bounds.width, height: monitor.bounds.height, scale: config.scale,
-    edge: config.edge, along: config.along, visible, tracking: held || carrying, pinned });
+    edge: config.edge, along: config.along, visible, tracking: held || carrying, pinned, placement: pendingPlacement });
 }
 // The shortcut brings the notch to the pointer; an alert brings it out where it last rested
 function reveal(atPointer = true) {
@@ -197,10 +210,7 @@ function tick() {
       pendingMonitor = display; phase = 'transfer'; send('disappear');
       transferTimer = setTimeout(() => {
         const point=screen.getCursorScreenPoint();
-        useMonitor(screen.getDisplayNearestPoint(point));
-        const at=cursorPlacement(point);config.edge=at.edge;config.along=at.along;
-        sendLayout();
-        transferTimer = null; pendingMonitor = null; phase = 'shown'; send('appear', { edge: config.edge });
+        switchMonitor(screen.getDisplayNearestPoint(point), { atPointer: true });
       }, 170);
     }
     const b = monitor.bounds;
@@ -345,6 +355,12 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   if (typeof command !== 'string' || !args || typeof args !== 'object') throw new Error('Invalid command');
   switch (command) {
     case 'ready': frameReady = true; sendLayout(); return null;
+    case 'monitor_placed': {
+      if (event.sender !== win?.webContents || !Number.isInteger(args.placement) || args.placement !== pendingPlacement) return false;
+      pendingPlacement = null; phase = visible ? 'shown' : 'hidden';
+      if (visible) send('appear', { edge: config.edge });
+      win.setOpacity(1); return true;
+    }
     case 'stage_bounds': stage = { x: Number(args.x) || 0, y: Number(args.y) || 0 }; return null;
     case 'set_hot': {
       const validRect=r=>Array.isArray(r)&&r.length===4&&r.every(Number.isFinite)&&r[2]>=0&&r[3]>=0;
@@ -451,7 +467,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'set_notch_edge': config.edge = enumValue(args.edge, ['left','right','top','bottom']); config.along = 0.5; save(); reveal(); sendLayout(); broadcast('notch_edge', config.edge); return config.edge;
     case 'get_notch_insets': return [0,0,0,0];
     case 'get_monitors': return screen.getAllDisplays().map((d,i) => ({ id: String(d.id), label: d.label || `Display ${i + 1} (${d.size.width} × ${d.size.height})`, current: d.id === monitor.id, primary: d.id === screen.getPrimaryDisplay().id }));
-    case 'set_notch_monitor': { const d = screen.getAllDisplays().find(d => String(d.id) === args.id); if (!d) throw new Error('Display no longer attached'); useMonitor(d); visible = true; place(); raise(); if (!win.isVisible()) win.showInactive(); visibleUntil = Date.now() + 1800; sendLayout(); send('appear', { edge: config.edge }); save(); return null; }
+    case 'set_notch_monitor': { const d = screen.getAllDisplays().find(d => String(d.id) === args.id); if (!d) throw new Error('Display no longer attached'); switchMonitor(d, { show: true }); save(); return null; }
     case 'reset_notch_position': config.along = 0.5; save(); reveal(); sendLayout(); return null;
     case 'get_lang': return config.lang;
     case 'get_lang_resolved': return config.lang === 'auto' ? 'en' : config.lang;

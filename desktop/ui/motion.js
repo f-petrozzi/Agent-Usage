@@ -21,6 +21,7 @@ function restingAlong(edge,along){
 function aim(edge,along,snap=false){
   target=perimeterAt(edge,restingAlong(edge,along));
   if(position===null||snap) position=target;
+  if(snap){cancelAnimationFrame(frame);frame=0;last=0;animate(performance.now());return;}
   if(!frame) frame=requestAnimationFrame(animate);
 }
 /* Carried round a corner, each ring keeps its offset from the notch's middle along
@@ -106,8 +107,25 @@ function animate(now){
 function loadAccounts(value){agentAccounts=value||[];renderRing();if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
 window.agentUsage.on('agent_accounts',loadAccounts);
 invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
+let placementRevision=0;
 window.agentUsage.on('layout',value=>{
+  const revision=++placementRevision;
   layout=value;window.agentTracking=value.tracking;
+  if(Number.isInteger(value.placement)){
+    // Main masks the native window during a monitor move. Reset and paint its destination before acknowledging.
+    document.body.classList.add('no-motion');hideCard();setShown(false);
+    aim(value.edge,value.along,true);void pill.offsetWidth;document.body.classList.remove('no-motion');
+    let paints=0;
+    const ready=()=>{
+      if(revision!==placementRevision)return;
+      const resized=Math.abs(innerWidth-value.width/value.scale)<=2&&Math.abs(innerHeight-value.height/value.scale)<=2;
+      if(!resized){paints=0;requestAnimationFrame(ready);return;}
+      aim(value.edge,value.along,true);
+      if(++paints<2){requestAnimationFrame(ready);return;}
+      invoke('monitor_placed',{placement:value.placement}).catch(e=>notice(String(e)));
+    };
+    requestAnimationFrame(ready);return;
+  }
   const appearing=!!value.visible&&!shown; // arrives just before `appear`: place it now, never glide in from where it was hidden
   aim(value.edge,value.along,position===null||appearing);setShown(!!value.visible,value.edge);
 });

@@ -198,6 +198,14 @@ const answers = {
       const scroll=await page.locator('.a-log').evaluate(e=>e.scrollTop);
       await page.evaluate(()=>renderCard());
       assert.equal(await page.locator('.a-log').evaluate(e=>e.scrollTop),scroll,'refresh preserves history scroll');
+      // The always-black notch keeps its narrow transparent scrollbar in both app themes.
+      for(const theme of ['dark','light']){
+        await page.evaluate(theme=>__emit('theme_resolved',theme),theme);
+        const scrollbar=await page.locator('.a-log').evaluate(e=>({width:getComputedStyle(e,'::-webkit-scrollbar').width,
+          track:getComputedStyle(e,'::-webkit-scrollbar-track').backgroundColor,thumb:getComputedStyle(e,'::-webkit-scrollbar-thumb').backgroundColor}));
+        assert.equal(scrollbar.width,'6px');assert.equal(scrollbar.track,'rgba(0, 0, 0, 0)');
+        assert.ok(['rgb(76, 76, 80)','rgb(112, 112, 117)'].includes(scrollbar.thumb),'dark thumb with hover feedback in '+theme+' theme');
+      }
       await page.screenshot({ path: path.join(OUT, 'log-' + edge + '.png') });
     }
     assert.deepEqual(errors, []);

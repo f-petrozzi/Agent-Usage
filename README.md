@@ -142,3 +142,13 @@ Settings → Accounts has a Test notification button for each account. One sampl
 The bell history scrolls within a 228px list while the heading and switches remain visible. All 40 retained alerts are reachable; refreshes preserve the list's scroll position. Helper installation follows the installed Code CLI wrapper, clears its development flag and allows 60 seconds. Failures include the underlying installer reason. The Windows workflow installs the packaged VSIX through real Code from Electron using isolated settings/extensions before publishing. SSH terminal focus still requires the matching remote workspace to be open.
 
 Validation: 37 desktop checks; browser checks cover history wheel scrolling on every edge, preserved scroll position, per-account testing, hidden-account restoration and reduced motion.
+
+## Account-shaped notifications and monitor changes (3.2.7)
+
+Side-edge notifications span the gauge and its percentage together (at least 76px before text insets). Top/bottom notifications grow from the account's physical section: the outside flank for each end account, and a centered neck for middle accounts. Smooth shoulders feed into a compact 128–160px text body with the notch's 20px corners. Bottom-edge account order is mirrored correctly; long details still pan without extra rows.
+
+The bell history and overflowing account panels use a 6px dark scrollbar with a transparent track, rounded thumb and brighter hover state. The notch keeps that style even when Settings uses the light theme.
+
+Monitor changes mask the native window before moving it. The renderer snaps to the destination edge, waits for the new viewport size and two animation frames, then acknowledges the placement before the window is revealed. Superseded acknowledgments cannot expose an earlier destination. Ordinary perimeter travel stays animated.
+
+Validation: 40 desktop checks; browser checks cover full-account side bands, all four physical top/bottom account positions, themed history scrolling on every edge, asynchronous monitor resizing, successive switches and same-sized monitors. Actual Windows monitor/DPI transitions still need a device trial.

@@ -199,3 +199,13 @@ The history list is capped at 228px and scrolls below the fixed title/switches. 
 Settings → Accounts includes a Test notification toggle for each account. A single persistent completion sample uses the regular sliver; choosing another account replaces it. Tests do not chime, write history or link to a real session. Hidden accounts appear temporarily during their test. Turning it off or closing Settings removes the preview and restores saved visibility.
 
 The helper installer resolves the Code CLI entrypoint from `bin/code.cmd`, clears `VSCODE_DEV` as the official wrapper does, verifies the bundled file exists, and waits up to 60 seconds. Errors retain the actual installer reason. The Windows release workflow now installs the packaged helper into isolated Code data/extensions through Electron before publishing.
+
+## Account-shaped lifts and monitor relocation (3.2.7)
+
+Side-edge bands are at least 76px tall and centered on the entire gauge/percentage cell. Flat-edge roots follow physical account-section boundaries; the outside accounts taper from the full left/right flank, while middle accounts inflate from a centered neck. Their 128–160px bodies retain two text lines and 20px corners. Curves meet the notch front on a horizontal tangent, and the whole lift stays within its width.
+
+The bell history, main card and extras card use custom 6px scrollbars: transparent track/corner, dark rounded thumb, brighter hover and no arrow buttons. The notch always uses its dark surface colors.
+
+`switchMonitor` makes the native window transparent and disables hit testing before changing bounds. Layout events carry a placement serial. The renderer hides the old layout, snaps synchronously, waits for its CSS viewport to match display dimensions divided by app scale and two animation frames, then sends `monitor_placed`. Main accepts only the latest serial from the notch renderer and reveals it at the destination. Settings, hotkey transfers and display removal/metrics changes use this path. The ordinary edge motion remains animated.
+
+Regression checks: `tests/test-monitor.cjs` covers native mask/move/reveal ordering, stale and Settings acknowledgments, pointer placement and hidden relocations. Browser notification, bell and motion suites cover physical account roots, theme/scroll behavior, resized and same-sized destination viewports and superseded placement. Multi-monitor Windows composition and mixed DPI need an on-device trial.
