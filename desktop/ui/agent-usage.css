@@ -84,3 +84,8 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 .w-track.morph-track{opacity:0}
 #card .win{transform:translateY(calc((1 - var(--detail-open,0)) * 8px));transform-origin:top}
 @media(prefers-reduced-motion:reduce){#gauge-morph{display:none}#card .win{transform:none}.w-track.morph-track{opacity:1}}
+
+/* Account selection has its own moving surface, independent of opening the notch. */
+.usage-content{translate:calc(var(--account-direction,1) * var(--account-swap,0) * 24px) 0}
+body[data-edge="left"] .usage-content,body[data-edge="right"] .usage-content{translate:0 calc(var(--account-direction,1) * var(--account-swap,0) * 24px)}
+@media(prefers-reduced-motion:reduce){.usage-content{translate:0 0!important}}

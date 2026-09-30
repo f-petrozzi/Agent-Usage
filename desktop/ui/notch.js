@@ -921,7 +921,7 @@ function renderCard(){
   }
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
-  c.innerHTML=html;c.dataset.account=p.id;
+  c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;
   if(typeof setExtraContent==='function')setExtraContent(snap.details||[]);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){

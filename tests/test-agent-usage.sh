@@ -15,7 +15,7 @@ export CLAUDE_CONFIG_DIR="$HOME/.claude"
 mkdir -p "$CODEX_ACCOUNTS_DIR/profiles/a" "$CODEX_ACCOUNTS_DIR/profiles/b" "$CLAUDE_CONFIG_DIR"
 printf 'a\n' > "$CODEX_ACCOUNTS_DIR/active"
 
-"$COLLECTOR" --self-test
+"$COLLECTOR" --no-antigravity --self-test
 printf 'PASS: parser self-test\n'
 
 cat > "$CODEX_BIN" <<'EOF'
@@ -49,7 +49,7 @@ EOF
 
 # --- the endpoint path, with both providers answering -----------------------
 output="$(AGENT_USAGE_CLAUDE_URL="file://$TEST_ROOT/usage.json" \
-    "$COLLECTOR" --codex-accounts a b --timeout 5)"
+    "$COLLECTOR" --no-antigravity --codex-accounts a b --timeout 5)"
 python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
@@ -83,7 +83,7 @@ EOF
 chmod 755 "$CLAUDE_BIN"
 
 output="$(AGENT_USAGE_CLAUDE_URL="file://$TEST_ROOT/absent.json" \
-    "$COLLECTOR" --codex-accounts --timeout 5)"
+    "$COLLECTOR" --no-antigravity --codex-accounts --timeout 5)"
 python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
@@ -102,7 +102,7 @@ rm -rf "$TEST_ROOT/home/.cache/agent-usage"
 # --- a signed-out provider must not take the others down --------------------
 output="$(CLAUDE_BIN="$TEST_ROOT/missing-claude" \
     AGENT_USAGE_CLAUDE_URL="file://$TEST_ROOT/absent.json" \
-    "$COLLECTOR" --codex-accounts a --timeout 5)"
+    "$COLLECTOR" --no-antigravity --codex-accounts a --timeout 5)"
 python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
@@ -119,7 +119,7 @@ output="$(HOME="$TEST_ROOT/solo" CODEX_ACCOUNTS_DIR="$TEST_ROOT/solo/none" \
     CLAUDE_CONFIG_DIR="$TEST_ROOT/solo/.claude" \
     AGENT_USAGE_CLAUDE_URL="file://$TEST_ROOT/absent.json" \
     CLAUDE_BIN="$TEST_ROOT/missing-claude" \
-    "$COLLECTOR" --timeout 5)"
+    "$COLLECTOR" --no-antigravity --timeout 5)"
 python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
@@ -134,7 +134,7 @@ printf 'PASS: a bare ~/.codex install is read without a profiles directory\n'
 printf '\nPASS: agent usage collector\n'
 
 # Expiry metadata remains optional for older app-server versions.
-python3 - "$COLLECTOR" <<'PYTEST'
+python3 - "$COLLECTOR" --no-antigravity <<'PYTEST'
 import runpy, sys
 normalize = runpy.run_path(sys.argv[1])["normalize_codex"]
 def read(summary):

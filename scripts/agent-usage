@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Read local Codex and Claude usage limits and emit one normalized JSON snapshot.
+"""Read local Codex, Claude and Antigravity usage limits and emit one normalized JSON snapshot.
 
 Design notes
 ------------
-Both providers are read through the path their own tooling uses, so no
+Providers are read through the path their own tooling uses, so no
 credential file is ever opened, copied, or transmitted by this script beyond
 handing Claude Code's own OAuth access token back to Anthropic:
 
@@ -13,6 +13,9 @@ handing Claude Code's own OAuth access token back to Anthropic:
            command calls. When the cached token is expired or rejected we shell
            out to ``claude -p /usage`` which refreshes it, then retry once and
            fall back to parsing that command's text.
+
+* Antigravity - agy's structured /usage report. The CLI owns sign-in and refresh;
+                the collector reads no Google credentials.
 
 Output is a small, versioned document so the Windows frame stays dumb.
 """
@@ -34,6 +37,8 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
+import signal
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -887,23 +892,112 @@ def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool) -> in
 # ----------------------------------------------------------------- main ----
 
 
+def normalize_antigravity(report: dict[str, Any]) -> dict[str, Any]:
+    """Accept measured buckets from agy's usage command, never model availability."""
+    if not isinstance(report, dict):
+        raise UsageError("Antigravity returned an invalid usage report.")
+    command = report.get("command")
+    if not isinstance(command, dict):
+        raise UsageError("Antigravity returned an invalid usage report.")
+    if report.get("status") != "SUCCESS" or command.get("name") != "usage":
+        raise UsageError("Antigravity usage unavailable; check agy sign-in.")
+    limits = []
+    data = command.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("groups"), list):
+        raise UsageError("Antigravity did not report measured usage limits.")
+    for group in data["groups"][:20]:
+        if not isinstance(group, dict):
+            continue
+        buckets = group.get("buckets", [])
+        if not isinstance(buckets, list):
+            continue
+        for bucket in buckets[:20]:
+            if not isinstance(bucket, dict) or bucket.get("enabled") is False:
+                continue
+            remaining = bucket.get("remaining_fraction")
+            if isinstance(remaining, bool) or not isinstance(remaining, (int, float)) or not math.isfinite(remaining) or not 0 <= remaining <= 1:
+                continue
+            window = bucket.get("window")
+            minutes = {"weekly": 10080, "5h": 300}.get(window)
+            if minutes is None:
+                continue
+            limits.append({"id": str(bucket.get("id") or f"agy-{len(limits)}"),
+                "label": "Weekly" if window == "weekly" else "Five hour",
+                "group": str(group.get("name") or "Models"),
+                "usedPercent": round((1 - remaining) * 100, 4), "windowMins": minutes,
+                "resetsAt": _parse_iso(bucket.get("reset_time"))})
+    if not limits:
+        raise UsageError("Antigravity did not report measured usage limits.")
+    return {"id": "antigravity", "provider": "antigravity", "label": "Antigravity",
+        "sampledAt": int(time.time()), "limits": limits}
+
+
+def query_antigravity(timeout: float) -> dict[str, Any]:
+    account = {"id": "antigravity", "provider": "antigravity", "label": "Antigravity", "limits": []}
+    executable = shutil.which("agy")
+    try:
+        if not executable:
+            raise UsageError("Install and sign into agy on the collector machine.")
+        version = subprocess.run([executable, "--version"], stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, timeout=min(timeout, 3), check=True).stdout
+        match = re.search(r"(\d+)\.(\d+)\.(\d+)", version)
+        if not match or tuple(map(int, match.groups())) < (1, 1, 11):
+            raise UsageError("Update agy to use structured usage reports.")
+        # A private empty directory avoids project prompts and project-specific configuration.
+        with tempfile.TemporaryDirectory(prefix="agent-usage-agy-") as work, tempfile.TemporaryFile() as output:
+            proc = subprocess.Popen([executable, "-p", "/usage", "--output-format", "json"],
+                cwd=work, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            try:
+                proc.wait(timeout=timeout)
+                if proc.returncode:
+                    raise UsageError("Antigravity usage unavailable; check agy sign-in and connection.")
+                output.seek(0)
+                raw = output.read(MAX_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_RESPONSE_BYTES:
+                    raise UsageError("Antigravity usage report exceeded the size limit.")
+                return normalize_antigravity(json.loads(raw))
+            finally:
+                # Only signal the process group created for this read, never an existing agy.
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                if proc.poll() is None:
+                    try:
+                        proc.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                        proc.wait()
+    except UsageError as exc:
+        account["error"] = str(exc)
+    except subprocess.TimeoutExpired:
+        account["error"] = "Antigravity usage timed out."
+    except (OSError, ValueError, TypeError, subprocess.CalledProcessError):
+        account["error"] = "Antigravity usage could not be read."
+    return account
+
+
 def collect(
-    profiles: list[tuple[str, Path]], include_claude: bool, timeout: float
+    profiles: list[tuple[str, Path]], include_claude: bool, timeout: float, include_antigravity: bool = False
 ) -> dict[str, Any]:
     active = active_codex_account()
     accounts: list[dict[str, Any]] = []
 
-    jobs = len(profiles) + (1 if include_claude else 0)
+    jobs = len(profiles) + int(include_claude) + int(include_antigravity)
     if jobs:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(jobs, 4)) as pool:
             codex_futures = [
                 pool.submit(query_codex, name, home, timeout) for name, home in profiles
             ]
             claude_future = pool.submit(query_claude, timeout) if include_claude else None
+            agy_future = pool.submit(query_antigravity, timeout) if include_antigravity else None
             for future in codex_futures:
                 accounts.append(normalize_codex(future.result(), active))
             if claude_future is not None:
                 accounts.append(claude_future.result())
+            if agy_future is not None:
+                accounts.append(agy_future.result())
 
     return {
         "schema": SCHEMA_VERSION,
@@ -998,7 +1092,7 @@ def self_test() -> bool:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Emit one normalized JSON snapshot of Codex and Claude usage limits."
+        description="Emit one normalized JSON snapshot of Codex, Claude and Antigravity usage limits."
     )
     parser.add_argument(
         "--codex-accounts",
@@ -1006,6 +1100,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         metavar="NAME",
         help="Codex profiles to read (default: all of them; pass with no names to skip Codex)",
     )
+    parser.add_argument("--no-antigravity", action="store_true", help="skip automatic agy usage discovery")
     parser.add_argument("--no-claude", action="store_true", help="skip the Claude account")
     parser.add_argument("--timeout", type=float, default=20.0, help="per-provider timeout")
     parser.add_argument("--compact", action="store_true", help="emit JSON without indentation")
@@ -1027,14 +1122,15 @@ def main(argv: list[str] | None = None) -> int:
             raise UsageError("--timeout must be greater than zero")
         profiles = codex_profiles(args.codex_accounts)
         include_claude = not args.no_claude
-        if not profiles and not include_claude:
+        include_antigravity = not args.no_antigravity and bool(shutil.which("agy"))
+        if not profiles and not include_claude and not include_antigravity:
             raise UsageError("Nothing to read: no Codex accounts and Claude is disabled.")
         if args.watch_sessions:
             try:
                 return watch_sessions(profiles, include_claude)
             except KeyboardInterrupt:
                 return 0
-        document = collect(profiles, include_claude, args.timeout)
+        document = collect(profiles, include_claude, args.timeout, include_antigravity)
     except UsageError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

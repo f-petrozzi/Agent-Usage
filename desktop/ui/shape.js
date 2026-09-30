@@ -120,7 +120,8 @@ function drawStraight(){
   partA.removeAttribute('transform');partB.removeAttribute('transform');
   partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
-  const detailRetreat=typeof detailOpen==='number'?1-smooth(detailOpen/.4):1;
+  const detailRetreat=typeof detailArm==='number'?1-smooth(Math.max(0,Math.min(1,detailArm))):1;
+  const merging=absorbing||(typeof detailTarget==='number'&&detailTarget===1&&detailRetreat<1);
   const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4)*detailRetreat;
   const stroke=proportions.stroke*grown;
   setGoo(0,-300,-300,L+600,d+600);
@@ -134,11 +135,11 @@ function drawStraight(){
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
     const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
     // Mac GooArc: a buried drop pushes past its resting place on a neck, then unrolls.
-    const slide=-buried*(1-out)+rest*(absorbing?1.2:2.1)*Math.sin(Math.PI*Math.min(out/(absorbing?.85:.8),1));
-    const unrolled=smooth((out-(absorbing?.6:.52))/(absorbing?.35:.43));
+    const slide=-buried*(1-out)+rest*(merging?1.2:2.1)*Math.sin(Math.PI*Math.min(out/(merging?.85:.8),1));
+    const unrolled=smooth((out-(merging?.6:.52))/(merging?.35:.43));
     const onto=smooth((1-disc)/.55), half=Math.PI/4*unrolled*smooth(((1-disc)-.08)/.82);
     const radius=proportions.arm, morphShift=radius*(1-onto);
-    const home=absorbing?smooth(1-out):0;
+    const home=merging?smooth(1-out):0;
     const baseMid=radius-morphShift-(1-disc)*slide;
     const centre=baseMid+(F+stroke-baseMid)*home*disc;
     const [a,b,c,e]=edgeMatrix(notchEdge,w,h), dx=centre*Math.cos(mid),dy=centre*Math.sin(mid);
@@ -153,18 +154,18 @@ function drawStraight(){
     h.ink.setAttribute('d',points.join(''));
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
     let width=proportions.disc+(arcWidth-proportions.disc)*smooth((1-disc)/.8);
-    if(absorbing)width*=disc?(1-.72*home):smooth(out/.35);
-    const goo=absorbing
+    if(merging)width*=disc?(1-.72*home):smooth(out/.35);
+    const goo=merging
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
       :stroke*.4*smooth(out/.15)*(1-smooth((out-.6)/.35));
     const blur=Math.max(goo,5.5*proportions.scale*Math.sin(Math.PI*disc));
     h.ink.setAttribute('stroke-width',n(width+blur*.4));
     // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
-    const armNeck=absorbing?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
+    const armNeck=merging?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
     const neckWidth=Math.max(armNeck,stroke*1.45*Math.pow(Math.sin(Math.PI*disc),.7));
     if(neckWidth>stroke*.18&&out>.01){
       const ax=cx+(F+stroke)*Math.cos(mid), ay=F+(F+stroke)*Math.sin(mid);
-      const reach=absorbing?smooth((.92-out)/.32):1;
+      const reach=merging?smooth((.92-out)/.32):1;
       const bx=ax+(cx+centre*Math.cos(mid)-ax)*reach, by=ay+(F+centre*Math.sin(mid)-ay)*reach;
       const dx=bx-ax,dy=by-ay,len=Math.max(.001,Math.hypot(dx,dy)), px=-dy/len,py=dx/len;
       const q=(x,y,half,sign)=>`${n(x+px*half*sign)} ${n(y+py*half*sign)}`;

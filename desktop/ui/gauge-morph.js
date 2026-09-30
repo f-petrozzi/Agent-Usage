@@ -44,9 +44,9 @@ function drawGaugeMorphs(){
   // The ribbon is revealed by the same live ink that grows around the detailed view.
   // Copy full transforms so this remains correct on every edge and during parking.
   [...gaugeMorphSvg.querySelectorAll('#ribbon-ink path')].forEach((clip,i)=>{
-    const source=[partA,partB,detailPath][i],matrix=source.getCTM();
+    const source=[partA,partB,detailPath][i],matrix=source.getScreenCTM();
     clip.setAttribute('d',source.getAttribute('d')||'');
-    if(matrix)clip.setAttribute('transform',`matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`);
+    if(matrix)clip.setAttribute('transform',`matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e-rootBox.left} ${matrix.f-rootBox.top})`);
   });
   for(const m of gaugeMorphs.values()){
     const r=m.cell.querySelector('.ringwrap').getBoundingClientRect();
@@ -87,7 +87,7 @@ function gaugeMorphStep(now){
   const dt=Math.min(.032,(now-(gaugeMorphLast||now-16))/1000);gaugeMorphLast=now;
   let moving=false;
   for(const m of gaugeMorphs.values()){
-    const omega=m.target?24:27;
+    const omega=m.target?12:15;
     m.v+=(-omega*omega*(m.t-m.target)-2*.8*omega*m.v)*dt;m.t+=m.v*dt;
     if(Math.abs(m.t-m.target)<.001&&Math.abs(m.v)<.015){m.t=m.target;m.v=0;}else moving=true;
   }

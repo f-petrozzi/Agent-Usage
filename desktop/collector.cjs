@@ -19,9 +19,10 @@ function normalize(raw) {
   if (raw.schema !== 2 || !Array.isArray(raw.accounts)) throw new Error('Unsupported collector snapshot');
   const timestamp = finite(raw.generatedAt) ? raw.generatedAt * 1000 : Date.now();
   return raw.accounts.slice(0, 40).map((a, index) => {
-    const base = a.provider === 'claude' ? 'claude' : 'codex';
+    const base = { claude: 'claude', codex: 'codex', antigravity: 'gemini' }[a.provider];
+    if (!base) return null;
     const id = accountId(base, a.id || index);
-    const name = clean(base === 'codex' ? `Codex ${a.label || ''}`.trim() : a.label || 'Claude', 100);
+    const name = clean(base === 'gemini' ? 'Antigravity' : base === 'codex' ? `Codex ${a.label || ''}`.trim() : a.label || 'Claude', 100);
     const details = [];
     if (a.plan) details.push(clean(a.plan, 100));
     if (Number.isInteger(a.resetCredits)) details.push(`${a.resetCredits} banked resets`);
@@ -33,17 +34,18 @@ function normalize(raw) {
     if (a.extraUsage?.enabled) details.push(finite(a.extraUsage.usedDollars) ? `$${a.extraUsage.usedDollars.toFixed(2)} extra usage` : 'Extra usage enabled');
     if (a.blocked) details.push('Limit reached. waiting for reset');
     const windows = (Array.isArray(a.limits) ? a.limits : []).slice(0, 30).filter(l => finite(l.usedPercent)).map((l, i) => ({
-      id: l.windowMins >= 10080 ? (base === 'codex' ? 'secondary' : 'seven_day')
+      id: base === 'gemini' ? clean(l.id || `gemini_${i}`, 100) : l.windowMins >= 10080 ? (base === 'codex' ? 'secondary' : 'seven_day')
         : l.windowMins > 0 && l.windowMins < 1440 ? (base === 'codex' ? 'primary' : 'session') : `window_${i}`,
+      group: base === 'gemini' ? clean(l.group || 'Models', 100) : null,
       label: clean(l.label || 'Usage', 100), used: Math.max(0, Math.min(1, l.usedPercent / 100)),
       resets_at: finite(l.resetsAt) ? l.resetsAt * 1000 : null, count: null, derived: false
     }));
-    return { id, base, name, glyph: base === 'claude' ? 'C' : 'Cx', snap: {
+    return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
       status: a.error || a.warning ? (windows.length ? 'stale' : 'error') : 'ok', windows,
       fetched_at: finite(a.sampledAt) ? a.sampledAt * 1000 : timestamp,
       note: clean([a.error, a.warning].filter(Boolean).join(' · '), 1500), details
     }};
-  });
+  }).filter(Boolean);
 }
 class Collector extends EventEmitter {
   constructor(config) { super(); this.config = config; this.accounts = []; this.busy = false; this.failures = 0; this.closed = false; }
@@ -139,4 +141,4 @@ class SessionFeed extends EventEmitter {
   retry(delay) { clearTimeout(this.timer); this.timer = setTimeout(() => this.start(), delay); }
   close() { this.closed = true; clearTimeout(this.timer); clearTimeout(this.quiet); this.child?.kill(); }
 }
-module.exports = { Collector, SessionFeed, parseSessions, accountId, validHost };
+module.exports = { normalize, Collector, SessionFeed, parseSessions, accountId, validHost };

@@ -7,10 +7,27 @@ const detailPath=document.createElementNS(SVG_NS,'path');detailSvg.append(detail
 let detailOpen=0,detailVelocity=0,detailFrame=0,detailLast=0,detailTarget=0;
 let detailBox=null,detailAim=null;
 let detailReading=1;
+let detailArm=0,detailArmVelocity=0;
+let detailSelection=.5,detailSelectionAim=.5,detailSelectionVelocity=0;
+let detailSwell=0,detailSwellVelocity=0,detailSwap=0,detailSwapVelocity=0;
+function selectDetailAccount(){
+  const r=pill.getBoundingClientRect(),cell=pill.querySelector(`.cell[data-p="${hoverId}"]`);
+  if(!cell)return;
+  const c=cell.getBoundingClientRect(),vertical=edgeIsVertical();
+  const aim=vertical?(c.top+c.height/2-r.top)/r.height:(c.left+c.width/2-r.left)/r.width;
+  card.style.setProperty('--account-direction',aim>=detailSelectionAim?1:-1);
+  detailSelectionAim=Math.max(.12,Math.min(.88,aim));
+}
+
 
 function changeDetailAccount(){
   setExtraShown(false,true);
-  detailReading=reducedDetails()?1:0;card.style.setProperty('--detail-reading',detailReading);
+  selectDetailAccount();
+  if(!reducedDetails()){
+    detailSwellVelocity+=110;
+    detailSwap=1; // New content moves in while the frame keeps its momentum.
+  }
+  detailReading=1;card.style.setProperty('--detail-reading',1);
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
 
@@ -36,13 +53,25 @@ function drawDetails(){
   const first=point(detailBox.u0,detailBox.v0),last=point(detailBox.u1,detailBox.v1);
   card.style.setProperty('--detail-offset-x',`${Math.min(first[0],last[0])-card.offsetLeft}px`);
   card.style.setProperty('--detail-offset-y',`${Math.min(first[1],last[1])-card.offsetTop}px`);
-  const u0=a0+(Math.min(a0,detailBox.u0)-a0)*t;
-  const u1=a1+(Math.max(a1,detailBox.u1)-a1)*t;
+  const spread=t*smooth(Math.max(0,Math.min(1,detailArm)));
+  const u0=a0+(Math.min(a0,detailBox.u0)-a0)*spread;
+  const u1=a1+(Math.max(a1,detailBox.u1)-a1)*spread;
   const expandedDepth=depth+(detailBox.v1-depth)*t;
   // One outline starts at the bezel, grows around the readings, and returns to the bezel.
   // There is no second rectangle or narrow connector beneath the original notch.
   const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
-  detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
+  let outline=partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare);
+  // A broad liquid swell follows selection along the far contour. Its ends stay flat,
+  // preserving the bezel flares, centered frame and original edge footprint.
+  const room=u1-u0-2*radius,normal=edgeIsVertical()?innerWidth:innerHeight;
+  const amplitude=Math.min(Math.max(0,normal-expandedDepth-8),Math.max(0,9+detailSwell))*Math.min(1,t);
+  const contour=Array.from({length:65},(_,i)=>{
+    const share=i/64,u=u0+radius+room*share;
+    const bell=Math.exp(-Math.pow((share-detailSelection)/.27,2))*Math.pow(Math.sin(Math.PI*share),2);
+    return `L${n(u)} ${n(expandedDepth+amplitude*bell)}`;
+  }).join('');
+  outline=outline.replace(`H${n(u1-radius)}`,contour);
+  detailPath.setAttribute('d',outline);
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
@@ -60,11 +89,22 @@ function detailContains(x,y){
 }
 function detailStep(now){
   const dt=Math.min(.032,(now-(detailLast||now-16))/1000);detailLast=now;
-  const omega=2*Math.PI/(detailTarget?.42:.38),damping=detailTarget?.78:1;
+  const omega=2*Math.PI/(detailTarget?.74:.38),damping=detailTarget?.78:1;
   detailVelocity+=(-omega*omega*(detailOpen-detailTarget)-2*damping*omega*detailVelocity)*dt;
   detailOpen+=detailVelocity*dt;
   let settled=Math.abs(detailOpen-detailTarget)<.002&&Math.abs(detailVelocity)<.025;
   if(settled){detailOpen=detailTarget;detailVelocity=0;}
+  const spring=(value,velocity,target,frequency,damping)=>{
+    velocity+=(-frequency*frequency*(value-target)-2*damping*frequency*velocity)*dt;
+    value+=velocity*dt;
+    if(Math.abs(value-target)<.001&&Math.abs(velocity)<.015)return [target,0];
+    settled=false;return [value,velocity];
+  };
+  [detailArm,detailArmVelocity]=spring(detailArm,detailArmVelocity,detailTarget,8,.86);
+  [detailSelection,detailSelectionVelocity]=spring(detailSelection,detailSelectionVelocity,detailSelectionAim,13,.7);
+  [detailSwell,detailSwellVelocity]=spring(detailSwell,detailSwellVelocity,0,10,.7);
+  [detailSwap,detailSwapVelocity]=spring(detailSwap,detailSwapVelocity,0,13,.82);
+  card.style.setProperty('--account-swap',Math.max(0,detailSwap));
   if(detailAim){
     const mix=1-Math.exp(-dt/.075);
     for(const key of ['u0','u1','v0','v1','a0','a1']){
@@ -92,9 +132,9 @@ function reducedDetails(){return matchMedia('(prefers-reduced-motion: reduce)').
 function setDetailsShown(on,instant=false){
   detailTarget=on?1:0;
   if(typeof syncGaugeMorph==='function')syncGaugeMorph(instant||reducedDetails());
-  if(on)syncDetails();
+  if(on){selectDetailAccount();syncDetails();}
   if(instant||reducedDetails()){
-    cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;
+    cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;detailArm=detailTarget;detailArmVelocity=0;detailSelection=detailSelectionAim;detailSelectionVelocity=0;detailSwap=detailSwell=detailSwapVelocity=detailSwellVelocity=0;card.style.setProperty('--account-swap',0);
     card.style.setProperty('--detail-open',detailOpen);drawDetails();
     if(!on)card.classList.remove('closing');return;
   }

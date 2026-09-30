@@ -23,7 +23,7 @@ let pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage =
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
 const uiRoot = path.join(__dirname, 'ui');
-const shortcuts = { 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
+const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
 const placeholder = () => ({ id: 'collector', base: 'claude', name: 'Agent Usage', glyph: '…', snap: { ...absent(), status: 'loading', note: 'Reading your collector…', details: [] } });
 const accounts = () => collector?.accounts.length ? collector.accounts : [placeholder()];
@@ -47,12 +47,12 @@ async function start() {
   try { stored = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, '')); } catch {}
   config = { source: legacy.Source === 'ssh' ? 'ssh' : 'wsl', sshTarget: legacy.SshTarget || '',
     scale: 1, theme: 'dark', weekly: 'outside', transition: 'ramp', slots: [], edge: 'right', along: 0.5,
-    display: null, move: true, tray: false, lang: 'en', shortcut: 'Shift+F1', autostart: true, ...stored };
+    display: null, move: true, tray: false, lang: 'en', shortcut: 'Scrolllock', autostart: true, ...stored };
   // Move the previous default once; later explicit shortcut choices remain intact.
-  if (!stored.shortcutRevision && config.shortcut === 'Ctrl+Shift+Space') config.shortcut = 'Shift+F1';
-  config.shortcutRevision = 1;
+  if ((stored.shortcutRevision || 0) < 2 && ['Ctrl+Shift+Space', 'Shift+F1'].includes(config.shortcut)) config.shortcut = 'Scrolllock';
+  config.shortcutRevision = 2;
   config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false };
-  if (!shortcuts[config.shortcut]) config.shortcut = 'Shift+F1';
+  if (!shortcuts[config.shortcut]) config.shortcut = 'Scrolllock';
   if (!['left','right','top','bottom'].includes(config.edge)) config.edge = 'right';
   config.scale = [0.8, 1, 1.25].includes(config.scale) ? config.scale : 1;
   config.along = Math.max(0, Math.min(1, Number(config.along) || 0.5));
@@ -241,7 +241,7 @@ function requestRefresh() {
 function stateSnapshot() { return { sessions: [], agg: 'idle', counts: {}, lang_resolved: config?.lang === 'auto' ? 'en' : (config?.lang || 'en'), clock_24h: false }; }
 function glyphs() {
   const out = {};
-  for (const provider of ['claude', 'codex']) out[provider] = { kind: 'svg', svg: fs.readFileSync(path.join(uiRoot, 'glyphs', provider + '.svg'), 'utf8') };
+  for (const provider of ['claude', 'codex', 'gemini']) out[provider] = { kind: 'svg', svg: fs.readFileSync(path.join(uiRoot, 'glyphs', provider + '.svg'), 'utf8') };
   for (const account of accounts()) out[account.id] = out[account.base];
   return out;
 }

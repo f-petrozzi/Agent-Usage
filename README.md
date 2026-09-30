@@ -1,7 +1,7 @@
 # Agent Usage
 
-A hidden-at-startup Windows edge notch for Codex and Claude usage, reset times,
-and banked resets. Hold **Shift+F1** to reveal it and follow your cursor
+A hidden-at-startup Windows edge notch for Codex, Claude, and Antigravity usage, reset times,
+and banked resets. Hold **Scroll Lock** to reveal it and follow your cursor
 around either monitor's edges. Release, then hover an agent for scrollable details.
 Colored rings show usage consumed; right-click to switch between 5-hour and weekly
 readings or change the shortcut.
@@ -27,7 +27,7 @@ Download **AgentUsage-Setup-&lt;version&gt;.exe** from the
 It installs per-user without administrator access and migrates a ZIP install in
 place. Choose local WSL or an SSH host in Settings → General.
 
-Needs Windows 10/11 and signed-in Codex/Claude CLIs on the collector machine.
+Needs Windows 10/11 and signed-in provider CLIs on the collector machine.
 The installer is unsigned, so SmartScreen may ask you to confirm it.
 
 ## Update
@@ -41,3 +41,13 @@ The app never opens credentials on Windows. [MIT license](LICENSE).
 
 Codex stream reads frame raw pipe bytes so coalesced notifications and replies do
 not cause false timeouts. Regression: `python3 tests/test-codex-stream.py`.
+
+## Antigravity
+
+Sign into `agy` with your Google AI Pro account on the collector machine.
+The collector automatically adds Antigravity when `agy` is on PATH, using
+`agy -p /usage --output-format json` (requires agy 1.1.11 or later).
+It shows the measured weekly and five-hour buckets for Gemini and Claude/GPT
+models, including reset times. It does not infer quota from model availability
+or label CLI reports with account identity or a plan the CLI does not provide.
+Use `--no-antigravity` to skip it. Update the collector alongside the Windows app.
