@@ -7,6 +7,8 @@ const alertQueue=[];
 let alertShowing=null,alertHeld=false,alertTimer=0,pumpTimer=0;
 listen('alert',e=>{
   const p=e.payload;if(!p||!Array.isArray(p.events)||!p.events.length)return;
+  // Already reading the log: the alert is there at the top of it, so it does not open a second time
+  if(logShowing()){if(p.sound)chime(p.events[0].kind);ringBell();return;}
   alertQueue.push(p);pumpAlert();
 }).catch(()=>{});
 // Not over something the person is doing: while the notch is arriving, carried, tracking or showing usage
@@ -36,6 +38,7 @@ function holdAlert(held){
 function clearAlert(){
   if(!alertShowing)return;
   alertShowing=null;alertHeld=false;clearTimeout(alertTimer);card.classList.remove('alerting');reportHot(); // main stops holding the notch out for it
+  ringBell(); // read, it tucks into the bell
   clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,700); // the next one waits for this one to draw in
 }
 function endAlert(close){ if(!alertShowing)return; if(close)hideCard(); else clearAlert(); }
@@ -85,3 +88,75 @@ function chime(kind){
     });
   }catch(_){/* no audio device: the alert still shows */}
 }
+
+/* ---- The bell: the alert log ----
+   Alerts no longer go to Windows' notification centre, so the bell at the end of the rings keeps them. Its count
+   is what arrived since the log was last open; pointing at it opens the log in the same lobe as an account's
+   usage, with the alert switches along the top. A row turns into that account's usage; Clear empties it. */
+let alertLogData=[],alertPrefsData=null,markTimer=0;
+const unreadCount=()=>alertLogData.filter(e=>!e.read).length;
+const logShowing=()=>card.classList.contains('show')&&hoverId===ALERTS_ID&&!alertShowing;
+listen('alert_log',e=>{
+  const before=unreadCount();alertLogData=Array.isArray(e.payload)?e.payload:[];
+  paintBell();if(unreadCount()>before&&!alertShowing)ringBell();
+  if(logShowing())renderCard();
+}).catch(()=>{});
+invoke('get_alert_log').then(v=>{alertLogData=Array.isArray(v)?v:[];paintBell();}).catch(()=>{});
+listen('alert_preferences',e=>{alertPrefsData=e.payload;if(logShowing())renderCard();}).catch(()=>{});
+invoke('get_alert_preferences').then(v=>{alertPrefsData=v;}).catch(()=>{});
+function paintBell(){
+  const cell=pill.querySelector('.alerts-cell');if(!cell)return;
+  const n=unreadCount();
+  cell.classList.toggle('unread',n>0);cell.querySelector('.pct').textContent=n?String(Math.min(n,99)):'';
+  cell.setAttribute('aria-label',n?`Alerts, ${n} new`:'Alerts');
+}
+// A swing that dies away, from the top of the bell, as it takes an alert in
+function ringBell(){
+  const mark=pill.querySelector('.alerts-cell .bell-mark');
+  if(!mark||!unreadCount()||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  mark.animate([{rotate:'0deg'},{rotate:'18deg'},{rotate:'-14deg'},{rotate:'9deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)'});
+  const count=pill.querySelector('.alerts-cell .pct');
+  count?.animate([{scale:1.35},{scale:1}],{duration:500,easing:'cubic-bezier(.34,1.56,.64,1)'});
+}
+const CHIPS=[['quota','Usage'],['waiting','Waiting'],['completion','Finished'],['sound','Sound']];
+function logWhen(at){
+  const m=Math.round((Date.now()-at)/60000);
+  if(m<1)return textCopy('now');
+  if(m<60*24)return ui().ago(m);
+  const days=daysApart(at,Date.now());
+  if(days===1)return new Intl.RelativeTimeFormat(ui().locale,{numeric:'auto'}).format(-1,'day');
+  return new Date(at).toLocaleDateString(ui().locale,{weekday:'short'});
+}
+function renderAlertLog(){
+  const kick=ui().kick||UI.en.kick, rows=[...alertLogData].reverse().slice(0,30);
+  const chips=CHIPS.map(([key,label])=>`<button class="a-chip${alertPrefsData?.[key]?' on':''}" type="button" data-pref="${key}" aria-pressed="${!!alertPrefsData?.[key]}">${esc(textCopy(label))}</button>`).join('');
+  let html=`<div class="c-head"><span class="log-mark">${BELL_MARK}</span><span class="c-title">${esc(textCopy('Alerts'))}</span>${rows.length?`<button class="a-clear" type="button">${esc(textCopy('Clear'))}</button>`:''}</div>
+    <div class="a-chips">${chips}</div>`;
+  if(!rows.length)html+=`<div class="a-empty">${esc(textCopy('No alerts this week'))}</div>`;
+  else html+=`<div class="a-log">${rows.map((e,i)=>logRow(e,i,kick)).join('')}</div>`;
+  // The rows come in one after another only as the log opens, not each time it refreshes while open
+  const entering=detailOpen<.9||card.dataset.account!==ALERTS_ID;
+  card.innerHTML=`<div class="usage-content log-content${entering?' entering':''}">${html}</div>`;
+  // Read once it has been open long enough to have been seen
+  if(unreadCount()&&!markTimer)markTimer=setTimeout(()=>{markTimer=0;if(logShowing())invoke('mark_alerts_read').catch(()=>{});},1400);
+}
+function logRow(e,i,kick){
+  const acct=providers().find(x=>x.id===e.account)||agentAccounts.find?.(x=>x.id===e.account);
+  const quota=e.kind==='quota', waiting=e.kind==='waiting';
+  const word=quota?(e.level===100?kick.limit:kick.warning):waiting?kick.waiting:kick.finished;
+  const colour=quota?tone(Math.min(1,Math.max(e.used??0,(e.level||80)/100))):waiting?WATCH:INK;
+  const w=quota&&acct?acct.snap.windows.find(x=>x.id===e.window):null;
+  const detail=quota?`${w?textCopy(w.label):''}${e.used!=null?`${w?' · ':''}${pctText(e.used)}%`:''}`:(e.session||'');
+  return `<button class="a-row${e.read?'':' fresh'}" type="button" data-account="${esc(e.account||'')}" style="--i:${i}">
+    <span class="a-glyph">${acct?glyphHtml(acct,true):''}</span><span class="a-name">${esc(acct?acct.name:e.session||'Agent Usage')}</span>
+    <span class="a-word" style="color:${colour}">${esc(word)}</span><span class="a-when">${esc(logWhen(e.at))}</span>
+    ${detail?`<span class="a-detail">${esc(detail)}</span>`:''}</button>`;
+}
+card.addEventListener('click',e=>{
+  if(!logShowing())return;
+  const chip=e.target.closest('.a-chip');
+  if(chip){const key=chip.dataset.pref;chip.classList.toggle('on');invoke('set_alert_preferences',{[key]:!alertPrefsData?.[key]}).then(v=>{alertPrefsData=v;}).catch(()=>{});return;}
+  if(e.target.closest('.a-clear')){invoke('clear_alert_log').catch(()=>{});return;}
+  const row=e.target.closest('.a-row');
+  if(row&&providers().some(p=>p.id===row.dataset.account)){hoverId=row.dataset.account;renderCard();}
+});

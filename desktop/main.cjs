@@ -7,7 +7,7 @@ const { spawn } = require('node:child_process');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity } = require('./collector.cjs');
-const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings } = require('./alerts.cjs');
+const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts } = require('./alerts.cjs');
 
 app.setName('Agent Usage');
 app.setAppUserModelId('ink.petro.agent-usage');
@@ -63,7 +63,8 @@ async function start() {
   config.alerts = alertPreferences(config.alerts);
   config.accountOrder = Array.isArray(config.accountOrder) ? [...new Set(config.accountOrder.filter(id => typeof id === 'string'))].slice(0, 40) : [];
   quotaAlerts = new QuotaAlerts(config.quotaWarnings); sessionAlerts = new SessionAlerts();
-  config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false };
+  config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false, alerts: config.buttons?.alerts !== false };
+  config.alertLog = alertLog(config.alertLog);
   if (!shortcuts[config.shortcut]) config.shortcut = 'Scrolllock';
   if (!['left','right','top','bottom'].includes(config.edge)) config.edge = 'right';
   config.scale = [0.8, 1, 1.25].includes(config.scale) ? config.scale : 1;
@@ -307,10 +308,11 @@ function updateTray() {
 const ALERT_MS = 6500;
 function showAlerts(events) {
   if (!events.length || !win || win.isDestroyed()) return;
+  config.alertLog = logAlerts(config.alertLog, events); save(); broadcast('alert_log', config.alertLog);
   reveal(false);
   visibleUntil = Math.max(visibleUntil, Date.now() + 2500); // until the page has it open and says so
   send('alert', { events: events.slice(0, 8).map(e => ({ kind: e.kind, account: e.account || null, window: e.window || null,
-    level: e.level || null, session: e.session || null, title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
+    level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
 function contextMenu() {
   menuOpen = true;
@@ -349,6 +351,9 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
     case 'get_alert_preferences': return config.alerts;
+    case 'get_alert_log': return config.alertLog = alertLog(config.alertLog);
+    case 'mark_alerts_read': config.alertLog = alertLog(config.alertLog).map(e => ({ ...e, read: true })); save(); broadcast('alert_log', config.alertLog); return config.alertLog;
+    case 'clear_alert_log': config.alertLog = []; save(); broadcast('alert_log', config.alertLog); return config.alertLog;
     case 'set_alert_preferences': {
       config.alerts = alertPreferences({ ...config.alerts, ...args }); save(); broadcast('alert_preferences', config.alerts); return config.alerts;
     }
@@ -379,7 +384,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_move_handle': return config.move;
     case 'set_move_handle': config.move = args.on === true; save(); broadcast('move_handle', config.move); return config.move;
     case 'get_notch_buttons': return config.buttons;
-    case 'set_notch_buttons': for (const key of ['pin', 'refresh']) if (typeof args[key] === 'boolean') config.buttons[key] = args[key]; save(); broadcast('notch_buttons', config.buttons); return config.buttons;
+    case 'set_notch_buttons': for (const key of ['pin', 'refresh', 'alerts']) if (typeof args[key] === 'boolean') config.buttons[key] = args[key]; save(); broadcast('notch_buttons', config.buttons); return config.buttons;
     case 'set_pinned': setPinned(args.on === true); return pinned;
     case 'get_ui_flags': return flags();
     case 'set_ui_flags': {

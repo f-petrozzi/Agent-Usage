@@ -62,6 +62,13 @@ It stays about six seconds, for as long as the pointer rests on it, and a click 
 ring under the pointer turns it into that account's usage. The sound is a short chime
 made by the app.
 
+Since 3.1.7 the notch keeps them too: a bell at the end of the rings collects the last
+week of alerts (up to 40). A yellow dot and a count show what arrived since you last
+looked; point at the bell and the log opens in the same lobe as an account's usage,
+newest first, with the alert switches (Usage, Waiting, Finished, Sound) along the
+top. A row turns into that account's usage and Clear empties the log. Turn the bell
+off under Settings → Appearance → Controls.
+
 Warnings track each reported quota window, retain their threshold across app
 restarts, and rearm when a later reset boundary confirms a new window. The initial
 reading establishes a baseline, so starting the app does not send old warnings.

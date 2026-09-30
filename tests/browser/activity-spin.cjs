@@ -32,7 +32,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     assert.ok(new Set(metrics.samples.map(s=>s.transform)).size>=35,'rotation advances each frame instead of 12 steps');
     assert.ok(metrics.phasePreserved&&metrics.arcPreserved,'collector updates preserve rotation phase and arc DOM');
     // Chromium must promote the small rotating HTML layer, instead of repainting an SVG group.
-    await page.locator('.ringwrap').screenshot({path:'/tmp/agent-usage-smooth-spin.png'});
+    await page.locator('.cell:not(.alerts-cell) .ringwrap').screenshot({path:'/tmp/agent-usage-smooth-spin.png'});
     const cdp=await page.context().newCDPSession(page);let layers=[];
     cdp.on('LayerTree.layerTreeDidChange',event=>{layers=event.layers||[];});await cdp.send('LayerTree.enable');
     // Force a fresh layer-tree update; enable alone need not emit a snapshot

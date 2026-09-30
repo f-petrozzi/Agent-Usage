@@ -23,7 +23,7 @@ class QuotaAlerts {
         const rolled = previous && reset !== null && previous.reset !== null && reset > previous.reset && now >= previous.reset;
         const oldLevel = rolled ? 0 : previous?.level ?? level;
         if (level > oldLevel && preferences.quota && !preferences.muted.includes(account.id)) {
-          events.push({ kind: 'quota', account: account.id, window: window.id, level, title: account.name + (level === 100 ? ' limit reached' : ' usage warning'),
+          events.push({ kind: 'quota', account: account.id, window: window.id, level, used: window.used, title: account.name + (level === 100 ? ' limit reached' : ' usage warning'),
             body: `${window.label}: ${Math.round(window.used * 100)}% used${reset && reset > now ? `. Resets ${new Date(reset).toLocaleString()}` : ''}.` });
         }
         this.saved[key] = { reset, level: Math.max(oldLevel, level) };
@@ -65,4 +65,18 @@ function trayReadings(accounts, now = Date.now()) {
       return `${window.label}: ${Math.round(window.used * 100)}% used${reset}`;
     }), status: account.snap.status }));
 }
-module.exports = { DEFAULT_ALERTS, alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings };
+// Alerts no longer go to Windows' notification centre, so the app keeps its own short log for the notch's bell:
+// the last 40 or the last week, whichever is fewer, newest last. Only what the bell shows is kept.
+const LOG_MAX = 40, LOG_DAYS = 7;
+const text = (v, n) => typeof v === 'string' ? v.slice(0, n) : null;
+function alertLog(raw, now = Date.now()) {
+  return (Array.isArray(raw) ? raw : []).filter(e => e && typeof e === 'object' && Number.isFinite(e.at) && e.at > now - LOG_DAYS * 864e5 && e.at <= now + 6e4
+    && ['quota', 'waiting', 'completion'].includes(e.kind)).slice(-LOG_MAX).map(e => ({
+    id: text(e.id, 40) || String(e.at), at: e.at, kind: e.kind, account: text(e.account, 100), window: text(e.window, 100),
+    level: [80, 100].includes(e.level) ? e.level : null, used: Number.isFinite(e.used) ? Math.max(0, Math.min(1, e.used)) : null,
+    session: text(e.session, 200), title: text(e.title, 200) || '', body: text(e.body, 300) || '', read: e.read === true }));
+}
+function logAlerts(log, events, now = Date.now()) {
+  return alertLog([...log, ...events.map((e, i) => ({ ...e, id: `${now.toString(36)}-${i}`, at: now, read: false }))], now);
+}
+module.exports = { DEFAULT_ALERTS, alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts };

@@ -184,6 +184,39 @@
   .a-sub{margin-top:4px;font-size:11.5px;color:var(--ink-dim)}
   .alert-content.stacked .a-block + .a-block{margin-top:10px;padding-top:10px;border-top:1px solid var(--card-rule)}
   #card.alerting{cursor:pointer}
+  /* The bell: a cell like the rings, with no reading. New alerts put a yellow dot on it and a count beneath. */
+  .alerts-cell .glyph .bell-mark{display:block;width:calc(25px * var(--k));height:calc(25px * var(--k));fill:none;stroke:var(--ink-2);stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round;transform-origin:50% 12%}
+  .alerts-cell .glyph::after{content:"";position:absolute;left:calc(50% + 4px);top:calc(50% - 12px);width:7px;height:7px;border-radius:50%;
+    background:var(--watch);box-shadow:0 0 0 2px var(--hole);scale:0;transition:scale .4s cubic-bezier(.34,1.56,.64,1)}
+  .alerts-cell.unread .glyph::after{scale:1}
+  .alerts-cell .pct{min-height:18px}
+  /* The log: the alert switches along the top, then what came in, newest first */
+  .log-mark{display:inline-grid;place-items:center;width:16px;height:16px;flex:none}
+  .log-mark .bell-mark{width:16px;height:16px;fill:none;stroke:var(--ink-2);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .a-clear{margin-left:auto;appearance:none;border:0;background:none;padding:2px 0 2px 8px;font:inherit;font-size:12px;font-weight:600;color:var(--ink-dim);cursor:pointer;transition:color .15s ease}
+  .a-clear:hover{color:var(--ink)}
+  .a-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 2px}
+  .a-chip{appearance:none;height:24px;padding:0 10px;border-radius:12px;border:1px solid #333;background:transparent;font:inherit;font-size:11px;font-weight:600;
+    color:var(--ink-dim);cursor:pointer;transition:background-color .2s ease,color .2s ease,border-color .2s ease,transform .3s cubic-bezier(.34,1.56,.64,1)}
+  .a-chip:hover{border-color:#555;color:var(--ink-2)}
+  .a-chip.on{background:var(--ink);border-color:var(--ink);color:#000}
+  .a-chip:active{transform:scale(.93)}
+  .a-log{display:flex;flex-direction:column;margin:8px -8px 0}
+  .a-row{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;display:grid;
+    grid-template-columns:16px minmax(0,1fr) auto auto;column-gap:8px;row-gap:3px;align-items:baseline;padding:8px;border-radius:10px;transition:background-color .15s ease}
+  .a-row:hover{background:#141414}
+  .log-content.entering .a-row{animation:a-in .44s cubic-bezier(.32,.72,.24,1) both;animation-delay:calc(var(--i) * 26ms + 60ms)}
+  @keyframes a-in{from{opacity:0;translate:0 6px}to{opacity:1;translate:0 0}}
+  .a-glyph{position:relative;align-self:center;width:16px;height:16px;display:grid;place-items:center}
+  .a-glyph .mark{width:15px;height:15px}.a-glyph .mark svg{width:15px;height:15px;fill:currentColor}
+  .a-row.fresh .a-glyph::after{content:"";position:absolute;right:-4px;top:-3px;width:6px;height:6px;border-radius:50%;background:var(--watch);box-shadow:0 0 0 2px #000}
+  .a-name{font-size:12.5px;font-weight:650;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .a-word{font-size:11px;font-weight:650;white-space:nowrap}
+  .a-when{min-width:44px;text-align:right;font-size:11px;color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .a-detail{grid-column:2 / -1;font-size:11.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .a-empty{margin-top:12px;font-size:12px;color:var(--ink-dim)}
+  @media (prefers-reduced-motion: reduce){.log-content.entering .a-row{animation:none}.a-chip,.alerts-cell .glyph::after{transition:none}}
 
   /* ---- The other three edges -------------------------------------------------
      The rules above draw the right-hand edge, the original layout and still the default. Each block

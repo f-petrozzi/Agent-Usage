@@ -86,3 +86,18 @@ test('preferences keep booleans strict and deduplicate muted account ids',()=>{
   const actual=alertPreferences({quota:'yes',waiting:true,muted:['a','a',3]});
   assert.equal(actual.quota,true);assert.equal(actual.waiting,true);assert.deepEqual(actual.muted,['a']);
 });
+
+test('The alert log keeps the last 40 or the last week, newest last, and only what the bell shows', () => {
+  const { alertLog, logAlerts } = require('../desktop/alerts.cjs');
+  const now = Date.now();
+  let log = logAlerts([], [{ kind: 'quota', account: 'claude', window: 'session', level: 80, used: .83, title: 'Claude usage warning', body: '5 hours', token: 'secret' }], now);
+  assert.equal(log.length, 1); assert.equal(log[0].read, false); assert.equal(log[0].at, now);
+  assert.ok(!('token' in log[0]), 'nothing it does not show is kept');
+  for (let i = 0; i < 45; i++) log = logAlerts(log, [{ kind: 'waiting', account: 'codex', session: 's' + i }], now + i);
+  assert.equal(log.length, 40); assert.equal(log.at(-1).session, 's44');
+  const week = alertLog([{ id: 'old', at: now - 8 * 864e5, kind: 'quota' }, { id: 'odd', at: now, kind: 'toast' }, { id: 'ok', at: now - 864e5, kind: 'completion', read: true }], now);
+  assert.deepEqual(week.map(e => e.id), ['ok'], 'older than a week and unknown kinds are dropped');
+  assert.equal(week[0].read, true);
+  assert.deepEqual(alertLog('not a list'), []);
+});
+

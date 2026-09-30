@@ -793,18 +793,26 @@ function svgArc(r,frac,color,width,extra=''){
 }
 
 // Pin occupies the near flare's pocket; refreshing a ring or Settings refreshes usage.
-let notchButtons={pin:true}, pinnedNow=false;
+let notchButtons={pin:true,alerts:true}, pinnedNow=false;
+// The bell at the end of the rings: the alert log (notify.js). It is a cell like the rings, so it rides the
+// corners and recedes with them, but it is never an account: no reading, no refresh.
+const ALERTS_ID='__alerts';
+const BELL_MARK='<svg class="bell-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 16.6V11a5.6 5.6 0 0 1 11.2 0v5.6l1.7 1.9H4.7z"/><path d="M10 21h4"/></svg>';
 function renderRing(){
-  const ps=providers();
+  const ps=providers(), bell=notchButtons.alerts!==false;
   // Rebuild the DOM only when the structure changes (never swap the element under the cursor)
-  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}`;
+  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}|${bell}`;
   if(pill.dataset.cells!==want){
     pill.innerHTML=ps.map((p,i)=>`<div class="cell" role="button" tabindex="0" aria-label="${esc(p.name)}" data-p="${p.id}" style="--i:${i}">
       <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><div class="activity-layer"><svg class="activity" viewBox="0 0 56 56"></svg></div><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
-      <div class="pct">…</div></div>`).join('');
+      <div class="pct">…</div></div>`).join('')+(bell?`<div class="cell alerts-cell" role="button" tabindex="0" aria-label="Alerts" data-p="${ALERTS_ID}" style="--i:${ps.length}">
+      <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="${HOLE}"/><circle cx="28" cy="28" r="25" fill="none" stroke="${TRACK}" stroke-width="5"/></svg><div class="glyph">${BELL_MARK}</div></div>
+      <div class="pct"></div></div>`:'');
     pill.dataset.cells=want;
   }
-  pill.style.setProperty('--length',`${ps.length*68+Math.max(0,ps.length-1)*14+36}px`);
+  const cells=ps.length+(bell?1:0);
+  pill.style.setProperty('--length',`${cells*68+Math.max(0,cells-1)*14+36}px`);
+  if(typeof paintBell==='function')paintBell();
   const pinButton=document.getElementById('pin-handle');
   pinButton.classList.toggle('on',pinnedNow);pinButton.setAttribute('aria-pressed',String(pinnedNow));
   pinButton.title=pinnedNow?'Unpin':'Pin';pinButton.setAttribute('aria-label',pinButton.title);
@@ -947,6 +955,13 @@ function renderCard(){
   // An alert holds the card until it is read or turned into this account's usage (notify.js)
   if(typeof alertShowing!=='undefined'&&alertShowing){renderAlert(alertShowing);return;}
   const c=document.getElementById('card');
+  if(hoverId===ALERTS_ID){ // the bell: the alert log in the same lobe
+    const changed=!!c.dataset.account&&c.dataset.account!==ALERTS_ID;
+    if(typeof setExtraContent==='function')setExtraContent([],[]);
+    renderAlertLog();c.dataset.account=ALERTS_ID;placeCard();syncAccountFocus(card.classList.contains('show'));
+    if(changed&&typeof changeDetailAccount==='function')changeDetailAccount();
+    return;
+  }
   const p=providers().find(x=>x.id===hoverId)||providers()[0];
   if(!p)return;
   const snap=p.snap;
@@ -1238,7 +1253,7 @@ let press=null, dragging=false;
 const PRESS_MIN=380, PRESS_MAX=6000;
 const refreshing={};
 function refreshRing(id){
-  if(refreshing[id]) return;
+  if(refreshing[id]||id===ALERTS_ID) return;
   refreshing[id]={at:Date.now(),timer:setTimeout(()=>settle(id),PRESS_MAX)};
   renderRing();
   turnReading(id);
@@ -1352,7 +1367,7 @@ listen('control_pressed',e=>{
 });
 function renderNotchButtons(value){
   if(!value)return;
-  notchButtons={pin:value.pin!==false};showPin=notchButtons.pin;
+  notchButtons={pin:value.pin!==false,alerts:value.alerts!==false};showPin=notchButtons.pin;
   renderRing();reportHot();if(typeof drawShape==='function')drawShape();
 }
 listen('notch_buttons',e=>renderNotchButtons(e.payload)).catch(()=>{});

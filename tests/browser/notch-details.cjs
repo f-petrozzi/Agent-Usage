@@ -62,7 +62,7 @@ const answers = {
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),false,'hover dwell');
     await page.waitForTimeout(100);
     assert.ok(await page.evaluate(()=>detailArm>0&&detailArm<.4),'arms absorb gradually during the opening');
-    assert.equal(await page.locator('.compact-account').count(),1);
+    assert.equal(await page.locator('.compact-account:not(.alerts-cell)').count(),1);
     await page.screenshot({path:path.join(OUT,edge+'-extending.png')});
     await page.waitForTimeout(1600);
     const initial=await page.evaluate(()=>({open:detailOpen,account:card.dataset.account,ink:detailPath.getAttribute('d'),opacity:getComputedStyle(card).opacity,
@@ -122,7 +122,7 @@ const answers = {
     const next=await page.locator('.cell .ringwrap').nth(1).boundingBox();
     await page.mouse.move(next.x+next.width/2,next.y+next.height/2);await page.waitForTimeout(110);
     assert.ok(await page.evaluate(()=>card.dataset.account==='codex'&&detailTarget===1&&pill.querySelector('.focused-account').dataset.p==='codex'),'small glyph switches without closing the notch');
-    assert.equal(await page.locator('.compact-account').count(),1);
+    assert.equal(await page.locator('.compact-account:not(.alerts-cell)').count(),1);
     assert.equal(await page.evaluate(()=>getComputedStyle(card.querySelector('.usage-content')).translate),'none','content stays in place');
     await page.screenshot({path:path.join(OUT,edge+'-handoff.png')});
     // Switching again before the frame settles keeps its live spring velocity.
@@ -151,13 +151,14 @@ const answers = {
   ]}};
   await page.evaluate(value=>__emit('agent_accounts',value),[...accounts,{...accounts[1],id:'codex-b',name:'Codex b'},agy]);
   await page.waitForTimeout(500);await sample(640);await page.evaluate(()=>{window.agentTracking=false;});
-  assert.equal(await page.locator('.cell').count(),4);
+  assert.equal(await page.locator('.cell:not(.alerts-cell)').count(),4);
+  assert.equal(await page.locator('.alerts-cell').count(),1,'the bell follows the rings');
   await page.locator('.cell[data-p="antigravity"]').hover();await page.waitForTimeout(2000);
   assert.equal(await page.evaluate(()=>card.dataset.account),'antigravity');
   assert.equal(await page.locator('#card .g-box').count(),0);assert.equal(await page.locator('#card .w-track').count(),2);
   assert.equal(await page.locator('#card .g-head').count(),0,'Gemini uses the same plain usage rows as other accounts');
   assert.equal(await page.locator('.c-title').innerText(),'Antigravity');
-  assert.equal(await page.locator('.compact-account').count(),3);
+  assert.equal(await page.locator('.compact-account:not(.alerts-cell)').count(),3);
   await page.screenshot({path:path.join(OUT,'four-accounts-antigravity.png')});
   const agyOutline=await page.evaluate(()=>detailPath.getAttribute('d'));
   await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
@@ -202,8 +203,8 @@ const answers = {
   await sample(1680);await page.evaluate(()=>{window.agentTracking=false;hoverId='claude';showCard();});await page.waitForTimeout(250);
   await page.evaluate(()=>hideCard());await page.waitForTimeout(80);await page.evaluate(()=>showCard());await page.waitForTimeout(1700);
   assert.equal(await page.evaluate(()=>detailOpen),1);
-  await page.evaluate(()=>{window.agentTracking=true;hideCard();});assert.equal(await page.evaluate(()=>detailOpen),0);assert.equal(await page.locator('.compact-account').count(),0);
-  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.agentTracking=false;showCard();});assert.equal(await page.evaluate(()=>detailOpen),1);assert.equal(await page.locator('.compact-account').count(),1);
+  await page.evaluate(()=>{window.agentTracking=true;hideCard();});assert.equal(await page.evaluate(()=>detailOpen),0);assert.equal(await page.locator('.compact-account:not(.alerts-cell)').count(),0);
+  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>{window.agentTracking=false;showCard();});assert.equal(await page.evaluate(()=>detailOpen),1);assert.equal(await page.locator('.compact-account:not(.alerts-cell)').count(),1);
   await page.evaluate(()=>hideCard());assert.equal(await page.evaluate(()=>detailOpen),0);
   await page.setViewportSize({width:360,height:300});
   for(const t of [180,510,840,1170]){

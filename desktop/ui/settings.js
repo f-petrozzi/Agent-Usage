@@ -364,10 +364,10 @@ for(const [id,get,set] of [['sw-autostart','get_autostart','set_autostart']]){
   $(id).onclick=action(async()=>toggle(id,await call(set,{on:!$(id).classList.contains('on')})));
 }
 $('screen').onchange=action(()=>call('set_notch_monitor',{id:$('screen').value}));
-// Pin lives in the leading pocket; Refresh lives here in General.
-function renderButtons(v){if(!v)return;toggle('sw-pin-button',v.pin!==false);}
+// Pin lives in the leading pocket and the alerts bell at the end of the rings; Refresh lives here in General.
+function renderButtons(v){if(!v)return;toggle('sw-pin-button',v.pin!==false);toggle('sw-alerts-button',v.alerts!==false);}
 action(async()=>renderButtons(await call('get_notch_buttons')))();
-for(const [id,key] of [['sw-pin-button','pin']])
+for(const [id,key] of [['sw-pin-button','pin'],['sw-alerts-button','alerts']])
   $(id).onclick=action(async()=>renderButtons(await call('set_notch_buttons',{[key]:!$(id).classList.contains('on')})));
 api.on('notch_buttons',renderButtons);
 api.on('ui_flags',renderFlags);

@@ -16,7 +16,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
         if(cmd==='set_account_order'){accounts=args.ids.map(id=>accounts.find(a=>a.id===id));return accounts;}
         if(cmd==='set_notch_slots'){slots=args.slots;return slots;}
         if(cmd==='set_alert_preferences'){prefs={...prefs,...args};return prefs;}
-        const answers={get_alert_preferences:prefs,get_agent_accounts:accounts,get_notch_slots:slots,get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true,tray_visible:false},get_collector:{source:'ssh',sshTarget:'homelab',shortcut:'Scrolllock'},get_theme_resolved:'dark',get_version:'3.1.0',get_monitors:[],get_notch_buttons:{pin:true},get_scale:1,get_theme:'dark',get_weekly_ring:'outside',get_color_transition:'ramp',get_notch_edge:'right',get_autostart:true,get_update_state:{status:'current'}};
+        const answers={get_alert_preferences:prefs,get_agent_accounts:accounts,get_notch_slots:slots,get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true,tray_visible:false},get_collector:{source:'ssh',sshTarget:'homelab',shortcut:'Scrolllock'},get_theme_resolved:'dark',get_version:'3.1.0',get_monitors:[],get_notch_buttons:{pin:true,alerts:true},get_scale:1,get_theme:'dark',get_weekly_ring:'outside',get_color_transition:'ramp',get_notch_edge:'right',get_autostart:true,get_update_state:{status:'current'}};
         return answers[cmd]??null;
       }};
     });
@@ -57,6 +57,10 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     }
     assert.equal(await page.locator('#sw-alert-quota').getAttribute('aria-checked'),'true');
     await page.screenshot({path:'/tmp/agent-usage-3.1-alerts.png'});
+    await page.getByRole('tab',{name:'Appearance',exact:true}).click();
+    assert.equal(await page.getByRole('switch',{name:'Alerts button',exact:true}).getAttribute('aria-checked'),'true','the notch bell is on unless turned off');
+    await page.getByRole('switch',{name:'Alerts button',exact:true}).click();
+    await page.waitForFunction(()=>window.__calls.some(c=>c.cmd==='set_notch_buttons'&&c.args.alerts===false));
     assert.deepEqual(errors,[]);
     console.log('PASS: reorder, drag, visibility, per-account muting and alert preferences');
   } finally {await browser.close();}
