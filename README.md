@@ -4,7 +4,9 @@
 
 A hidden-at-startup Windows edge notch for Codex, Claude, and Antigravity usage, reset times,
 and banked resets. Hold **Scroll Lock** to reveal it and follow your cursor
-around either monitor's edges. Release, then hover an agent for scrollable details.
+around either monitor's edges. Release, then rest the pointer on an agent to peek at its
+usage; click it to hold the card open until you click elsewhere (refresh is the card's
+own button).
 Colored rings show usage consumed; right-click to switch between 5-hour and weekly
 readings or change the shortcut.
 
@@ -52,7 +54,13 @@ collector updates, and stays still when Windows reduced motion is enabled.
 
 Settings → General now offers usage warnings at 80% and 100%, optional alerts when
 an agent waits for input or finishes working, and a notification sound. Usage warnings
-are enabled by default; waiting, completion and sound are off.
+and finished-working alerts are on by default (3.2.0); waiting and sound are off.
+
+Finished alerts come from each tool's own record of a turn: Claude Code's per-session
+status file (busy, waiting, idle), the task_started / task_complete events in a Codex
+session rollout, and Antigravity's conversation status while its CLI holds the session.
+A turn has to run at least 30 seconds (a quick reply was watched as it happened), a
+canceled turn never counts, and the alert says how long it worked.
 
 Since 3.1.4 alerts open out of the notch rather than as Windows toasts. The notch comes
 out where it last rested, keeps the account's ring whole while the others recede, and

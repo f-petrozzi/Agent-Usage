@@ -81,7 +81,11 @@ const arrive = (page, payload) => page.evaluate(payload => {
     assert.equal(await page.evaluate(() => alertShowing), null);
     assert.equal(await page.locator('#card .a-kick').count(), 0);
     assert.match(await page.locator('#card .c-resets').innerText(), /1 reset available/);
-    await page.mouse.move(640, 400); await page.waitForTimeout(1200);
+    assert.ok(await page.evaluate(() => cardHeld && card.classList.contains('held')), 'clicked, it is held');
+    await page.mouse.move(640, 400); await page.waitForTimeout(600);
+    assert.equal(await page.evaluate(() => card.classList.contains('show')), true, 'held while the pointer is away');
+    await page.evaluate(() => __emit('outside_press')); await page.waitForTimeout(1000);
+    assert.equal(await page.evaluate(() => card.classList.contains('show')), false, 'a press elsewhere puts it away');
 
     // Queued alerts wait for the usage card and for each other
     const codexRing = await page.locator('.cell[data-p="codex"] .ringwrap').boundingBox();

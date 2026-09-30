@@ -915,7 +915,8 @@ function renderUsageWindows(windows,boxed=true,headings=true){
 }
 
 // A banked or granted reset is worth seeing at a glance, so it is a row of the card, not metadata
-const RESET_ICON='<svg class="r-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg>';
+// A clock wound back, so it does not read as the card's refresh arrow
+const RESET_ICON='<svg class="r-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.9 8.6A5.2 5.2 0 1 0 4.4 4.2"/><path d="M2.7 2.4v2.5h2.5"/><path d="M8 5.3v2.9l1.9 1.2"/></svg>';
 // Under the pointer (or focused) the row opens to each reset against its own date and how long is left,
 // so it is clear which to use first. It stays open through re-renders while the pointer is on it.
 let resetsOpen=null;
@@ -966,7 +967,8 @@ function renderCard(){
   // p.name is no longer a constant: for a second account it is built from the home
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
-  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}</div>`;
+  const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" title="Refresh" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':refresh}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -1068,6 +1070,30 @@ new ResizeObserver(()=>{
   }
 }).observe(card);
 let hideTimer=null,showTimer=null,pendingAccount=null;
+/* Peek and hold, as popovers do. A ring under a resting pointer peeks at its usage; a click holds it. A peek
+   follows the pointer, needs it to rest before another ring takes over (so rings crossed on the way to the card
+   are passed by), and closes shortly after it leaves. A held card ignores the rings passed over, stays while the
+   pointer is away for a while (for good, with the notch kept on screen), and closes on a click outside the notch
+   or on its own trigger again. Whether the pointer is still over the notch also comes from main's own cursor
+   check (notch_pointer): the moves Windows forwards to this page can stop after a click. */
+const PEEK_OPEN=120, PEEK_SWITCH=110, PEEK_GRACE=300, HELD_AWAY=1500;
+let cardHeld=false,awayTimer=0,restAt={x:-99,y:-99};
+function holdCard(id){
+  if(!id||!shown||window.agentTracking)return;
+  if(cardHeld&&hoverId===id&&card.classList.contains('show')){hideCard();return;} // its trigger again: put it away
+  clearTimeout(showTimer);clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;pendingAccount=null;
+  cardHeld=true;card.classList.add('held');
+  if(hoverId===id&&card.classList.contains('show'))return;
+  hoverId=id;
+  if(card.classList.contains('show')){renderCard();armWatchdog();}else showCard();
+}
+// The pointer has left the notch: a peek goes after a short grace, a held card only after a longer absence
+function leaveCard(){
+  clearTimeout(showTimer);pendingAccount=null;
+  if(!card.classList.contains('show')||(typeof alertShowing!=='undefined'&&alertShowing))return;
+  if(cardHeld){if(!pinnedNow&&!awayTimer)awayTimer=setTimeout(()=>{awayTimer=0;hideCard();},HELD_AWAY);return;}
+  scheduleHide();
+}
 function showCard(){clearTimeout(hideTimer);card.classList.remove('closing');card.classList.add('show');renderCard();setDetailsShown(true);armWatchdog();refreshClock();} // show first, then render: placeCard needs offsetHeight
 // Nothing is broadcast when the Windows clock format changes, so ask again each time the card opens
 function refreshClock(){
@@ -1077,8 +1103,8 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(typeof clearAlert==='function')clearAlert();if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
-function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,250);}
+function hideCard(){cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof clearAlert==='function')clearAlert();if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
 function callq(cmd,args){ // invoke with visible failure: any command error is reported on screen (a silent .catch used to swallow them)
@@ -1191,7 +1217,7 @@ pill.addEventListener('focusin',e=>{
 });
 pill.addEventListener('keydown',e=>{
   if(!e.target.closest('.cell')||!['Enter',' '].includes(e.key))return;
-  e.preventDefault();hoverId=e.target.closest('.cell').dataset.p;showCard();
+  e.preventDefault();holdCard(e.target.closest('.cell').dataset.p);
 });
 function pointerInHot(x,y){
   const p=pill.getBoundingClientRect();
@@ -1222,25 +1248,29 @@ document.addEventListener('mousemove',e=>{
     endAlert(false);renderCard(); // a ring under the pointer: its usage takes the alert's place
   }
   if(hot){
-    clearTimeout(hideTimer);
+    clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;
+    if(cardHeld){clearTimeout(showTimer);pendingAccount=null;return;} // held: rings passed over leave it be
     const id=cellAt(e.clientX,e.clientY);
     if(id&&(!card.classList.contains('show')||id!==hoverId)){
-      if(pendingAccount!==id){
-        clearTimeout(showTimer);pendingAccount=id;
+      // Only a pointer at rest peeks: every move of more than a few pixels starts the wait again
+      const moved=Math.hypot(e.clientX-restAt.x,e.clientY-restAt.y)>3;
+      if(pendingAccount!==id||moved){
+        restAt={x:e.clientX,y:e.clientY};clearTimeout(showTimer);pendingAccount=id;
         showTimer=setTimeout(()=>{
           pendingAccount=null;hoverId=id;
           if(card.classList.contains('show')){renderCard();armWatchdog();}else showCard();
-        },card.classList.contains('show')?40:100);
+        },card.classList.contains('show')?PEEK_SWITCH:PEEK_OPEN);
       }
     }else{clearTimeout(showTimer);pendingAccount=null;}
   }
-  else {clearTimeout(showTimer);pendingAccount=null;if(card.classList.contains('show')){ if(hideLogged++<5) jslog(`mousemove left the hot area -> collapse at ${e.clientX},${e.clientY}`); scheduleHide(); }}
+  else { if(card.classList.contains('show')&&hideLogged++<5) jslog(`mousemove left the hot area at ${e.clientX},${e.clientY}`); leaveCard(); }
 });
-document.addEventListener('mouseout',e=>{ // relatedTarget null = the cursor left the page
-  if(!e.relatedTarget){clearTimeout(showTimer);pendingAccount=null;}
-  if(!e.relatedTarget && card.classList.contains('show') && !(typeof alertShowing!=='undefined'&&alertShowing)){ if(hideLogged++<5) jslog('mouseout left the page -> collapse'); scheduleHide(); }
-});
-listen('pointer_left',()=>{if(typeof alertShowing!=='undefined'&&alertShowing)return;clearTimeout(hideTimer);hideCard();}).catch(()=>{});
+document.addEventListener('mouseout',e=>{if(!e.relatedTarget)leaveCard();}); // relatedTarget null = the cursor left the page
+// A press anywhere outside the notch puts a held card away (main sees it through its input helper)
+listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
+card.addEventListener('click',e=>{const b=e.target.closest('.c-refresh');if(b&&card.dataset.account){refreshRing(card.dataset.account);b.classList.add('spinning');}});
+// Clicking a card being peeked at holds it
+card.addEventListener('click',()=>{if(!cardHeld&&card.classList.contains('show')&&!(typeof alertShowing!=='undefined'&&alertShowing))holdCard(hoverId);});
 // Card content changes change its height -> report the hot rectangles again
 listen('usage',()=>{if(card.classList.contains('show'))armWatchdog();}).catch(()=>{});
 listen('state',()=>{if(card.classList.contains('show'))armWatchdog();}).catch(()=>{});
@@ -1278,10 +1308,11 @@ function settle(id){
   if(wait>0){ r.timer=setTimeout(()=>settle(id),wait); return; }
   delete refreshing[id];
   renderRing();
+  card.querySelector(`.c-refresh.spinning`)?.classList.toggle('spinning',!!refreshing[card.dataset.account]);
 }
 // Alt+drag, the Mac's ⌥-drag. Without Alt a press on the pill is only ever a click. a ring
 // refreshes (#244). so one that slips can no longer carry the notch off (#251).
-pill.addEventListener('mousedown',e=>{ if(e.button!==0||folded||e.target.closest('.ctl'))return; press={x:e.clientX,y:e.clientY,id:cellAt(e.clientX,e.clientY)||hoverId,alt:e.altKey}; });
+pill.addEventListener('mousedown',e=>{ if(e.button!==0||folded||e.target.closest('.ctl'))return; press={x:e.clientX,y:e.clientY,id:cellAt(e.clientX,e.clientY),alt:e.altKey}; });
 document.addEventListener('mousemove',e=>{
   if(!press||dragging||!press.alt)return;
   if(Math.abs(e.clientY-press.y)>4||Math.abs(e.clientX-press.x)>4){
@@ -1291,7 +1322,7 @@ document.addEventListener('mousemove',e=>{
 });
 document.addEventListener('mouseup',e=>{
   if(e.button!==0)return;
-  if(press&&!dragging&&press.id) refreshRing(press.id);
+  if(press&&!dragging&&press.id) holdCard(press.id); // a ring click holds its card; refresh is the card's own button
   press=null;
 });
 // The Mac's right-click menu, naming the ring or card under the pointer; WebView2's own menu never shows
@@ -1373,7 +1404,7 @@ function leadFace(){return leadFaces[Math.min(leadIndex,leadFaces.length-1)]||'p
 function renderLead(){
   const face=leadFace(),pinHandle=document.getElementById('pin-handle'); // callable before the handle constants below exist
   pinHandle.classList.toggle('face-alerts',face==='alerts');pinHandle.classList.toggle('face-pin',face==='pin');
-  if(face==='pin'){pinHandle.title=pinnedNow?'Unpin':'Pin';pinHandle.setAttribute('aria-pressed',String(pinnedNow));}
+  if(face==='pin'){pinHandle.title=pinnedNow?'Let it hide':'Keep on screen';pinHandle.setAttribute('aria-pressed',String(pinnedNow));}
   else{const n=typeof unreadCount==='function'?unreadCount():0;pinHandle.title=n?`Alerts, ${n} new`:'Alerts';pinHandle.removeAttribute('aria-pressed');}
   pinHandle.setAttribute('aria-label',pinHandle.title);
   if(typeof reportHot==='function')reportHot();
@@ -1431,7 +1462,7 @@ function setShown(on,edge){
 // Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
 document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });
 function applyUiFlags(f){ scheduleFold(); if(f){ pinnedNow=f.notch_on_hover===false&&f.notch_visible!==false; renderRing(); } }
-listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else scheduleFold(); }).catch(()=>{});
+listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else { scheduleFold(); leaveCard(); } }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{
   if(e.payload==='dark'||e.payload==='light') document.body.dataset.behind=e.payload;

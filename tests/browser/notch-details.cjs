@@ -139,7 +139,7 @@ const answers = {
       await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
       assert.equal(await page.locator('#extra-card').innerText(),'Plan: Plus','name hover shows the newly selected account metadata');
     }
-    await page.mouse.move(640,400);await page.waitForTimeout(1100);
+    await page.mouse.move(640,400);await page.waitForTimeout(1400); // a peek's 300 ms grace, then the lobe settles
     assert.equal(await page.evaluate(()=>detailOpen),0);assert.equal(await page.evaluate(()=>detailPath.getAttribute('d')),null);
     assert.equal(await page.evaluate(()=>card.classList.contains('closing')),false);
   }

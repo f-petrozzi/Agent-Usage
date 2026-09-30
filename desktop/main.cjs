@@ -22,8 +22,9 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
 let trayTimer;
 let visible = false, held = false, mouseDown = false, carrying = false, dismissed = false;
-// alerting: the page is showing an alert, which decides for itself how long it stays (notify.js)
-let alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
+// alerting: the page is showing an alert, which decides for itself how long it stays (notify.js); expanded: a card
+// is open, and the notch never goes before it has closed
+let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
 const uiRoot = path.join(__dirname, 'ui');
@@ -61,6 +62,9 @@ async function start() {
   if ((stored.shortcutRevision || 0) < 2 && ['Ctrl+Shift+Space', 'Shift+F1'].includes(config.shortcut)) config.shortcut = 'Scrolllock';
   config.shortcutRevision = 2;
   config.alerts = alertPreferences(config.alerts);
+  // 3.2.0 turns on the finished-working alert once; after that it stays as chosen
+  if ((stored.alertsRevision || 0) < 1) config.alerts.completion = true;
+  config.alertsRevision = 1;
   config.accountOrder = Array.isArray(config.accountOrder) ? [...new Set(config.accountOrder.filter(id => typeof id === 'string'))].slice(0, 40) : [];
   quotaAlerts = new QuotaAlerts(config.quotaWarnings); sessionAlerts = new SessionAlerts();
   config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false, alerts: config.buttons?.alerts !== false };
@@ -163,7 +167,7 @@ function reveal(atPointer = true) {
 }
 function hide() {
   if (!win || !visible) return;
-  visible = false; phase = 'hiding'; pinned = false; hot = []; alerting = false;
+  visible = false; phase = 'hiding'; pinned = false; hot = []; alerting = false; expanded = false;
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); broadcast('ui_flags', flags());
   // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
@@ -206,11 +210,15 @@ function tick() {
     }
     visibleUntil = Date.now() + 1800;
   }
-  const x = cursor.x - monitor.bounds.x - stage.x, y = cursor.y - monitor.bounds.y - stage.y;
-  const hit = visible && phase !== 'transfer' && hot.some(r => x >= r[0]*config.scale && x <= (r[0]+r[2])*config.scale && y >= r[1]*config.scale && y <= (r[1]+r[3])*config.scale);
+  const hit = visible && phase !== 'transfer' && overNotch(cursor);
   if (hit !== inside) { inside = hit; send('notch_pointer', hit); win.setIgnoreMouseEvents(!hit, { forward: true }); }
-  if (hit || alerting || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
+  if (hit || alerting || expanded || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
   if (visible && !pinned && !held && !carrying && !menuOpen && Date.now() > visibleUntil) hide();
+}
+// The one test of whether a screen point is over the notch, its card or its controls, from the page's hot rectangles
+function overNotch(point) {
+  const x = point.x - monitor.bounds.x - stage.x, y = point.y - monitor.bounds.y - stage.y;
+  return hot.some(r => x >= r[0]*config.scale && x <= (r[0]+r[2])*config.scale && y >= r[1]*config.scale && y <= (r[1]+r[3])*config.scale);
 }
 function registerShortcut(value) {
   if (!shortcuts[value]) throw new Error('Unsupported shortcut');
@@ -236,7 +244,9 @@ function registerShortcut(value) {
       if (!held && previous) { visibleUntil = Date.now() + 1800; send('release'); broadcast('ui_flags', flags()); save(); }
       if (mouseDown && !previousMouse && visible && !held && !carrying) {
         const point=screen.getCursorScreenPoint();
-        for(const name of CONTROLS) if(controlHit(controls[name],point)) { activateControl(name); break; }
+        const control=CONTROLS.find(name=>controlHit(controls[name],point));
+        if(control) activateControl(control);
+        else if(!overNotch(point)) send('outside_press'); // puts a held card away
       }
       if (!mouseDown && previousMouse) endMove();
     }
@@ -312,7 +322,8 @@ function showAlerts(events) {
   reveal(false);
   visibleUntil = Math.max(visibleUntil, Date.now() + 2500); // until the page has it open and says so
   send('alert', { events: events.slice(0, 8).map(e => ({ kind: e.kind, account: e.account || null, window: e.window || null,
-    level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
+    level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, took: Number.isFinite(e.took) ? e.took : null,
+    title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
 function contextMenu() {
   menuOpen = true;
@@ -336,7 +347,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       const validRect=r=>Array.isArray(r)&&r.length===4&&r.every(Number.isFinite)&&r[2]>=0&&r[3]>=0;
       hot=Array.isArray(args.rects)?args.rects.filter(validRect).slice(0,12):[];
       controls={};for(const name of CONTROLS)if(validRect(args.controls?.[name]))controls[name]=args.controls[name];
-      alerting=args.alerting===true;
+      alerting=args.alerting===true;expanded=args.expanded===true;
       return null;
     }
     case 'activate_control': activateControl(args.control); return null;

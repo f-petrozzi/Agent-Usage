@@ -67,7 +67,7 @@ test('cancel, disconnect, newly discovered sessions and disabled preferences nev
   assert.deepEqual(alerts.update([session('idle')],prefs),[]);
   assert.deepEqual(alerts.update([session('waiting','new')],prefs),[]);
   alerts.update([session('busy')],prefs);
-  assert.deepEqual(alerts.update([session('idle')],alertPreferences()),[]);
+  assert.deepEqual(alerts.update([session('idle')],alertPreferences({completion:false})),[],'turned off, it stays quiet');
 });
 test('session identity includes its account and missing identities cannot cause alerts',()=>{
   const alerts=new SessionAlerts();alerts.update([session('busy')],prefs);
@@ -99,5 +99,21 @@ test('The alert log keeps the last 40 or the last week, newest last, and only wh
   assert.deepEqual(week.map(e => e.id), ['ok'], 'older than a week and unknown kinds are dropped');
   assert.equal(week[0].read, true);
   assert.deepEqual(alertLog('not a list'), []);
+});
+
+test('Finished: a turn that ran at least 30 seconds and ended on its own, with how long it took', () => {
+  const { SessionAlerts, COMPLETION_MIN_MS, DEFAULT_ALERTS } = require('../desktop/alerts.cjs');
+  assert.equal(DEFAULT_ALERTS.completion, true, 'on unless turned off');
+  const prefs = alertPreferences({});
+  const s = new SessionAlerts(), t0 = 1_000_000;
+  const at = (state, since) => [{ id: 'x', account: 'claude', name: 'homelab', state, since }];
+  s.update(at('busy', t0), prefs, t0);
+  assert.deepEqual(s.update(at('idle', t0 + 5000), prefs, t0 + 5000), [], 'a quick turn was watched as it happened');
+  s.update(at('busy', t0 + 10000), prefs, t0 + 10000);
+  const [done] = s.update(at('idle', t0 + 10000 + 12 * 60000), prefs, t0 + 10000 + 12 * 60000);
+  assert.equal(done.kind, 'completion'); assert.equal(done.took, 12 * 60000); assert.equal(done.body, 'Worked 12 min.');
+  s.update(at('busy', t0), prefs, t0 + 13 * 60000);
+  assert.deepEqual(s.update(at('canceled', t0), prefs, t0 + 14 * 60000), [], 'a canceled turn did not finish');
+  assert.ok(COMPLETION_MIN_MS >= 30000);
 });
 

@@ -42,7 +42,7 @@ function clearAlert(){
   clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,700); // the next one waits for this one to draw in
 }
 function endAlert(close){ if(!alertShowing)return; if(close)hideCard(); else clearAlert(); }
-card.addEventListener('click',()=>{if(alertShowing){endAlert(false);renderCard();}});
+card.addEventListener('click',()=>{if(alertShowing){endAlert(false);holdCard(hoverId);renderCard();}}); // clicked, the alert becomes that account's usage, held
 
 function renderAlert(p){
   const evs=p.events, single=evs.length===1;
@@ -65,7 +65,8 @@ function alertBlock(e,full){
     return `<div class="a-block">${head(word,colour)}${w?renderUsageWindows([w],false,false):`<div class="c-note">${esc(e.body)}</div>`}</div>`;
   }
   const waiting=e.kind==='waiting';
-  const detail=waiting&&e.body&&e.body!=='Waiting for input.'?`<div class="a-sub">${esc(textCopy(e.body))}</div>`:'';
+  const detail=waiting?(e.body&&e.body!=='Waiting for input.'?`<div class="a-sub">${esc(textCopy(e.body))}</div>`:'')
+    :e.took!=null?`<div class="a-sub">${esc(textCopy('Worked'))} ${esc(tookText(e.took))}</div>`:'';
   return `<div class="a-block">${head(waiting?kick.waiting:kick.finished,waiting?WATCH:INK)}${e.session?`<div class="a-line"><span class="s-dot" style="background:${waiting?WATCH:INK}"></span>${esc(e.session)}</div>`:''}${full?detail:''}</div>`;
 }
 
@@ -119,9 +120,13 @@ function ringBell(always=false){
   if(unreadCount()&&!pinHandle.classList.contains('swapping'))pinHandle.querySelector('.lead-dot')?.animate([{scale:0},{scale:1.5},{scale:1}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
 }
 // Pressing the bell: the log grows out of the notch where the bell was
-function openAlertLog(){
-  hoverId=ALERTS_ID;clearTimeout(hideTimer);clearTimeout(showTimer);pendingAccount=null;
-  if(card.classList.contains('show'))renderCard();else showCard();
+// Pressing the bell holds the log open (pressing it again puts it away), so rings crossed on the way do not take it
+function openAlertLog(){holdCard(ALERTS_ID);}
+// How long a finished turn ran, in the reader's units: minutes, then hours
+function tookText(ms){
+  const m=Math.max(1,Math.round(ms/60000)),locale=ui().locale;
+  return m<60?new Intl.NumberFormat(locale,{style:'unit',unit:'minute',unitDisplay:'short'}).format(m)
+    :new Intl.NumberFormat(locale,{style:'unit',unit:'hour',unitDisplay:'short',maximumFractionDigits:1}).format(m/60);
 }
 const CHIPS=[['quota','Usage'],['waiting','Waiting'],['completion','Finished'],['sound','Sound']];
 function logWhen(at){
@@ -151,7 +156,8 @@ function logRow(e,i,kick){
   const word=quota?(e.level===100?kick.limit:kick.warning):waiting?kick.waiting:kick.finished;
   const colour=quota?tone(Math.min(1,Math.max(e.used??0,(e.level||80)/100))):waiting?WATCH:INK;
   const w=quota&&acct?acct.snap.windows.find(x=>x.id===e.window):null;
-  const detail=quota?`${w?textCopy(w.label):''}${e.used!=null?`${w?' · ':''}${pctText(e.used)}%`:''}`:(e.session||'');
+  const detail=quota?`${w?textCopy(w.label):''}${e.used!=null?`${w?' · ':''}${pctText(e.used)}%`:''}`
+    :`${e.session||''}${e.kind==='completion'&&e.took!=null?`${e.session?' · ':''}${tookText(e.took)}`:''}`;
   return `<button class="a-row${e.read?'':' fresh'}" type="button" data-account="${esc(e.account||'')}" style="--i:${i}">
     <span class="a-glyph">${acct?glyphHtml(acct,true):''}</span><span class="a-name">${esc(acct?acct.name:e.session||'Agent Usage')}</span>
     <span class="a-word" style="color:${colour}">${esc(word)}</span><span class="a-when">${esc(logWhen(e.at))}</span>

@@ -184,6 +184,13 @@
   .a-sub{margin-top:4px;font-size:11.5px;color:var(--ink-dim)}
   .alert-content.stacked .a-block + .a-block{margin-top:10px;padding-top:10px;border-top:1px solid var(--card-rule)}
   #card.alerting{cursor:pointer}
+  /* Refresh lives on the card's title row: a ring click holds its card instead */
+  .c-head .c-refresh{margin-left:auto;flex:none;appearance:none;border:0;background:transparent;width:26px;height:26px;border-radius:13px;display:grid;place-items:center;
+    color:var(--ink-dim);cursor:pointer;transition:background-color .15s ease,color .15s ease}
+  .c-head .c-refresh:hover{background:#1a1a1a;color:var(--ink)}
+  .c-refresh svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .c-refresh.spinning svg{animation:spin .9s linear infinite}
+  @media (prefers-reduced-motion: reduce){.c-refresh.spinning svg{animation:none}}
   /* The log: the alert switches along the top, then what came in, newest first */
   .log-mark{display:inline-grid;place-items:center;width:16px;height:16px;flex:none}
   .log-mark .bell-mark{width:16px;height:16px;fill:none;stroke:var(--ink-2);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}

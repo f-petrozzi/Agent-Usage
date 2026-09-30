@@ -1,5 +1,7 @@
 'use strict';
-const DEFAULT_ALERTS = Object.freeze({ quota: true, waiting: false, completion: false, sound: false, muted: [] });
+const DEFAULT_ALERTS = Object.freeze({ quota: true, waiting: false, completion: true, sound: false, muted: [] });
+// A turn shorter than this was probably watched as it happened, so its end is not worth an alert
+const COMPLETION_MIN_MS = 30000;
 function alertPreferences(raw = {}) {
   return { ...Object.fromEntries(Object.entries(DEFAULT_ALERTS).filter(([, v]) => typeof v === 'boolean').map(([k, v]) => [k, typeof raw[k] === 'boolean' ? raw[k] : v])),
     muted: Array.isArray(raw.muted) ? [...new Set(raw.muted.filter(id => typeof id === 'string' && id.length <= 100))].slice(0, 40) : [] };
@@ -37,7 +39,7 @@ class QuotaAlerts {
 class SessionAlerts {
   constructor() { this.reset(); }
   reset() { this.previous = null; }
-  update(sessions, preferences) {
+  update(sessions, preferences, now = Date.now()) {
     const current = new Map(sessions.filter(s => s.id).map(s => [s.account + ':' + s.id, s]));
     const events = [];
     if (this.previous) for (const [key, session] of current) {
@@ -45,8 +47,11 @@ class SessionAlerts {
       if (!old) continue; // A first sighting is not a transition.
       if (session.state === 'waiting' && old.state === 'busy' && preferences.waiting)
         events.push({ kind: 'waiting', account: session.account, session: session.name, title: `${session.name} needs attention`, body: session.detail || 'Waiting for input.' });
-      if (session.state === 'idle' && old.state === 'busy' && preferences.completion)
-        events.push({ kind: 'completion', account: session.account, session: session.name, title: `${session.name} finished working`, body: 'The agent reported that its turn ended.' });
+      // Finished: a turn that ran (busy) and ended on its own (idle, not canceled), long enough to have been left alone
+      const took = old.since > 0 ? Math.max(0, now - old.since) : null;
+      if (session.state === 'idle' && old.state === 'busy' && preferences.completion && (took === null || took >= COMPLETION_MIN_MS))
+        events.push({ kind: 'completion', account: session.account, session: session.name, took, title: `${session.name} finished working`,
+          body: took === null ? 'The agent reported that its turn ended.' : `Worked ${Math.max(1, Math.round(took / 60000))} min.` });
     }
     this.previous = current;
     return events;
@@ -74,9 +79,10 @@ function alertLog(raw, now = Date.now()) {
     && ['quota', 'waiting', 'completion'].includes(e.kind)).slice(-LOG_MAX).map(e => ({
     id: text(e.id, 40) || String(e.at), at: e.at, kind: e.kind, account: text(e.account, 100), window: text(e.window, 100),
     level: [80, 100].includes(e.level) ? e.level : null, used: Number.isFinite(e.used) ? Math.max(0, Math.min(1, e.used)) : null,
-    session: text(e.session, 200), title: text(e.title, 200) || '', body: text(e.body, 300) || '', read: e.read === true }));
+    session: text(e.session, 200), took: Number.isFinite(e.took) && e.took >= 0 ? e.took : null,
+    title: text(e.title, 200) || '', body: text(e.body, 300) || '', read: e.read === true }));
 }
 function logAlerts(log, events, now = Date.now()) {
   return alertLog([...log, ...events.map((e, i) => ({ ...e, id: `${now.toString(36)}-${i}`, at: now, read: false }))], now);
 }
-module.exports = { DEFAULT_ALERTS, alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts };
+module.exports = { COMPLETION_MIN_MS, DEFAULT_ALERTS, alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts };

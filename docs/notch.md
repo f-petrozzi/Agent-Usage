@@ -19,7 +19,12 @@ it open. Leaving dismisses it after a short grace period. **Escape** hides it.
 Right-click for **Pin here**, Refresh, Settings, Hide, or Quit. Pinning lasts for
 this session. Reopening Agent Usage from Start reveals the existing instance.
 
-Hover an agent for usage, reset times, banked resets and their expirations,
+Rest on an agent to peek at its usage (3.1.11): rings crossed on the way are passed by,
+and a peek closes 0.3 s after the pointer leaves. Click the ring, the card or the bell to
+hold it: held cards ignore rings passed over and close on a click outside, on their
+own trigger again, or 1.5 s after the pointer leaves (never, with the notch kept on
+screen). Refresh is a button on the card's title row. The notch retracts only once its
+card has closed. The card shows usage, reset times, banked resets and their expirations,
 credits, and collector errors. Wheel over the card to scroll; wheel over the
 notch to browse accounts when they do not all fit. Rings show **usage consumed**.
 Settings controls which accounts appear, size, weekly-ring placement, color
