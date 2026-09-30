@@ -32,7 +32,7 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 /* The leading pocket shows one of what it holds (renderLead); the bell swings from its top */
 #pin-handle.face-alerts .h-glyph.pin,#pin-handle:not(.face-alerts) .h-glyph.bell{display:none}
 .h-glyph.bell{transform-origin:50% 16%}
-#pin-handle .h-glyph{scale:var(--swell,1);filter:blur(calc(var(--glyph-blur,0) * 1px))}
+#pin-handle .h-glyph{scale:var(--swell,1);rotate:var(--sway,0deg);filter:blur(calc(var(--glyph-blur,0) * 1px))}
 /* Something new in the log: a yellow dot riding the leading arm, or on the bell as a badge when it is out */
 .lead-dot{width:7px;height:7px;margin:-12px 0 0 4px;border-radius:50%;background:var(--watch,#F2FF00);box-shadow:0 0 0 2px #000;
   translate:var(--glyph-x,0px) var(--glyph-y,0px);scale:0;transition:scale .4s cubic-bezier(.34,1.56,.64,1)!important}

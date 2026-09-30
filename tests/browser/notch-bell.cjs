@@ -62,13 +62,23 @@ const answers = {
     await page.screenshot({ path: path.join(OUT, 'pocket-pin.png') });
 
     // Scrolling swaps what the pocket holds: the pin flows home, the bell buds out; a second scroll mid-swap is ignored
+    // Sample the whole swap: the icon softens as it is swallowed, the goo is strong enough to join drop and notch,
+    // the drop travels on a strand (the neck is drawn), and the bell's swing comes from the snap, not after it
+    await page.evaluate(() => { window.__swap = { blur: 0, goo: 0, strand: 0, sway: 0 }; const f = () => { const h = handles[0], st = h.el.style;
+      __swap.blur = Math.max(__swap.blur, +st.getPropertyValue('--glyph-blur') || 0);
+      __swap.goo = Math.max(__swap.goo, h.swapping ? +document.querySelector('#goo-start feGaussianBlur').getAttribute('stdDeviation') : 0);
+      __swap.strand = Math.max(__swap.strand, h.swapping && necks[0].getAttribute('d') ? 1 : 0);
+      __swap.sway = Math.max(__swap.sway, Math.abs(parseFloat(st.getPropertyValue('--sway')) || 0));
+      if (performance.now() - __swap.t0 < 1500) requestAnimationFrame(f); }; __swap.t0 = performance.now(); requestAnimationFrame(f); });
     await page.mouse.wheel(0, 100); await page.waitForTimeout(60); await page.mouse.wheel(0, 100);
     assert.ok(await page.evaluate(() => handles[0].swapping && handles[0].swap < 1 && pinHandle.classList.contains('swapping')), 'flowing back into the notch');
-    await page.waitForTimeout(500);
-    assert.ok(await page.evaluate(() => +handles[0].el.style.getPropertyValue('--glyph-blur') > 1), 'the icon softens as it melts in');
-    assert.ok(await page.evaluate(() => +document.querySelector('#goo-start feGaussianBlur').getAttribute('stdDeviation') > 6), 'enough goo to run the drop into the notch');
-    await page.waitForTimeout(1500);
-    assert.ok(await page.evaluate(() => pinHandle.querySelector('.h-glyph.bell').getAnimations().length > 0), 'the bell swings once it has settled');
+    await page.waitForTimeout(1600);
+    const swap = await page.evaluate(() => __swap);
+    assert.ok(swap.blur > 1, 'the icon softens as it is swallowed');
+    assert.ok(swap.goo > 6, 'enough goo to join the drop and the notch');
+    assert.equal(swap.strand, 1, 'the drop is pulled out on a strand of the notch');
+    assert.ok(swap.sway > 5, 'the bell swings from the snap');
+    assert.equal(await page.evaluate(() => handles[0].el.style.getPropertyValue('--sway')), '0deg', 'and is still once home');
     assert.deepEqual(await page.evaluate(() => [leadFace(), handles[0].swap, handles[0].swapping, pinHandle.classList.contains('face-alerts')]), ['alerts', 1, false, true]);
     assert.deepEqual(Object.keys(await page.evaluate(() => JSON.parse(lastHot).controls)).sort(), ['alerts', 'settings'], 'main is told the pocket now holds the log');
     await page.screenshot({ path: path.join(OUT, 'pocket-bell.png') });

@@ -107,7 +107,7 @@ function drawShape(){ if(passage) drawPassage(); else drawStraight(); }
 /* On an edge: one part the length of the pill, and an arm off each end. At 0 an arm lies a full stroke
    past its flare, inside the black; going out it swells from the flare on a neck of goo and lets go. */
 function drawStraight(){
-  const w=pill.offsetWidth, h=pill.offsetHeight;
+  const w=pill.offsetWidth, h=pill.offsetHeight, hgt=h;
   if(!w||!h) return;
   const vertical=notchEdge==='left'||notchEdge==='right', L=vertical?h:w;
   const proportions=handleMetrics(),depth=edgeDepth(notchEdge), d=Math.max(0,depth*openness), grown=Math.min(1,d/depth);
@@ -141,6 +141,7 @@ function drawStraight(){
     const swell=Math.max(1,h.swap);
     h.el.style.setProperty('--swell',n(swell*(1-.6*smooth(p))));h.el.style.setProperty('--glyph-blur',n(2.6*smooth(p/.8)));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
+    if(h.swapping){drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetreat,w,hgt);return;}
     const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
     // The complete arm emerges from the flare as one continuous contour.
     const slide=-buried*(1-out);
@@ -271,6 +272,52 @@ function moveArms(to,seconds,ease=t=>t*t){
   };
   armsFrame=requestAnimationFrame(step);
 }
+/* Goo pulled out of the notch. While a pocket changes what it holds, its drop travels a bowed path between the
+   pocket and just inside the notch's flare, on a strand of the notch's own ink: wide where it leaves the black,
+   pinched in the middle, swelling into the drop. Going out, the strand thins as the drop is drawn away and parts
+   short of the pocket; its tail whips back into the notch and the drop coasts home at its own size, the glyph
+   swinging from the snap. Coming in, the notch reaches out a strand, takes hold and swallows the drop. */
+const PULL_SNAP=.8;
+function drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetreat,w,hgt){
+  const s=Math.max(0,Math.min(1,h.swap)),R=proportions.disc/2,dir=[Math.cos(mid),Math.sin(mid)];
+  const home=[cx,F],len=F+stroke,src=[cx+len*dir[0],F+len*dir[1]];
+  // Bowed away from the screen edge, so the pull reads as a curve rather than a slide
+  let perp=[-dir[1],dir[0]];if(perp[1]<0)perp=[-perp[0],-perp[1]];
+  const ctl=[(src[0]+home[0])/2+perp[0]*len*.5,(src[1]+home[1])/2+perp[1]*len*.5];
+  const at=t=>[(1-t)*(1-t)*src[0]+2*(1-t)*t*ctl[0]+t*t*home[0],(1-t)*(1-t)*src[1]+2*(1-t)*t*ctl[1]+t*t*home[1]];
+  const along=t=>{const x=2*(1-t)*(ctl[0]-src[0])+2*t*(home[0]-ctl[0]),y=2*(1-t)*(ctl[1]-src[1])+2*t*(home[1]-ctl[1]),l=Math.hypot(x,y)||1;return [x/l,y/l];};
+  const drop=at(s),r=R*(.26+.74*smooth(s));
+  h.ink.setAttribute('d',`M${n(drop[0])} ${n(drop[1])}L${n(drop[0])} ${n(drop[1])}`);
+  h.ink.setAttribute('stroke-width',n(2*r));
+  // How far along the path the strand reaches: to the drop while they are joined; after the snap its tail whips
+  // back into the notch; coming in, it reaches out from the notch to take the drop
+  const outward=h.swapDir>0;let tip=s,joined=s<=PULL_SNAP;
+  if(!joined)tip=outward?PULL_SNAP*(1-smooth((s-PULL_SNAP)/.14)):s*smooth((1-s)/(1-PULL_SNAP));
+  if(tip>.02){
+    const thin=1-smooth((s-.3)/(PULL_SNAP-.3)); // drawn out, the middle thins until it parts
+    const base=stroke*1.35,pinch=Math.max(.5,stroke*.95*thin),end=joined?r*.78:Math.max(.5,stroke*.35);
+    const half=t=>t<.55?base+(pinch-base)*smooth(t/.55):pinch+(end-pinch)*smooth((t-.55)/.45);
+    const left=[],right=[];
+    for(let k=0;k<=24;k++){
+      const f=k/24,t=f*tip,p=at(t),g=along(t),hw=half(f);
+      left.push(`${n(p[0]-g[1]*hw)} ${n(p[1]+g[0]*hw)}`);right.push(`${n(p[0]+g[1]*hw)} ${n(p[1]-g[0]*hw)}`);
+    }
+    necks[i].setAttribute('d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
+  }
+  // The glyph rides the drop at its size, sharpening as it arrives, and swings from the snap until it dies away
+  const [a,b,c,e]=edgeMatrix(notchEdge,w,hgt),du=drop[0]-home[0],dv=drop[1]-home[1];
+  h.el.style.setProperty('--glyph-x',`${n(a*du+c*dv)}px`);h.el.style.setProperty('--glyph-y',`${n(b*du+e*dv)}px`);
+  h.el.style.setProperty('--swell',n(r/R));h.el.style.setProperty('--glyph-blur',n(2.4*(1-smooth(s/.9))));
+  h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35)*smooth((s-.45)/.4)*smooth((detailRetreat-.5)/.5));
+  const since=h.snapAt?(performance.now()-h.snapAt)/1000:0;
+  h.el.style.setProperty('--sway',h.snapAt?`${n(21*Math.exp(-since/.28)*Math.sin(2*Math.PI*since/.4))}deg`:'0deg');
+  // Liquid through the pull, sharp once the drop is home
+  const blur=stroke*.72*Math.pow(Math.sin(Math.PI*s),.7);
+  filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
+  if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
+}
+
 /* Scrolling over a handle changes what it holds: the disc flows back into the notch along the arm's own way
    home, accelerating, then the next one buds out of the flare and settles. `onHome` swaps the glyph while it
    is inside the black. A second scroll mid-swap is ignored rather than queued. */
@@ -285,26 +332,28 @@ function swapHandle(i,onHome,onSettled){
       if(t<1)h.swapFrame=requestAnimationFrame(step);else{h.swapFrame=0;done();}};
     h.swapFrame=requestAnimationFrame(step);
   };
-  // The liquid middle is where the time goes. Home eases in and out, so the drop is seen running into the notch;
-  // out, it is drawn slowly from the flare while its strand stretches, then lets go and springs into its place,
-  // swelling past full and wobbling once, as a drop does when the strand holding it snaps.
-  // It never quite stops inside the black: the new drop starts to swell as the old one is still arriving
-  const inOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2, drip=t=>-(Math.cos(Math.PI*t)-1)/2;
-  h.el.classList.add('swapping');
-  leg(.1,.38,inOut,()=>{
-    onHome();
-    leg(.6,.36,drip,()=>{
-      let last=performance.now(),velocity=2.4;
-      const omega=2*Math.PI/.5,zeta=.4;
-      const step=now=>{
-        const dt=Math.min(.032,(now-last)/1000);last=now;
-        velocity+=(-omega*omega*(h.swap-1)-2*zeta*omega*velocity)*dt;h.swap+=velocity*dt;
-        const settled=Math.abs(h.swap-1)<.002&&Math.abs(velocity)<.02;
-        if(settled){h.swap=1;h.swapping=false;h.swapFrame=0;h.el.classList.remove('swapping');onSettled?.();}else h.swapFrame=requestAnimationFrame(step);
-        drawShape();
-      };
-      h.swapFrame=requestAnimationFrame(step);
-    });
+  // In, accelerating as the notch takes it; out, slow while the goo resists, quick once it gives, easing home. The
+  // swing from the snap outlasts the pull a little, then everything is at rest together.
+  h.el.classList.add('swapping');h.snapAt=0;h.swapDir=-1;
+  // Out in three beats, each where it can be seen: the bulge swells from the flare at once, the drop is drawn out
+  // while its strand stretches (the slow part), then after the snap it coasts home. It starts before the old drop
+  // is quite swallowed, so the notch never sits still between them.
+  const ease=(a,b)=>t=>a+(b-a)*t, outQ=t=>1-(1-t)*(1-t), inOutS=t=>-(Math.cos(Math.PI*t)-1)/2;
+  const pullAt=t=>t<.2?ease(0,.3)(outQ(t/.2)):t<.64?ease(.3,PULL_SNAP)(inOutS((t-.2)/.44)):ease(PULL_SNAP,1)(outQ((t-.64)/.36));
+  leg(.08,.3,t=>t*t*t,()=>{
+    onHome();h.swapDir=1;h.swap=0;
+    const t0=performance.now();
+    const step=now=>{
+      const t=Math.min(1,(now-t0)/580);
+      h.swap=pullAt(t);
+      if(!h.snapAt&&h.swap>PULL_SNAP)h.snapAt=now;
+      drawShape();
+      if(t<1||now-h.snapAt<720){h.swapFrame=requestAnimationFrame(step);return;}
+      h.swap=1;h.swapping=false;h.snapAt=0;h.swapFrame=0;h.el.classList.remove('swapping');
+      h.el.style.setProperty('--sway','0deg');h.el.style.setProperty('--swell','1');h.el.style.setProperty('--glyph-blur','0');
+      drawShape();onSettled?.();
+    };
+    h.swapFrame=requestAnimationFrame(step);
   });
   return true;
 }
