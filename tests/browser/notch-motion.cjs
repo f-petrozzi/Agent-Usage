@@ -127,15 +127,16 @@ const answers = {
       assert.ok(await page.evaluate(()=>handles.every(h=>h.value===0)));
     }
   }
-  // A partial button is still an arc while it swells and travels: no intermediate dot.
+  // Under the pointer the arm gathers along its groove, then its bead is drawn off the flare to the pocket's centre
   await sample(640);
   const partial=await page.evaluate(()=>{
-    const h=handles[1],saved=h.value;
-    const lengths=[.2,.4,.6,.8].map(value=>{h.value=value;drawShape();return h.ink.getTotalLength();});
-    h.value=saved;drawShape();return lengths;
+    const h=handles[1],saved=h.value,box=h.el.getBoundingClientRect();
+    const gather=[.1,.2,.3].map(value=>{h.value=value;drawShape();return h.ink.getTotalLength();});
+    const lift=[.5,.7,.9,1].map(value=>{h.value=value;drawShape();const p=h.ink.getPointAtLength(0),q=new DOMPoint(p.x,p.y).matrixTransform(h.ink.getScreenCTM());return Math.hypot(q.x-box.x-box.width/2,q.y-box.y-box.height/2);});
+    h.value=saved;drawShape();return {gather,lift};
   });
-  assert.ok(partial.every(length=>length>1),'every intermediate phase retains an extended contour');
-  assert.ok(partial.every((length,i)=>!i||length<partial[i-1]),'arm shortens continuously as it becomes the button');
+  assert.ok(partial.gather.every((length,i)=>length>1&&(!i||length<partial.gather[i-1])),'the arm shortens along its groove as it gathers');
+  assert.ok(partial.lift.every((distance,i)=>!i||distance<partial.lift[i-1]),'then its bead travels to the pocket centre');
   const emerging=await page.evaluate(()=>{const saved=armsOut;const lengths=[.2,.4,.6,.8].map(out=>{armsOut=out;drawShape();return handles[0].ink.getTotalLength();});armsOut=saved;drawShape();return lengths;});
   assert.ok(emerging.every(length=>length>1),'an emerging arm never waits in a dot stage');
   assert.ok(emerging.every((length,i)=>!i||length>emerging[i-1]),'the emerging contour extends throughout the motion');
@@ -163,7 +164,7 @@ const answers = {
   const before=await page.screenshot({clip:opposite});
   await page.evaluate(()=>{handles[1].value=.5;drawShape();});
   const after=await page.screenshot({clip:opposite});assert.deepEqual(after,before);
-  assert.ok(await page.evaluate(()=>necks[1].getAttribute('d').includes('Q')),'hover pulls a curved neck from the flare');
+  assert.ok(await page.evaluate(()=>!!necks[1].getAttribute('d')),'hover draws the bead off the flare on a strand');
   await page.evaluate(()=>{handles[1].value=0;drawShape();});
   await page.evaluate(()=>setHovered('pin'));await page.waitForTimeout(1600);
   await page.evaluate(()=>__emit('move_begin'));await page.waitForTimeout(90);

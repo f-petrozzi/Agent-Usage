@@ -66,24 +66,6 @@ let passage=null, cornerNear=0, pillTransform='';
 
 const n=v=>+v.toFixed(2);
 const smooth=x=>{ x=Math.max(0,Math.min(1,x)); return x*x*(3-2*x); };
-// Mac's flareWalk eases curvature at both ends, rather than tracing a circle.
-const flareWalk=(()=>{
-  let heading=0,u=0,v=0;const points=[{u:0,v:0,heading:0}];
-  for(let i=0;i<96;i++){
-    const share=(i+.5)/96,before=heading;
-    heading+=Math.PI*Math.min(share/.5,(1-share)/.5)/96;
-    u+=Math.cos(heading)/96;v+=Math.sin(heading)/96;
-    points.push({u,v,heading:(before+heading)/2});
-  }
-  return points.map(p=>({u:p.u/u,v:p.v/v,heading:p.heading}));
-})();
-function flarePoint(share,flare,gap,end){
-  const at=Math.max(0,Math.min(96,share*96)),lo=Math.floor(at),hi=Math.min(96,lo+1),mix=at-lo;
-  const p={};for(const key of ['u','v','heading'])p[key]=flareWalk[lo][key]+(flareWalk[hi][key]-flareWalk[lo][key])*mix;
-  const sign=end?-1:1;
-  return [sign*(flare*p.u-gap*Math.sin(p.heading)),
-    -flare*(1-p.v)+gap*Math.cos(p.heading)];
-}
 // One part of the notch on one edge, u0 to u1 along it, d deep, each end with its own corner and flare
 function partPath(u0,u1,d,r0,f0,r1,f1){
   const room=u1-u0, k=r0+r1>room&&r0+r1>0?room/(r0+r1):1; r0*=k; r1*=k;
@@ -134,64 +116,89 @@ function drawStraight(){
     bands[i].setAttribute('d',partA.getAttribute('d'));
     for(const [key,value] of Object.entries({x:cx-90,y:-60,width:180,height:190}))bandClips[i].setAttribute(key,value);
     necks[i].removeAttribute('d');
-    // Swapping, p runs 0 (out in the pocket) to 1 (melted into the notch) and back; the glyph rides it in and out,
-    // shrinking and softening with its disc rather than fading on the spot
-    const p=h.swapping?Math.max(0,Math.min(1,1-h.swap)):0;
-    h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35)*smooth((h.swap-.18)/.6)*smooth((detailRetreat-.5)/.5));
-    const swell=Math.max(1,h.swap);
-    h.el.style.setProperty('--swell',n(swell*(1-.6*smooth(p))));h.el.style.setProperty('--glyph-blur',n(2.6*smooth(p/.8)));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
     if(h.swapping){drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetreat,w,hgt);return;}
-    const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
-    // The complete arm emerges from the flare as one continuous contour.
-    const slide=-buried*(1-out);
-    // Exposure, shortening, swelling and travel share one progress value. No dot stage.
-    const unrolled=out, blend=smooth(disc), half=Math.PI/4*unrolled*(1-blend);
-    const radius=proportions.arm;
-    const home=merging?smooth(1-out):0;
-    const baseMid=(radius-slide)*(1-blend);
-    const centre=baseMid+(F+stroke-baseMid)*home*disc;
-    const [a,b,c,e]=edgeMatrix(notchEdge,w,h), dx=centre*Math.cos(mid),dy=centre*Math.sin(mid);
-    h.el.style.setProperty('--glyph-x',`${n(a*dx+c*dy)}px`);
-    h.el.style.setProperty('--glyph-y',`${n(b*dx+e*dy)}px`);
-    const points=[],arcMid=flarePoint(.5,F,F-radius,i);
-    for(let j=0;j<=64;j++){
-      const share=.5+(j/64-.5)*(half/(Math.PI/4));
-      const p=flarePoint(share,F,F-radius,i);
-      points.push(`${j?'L':'M'}${n(cx+p[0]-arcMid[0]+centre*Math.cos(mid))} ${n(F+p[1]-arcMid[1]+centre*Math.sin(mid))}`);
-    }
-    h.ink.setAttribute('d',points.join(''));
-    // In motion the drop pulls long toward the notch, most at mid-travel, as liquid does between two bodies
-    if(p>0&&blend>.5){
-      const x0=cx+centre*Math.cos(mid),y0=F+centre*Math.sin(mid),tail=proportions.disc*.72*Math.pow(Math.sin(Math.PI*p),.8);
-      h.ink.setAttribute('d',`M${n(x0)} ${n(y0)}L${n(x0+tail*Math.cos(mid))} ${n(y0+tail*Math.sin(mid))}`);
-    }
-    const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
-    let width=(arcWidth+(proportions.disc-arcWidth)*blend)*swell;
-    if(merging)width*=disc?(1-.72*home):smooth(out/.35);
-    const goo=merging
-      ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
-      :stroke*.55*smooth(out/.12)*(1-smooth((out-.7)/.3));
-    // Swapping, the blur is what melts the drop into the notch: nothing at rest, enough at the middle of the way to
-    // bridge the gap to the flare, so the drop, its strand and the notch run together as one body
-    const blur=Math.max(goo,7.8*proportions.scale*Math.sin(Math.PI*disc),13.5*proportions.scale*smooth(p/.4));
-    h.ink.setAttribute('stroke-width',n(width+blur*.4));
-    // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
-    const armNeck=merging?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
-    const neckWidth=Math.max(armNeck,stroke*1.75*Math.pow(Math.sin(Math.PI*disc),.55),stroke*2.6*Math.sin(Math.PI*p));
-    if(neckWidth>stroke*.18&&out>.01){
-      const ax=cx+(F+stroke)*Math.cos(mid), ay=F+(F+stroke)*Math.sin(mid);
-      const reach=merging?smooth((.92-out)/.32):1;
-      const bx=ax+(cx+centre*Math.cos(mid)-ax)*reach, by=ay+(F+centre*Math.sin(mid)-ay)*reach;
-      const dx=bx-ax,dy=by-ay,len=Math.max(.001,Math.hypot(dx,dy)), px=-dy/len,py=dx/len;
-      const q=(x,y,half,sign)=>`${n(x+px*half*sign)} ${n(y+py*half*sign)}`;
-      const mx=(ax+bx)/2,my=(ay+by)/2,base=stroke*1.3,tip=Math.max(stroke*.7,width*.35),pinch=neckWidth/2;
-      necks[i].setAttribute('d',`M${q(ax,ay,base,1)}Q${q(mx,my,pinch,1)} ${q(bx,by,tip,1)}L${q(bx,by,tip,-1)}Q${q(mx,my,pinch,-1)} ${q(ax,ay,base,-1)}Z`);
-    }
-    filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
-    for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
-    if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
+    drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,detailRetreat,w,hgt,grown);
   });
+}
+
+/* The resting arm is an inset of the notch's own outline round its pocket: a leg along the screen edge, a corner
+   concentric with the flare, a leg along the notch's side, at one even gap all the way round, so it follows the
+   notch's angle rather than bending tighter than it. It speaks the same goo as the swap (drawPull):
+   - out, from the notch opening or closing (or a card widening it): the arm peels out of the flare, joined to it
+     by goo while they are close, and sinks back into it the same way;
+   - under the pointer: the arm gathers into a bead, which is drawn off the flare along a bowed path on a strand
+     that pinches and parts short of the pocket; it swells into the disc there and its glyph swings from the snap.
+     Let go, the notch reaches out a strand, draws the drop back and it spreads along the flare into the arm. */
+const HOVER_SNAP=.78;
+function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,detailRetreat,w,hgt,grown){
+  const scale=proportions.scale,R=proportions.disc/2,dir=[Math.cos(mid),Math.sin(mid)],side=i?-1:1,O=[cx,F];
+  const gap=stroke/2+5*scale*grown, rho=F-gap, leg=9*scale*grown, arcHalf=rho*Math.PI/4, H=arcHalf+leg;
+  // Out of the notch: the contour rises from inside the flare to its place, lengthening as it comes
+  const risen=smooth(out), radius=F+stroke*.9+(rho-F-stroke*.9)*(1-Math.pow(1-out,2));
+  const contour=(sigma,rad)=>{
+    const arc=rad*Math.PI/4, t=Math.max(-arc,Math.min(arc,sigma)), th=mid+side*t/rad;
+    const p=[O[0]+rad*Math.cos(th),O[1]+rad*Math.sin(th)], over=Math.abs(sigma)-arc;
+    if(over<=0)return p;
+    const sg=Math.sign(sigma),tan=[side*sg*-Math.sin(th),side*sg*Math.cos(th)];
+    return [p[0]+tan[0]*over,p[1]+tan[1]*over];
+  };
+  // Under the pointer: gather, then lift off the flare to the pocket's centre along a bowed path. At rest the bead is
+  // the arm's own middle, so the arm sits exactly on its inset; the bow only shows once it lifts.
+  const gather=smooth(Math.min(1,disc/.42)), lift=smooth(Math.max(0,Math.min(1,(disc-.28)/.72)));
+  const len=F+stroke*.3, src=[O[0]+len*dir[0],O[1]+len*dir[1]];
+  let perp=[-dir[1],dir[0]];if(perp[1]<0)perp=[-perp[0],-perp[1]];
+  const bow=(p0,p1,k)=>{const l=Math.hypot(p1[0]-p0[0],p1[1]-p0[1]);return [(p0[0]+p1[0])/2+perp[0]*l*k,(p0[1]+p1[1])/2+perp[1]*l*k];};
+  const quad=(p0,c,p1,t)=>[(1-t)*(1-t)*p0[0]+2*(1-t)*t*c[0]+t*t*p1[0],(1-t)*(1-t)*p0[1]+2*(1-t)*t*c[1]+t*t*p1[1]];
+  const mid0=contour(0,radius);
+  let bead=quad(mid0,bow(mid0,O,.3),O,lift);
+  if(merging&&disc)bead=[src[0]+(bead[0]-src[0])*out,src[1]+(bead[1]-src[1])*out]; // taken back into the flare
+  const shift=[bead[0]-mid0[0],bead[1]-mid0[1]], sc=bow(src,bead,.22);
+  const at=t=>quad(src,sc,bead,t);
+  const along=t=>{const x=2*(1-t)*(sc[0]-src[0])+2*t*(bead[0]-sc[0]),y=2*(1-t)*(sc[1]-src[1])+2*t*(bead[1]-sc[1]),l=Math.hypot(x,y)||1;return [x/l,y/l];};
+  const extent=H*(.45+.55*risen)*(1-gather);
+  const pts=[];for(let k=0;k<=40;k++){const q=contour(-extent+2*extent*k/40,radius);pts.push(`${k?'L':'M'}${n(q[0]+shift[0])} ${n(q[1]+shift[1])}`);}
+  h.ink.setAttribute('d',pts.join(''));
+  const beadR=(stroke*.75+(R-stroke*.75)*smooth(lift))*(merging&&disc?.3+.7*out:1);
+  let width=stroke*(1+.5*gather)+(2*beadR-stroke*(1+.5*gather))*smooth(lift);
+  if(merging&&!disc)width*=.6+.4*smooth(out/.35);
+  // The strand between the flare and the bead: joined while it is drawn off, parting short of the pocket, its tail
+  // whipping back; letting go, the notch reaches out for the drop before it is drawn home
+  // Taken back (the notch closing, grabbed, or widening round a card), a disc stays joined by a strand that fattens
+  // as the notch swallows it, as the swap's old drop does
+  const sucked=merging&&disc>.01, returning=h.target===0, joined=sucked||lift<=HOVER_SNAP;
+  let tip=1; // how much of the strand from the flare to the bead is drawn
+  if(!joined)tip=returning?smooth((1-lift)/(1-HOVER_SNAP)):1-smooth((lift-HOVER_SNAP)/.14);
+  if(!returning&&!joined&&!h.hoverSnapAt&&disc>.5){h.hoverSnapAt=performance.now();swayFor(h);}
+  if(returning||lift<.5)h.hoverSnapAt=0;
+  if(tip>.02&&lift>.01&&out>.05){
+    const thin=sucked?1-.7*out:1-smooth((lift-.25)/(HOVER_SNAP-.25));
+    const base=stroke*1.3,pinch=Math.max(.5,stroke*.9*thin),end=joined?beadR*.78:Math.max(.5,stroke*.35);
+    const half=f=>f<.55?base+(pinch-base)*smooth(f/.55):pinch+(end-pinch)*smooth((f-.55)/.45);
+    const left=[],right=[];
+    for(let k=0;k<=20;k++){const f=k/20,t=f*tip,q=at(t),g=along(t),hw=half(f);left.push(`${n(q[0]-g[1]*hw)} ${n(q[1]+g[0]*hw)}`);right.push(`${n(q[0]+g[1]*hw)} ${n(q[1]-g[0]*hw)}`);}
+    necks[i].setAttribute('d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
+  }
+  // Goo: peeling out of or into the flare, and through the lift; nothing at rest
+  const peel=stroke*.62*(1-smooth((out-.25)/.6))*smooth(out/.06);
+  const blur=Math.max(peel,stroke*.72*Math.pow(Math.sin(Math.PI*lift),.7));
+  h.ink.setAttribute('stroke-width',n(width+blur*.4));
+  // The glyph rides the bead at its size, sharpening as it arrives, swinging from the snap
+  const [a,b,c,e]=edgeMatrix(notchEdge,w,hgt),du=bead[0]-O[0],dv=bead[1]-O[1];
+  h.el.style.setProperty('--glyph-x',`${n(a*du+c*dv)}px`);h.el.style.setProperty('--glyph-y',`${n(b*du+e*dv)}px`);
+  h.el.style.setProperty('--swell',n(beadR/R));h.el.style.setProperty('--glyph-blur',n(2.2*(1-smooth(lift/.9))));
+  h.el.style.setProperty('--disc-glyph',smooth((lift-.45)/.4)*smooth((detailRetreat-.5)/.5)*smooth(out/.6));
+  const since=h.hoverSnapAt?(performance.now()-h.hoverSnapAt)/1000:9;
+  h.el.style.setProperty('--sway',since<1.2?`${n(side*14*Math.exp(-since/.26)*Math.sin(2*Math.PI*since/.38))}deg`:'0deg');
+  filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
+  if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
+}
+// The swing from the snap outlives the spring that caused it, so it keeps its own frames until it dies away
+function swayFor(h){
+  cancelAnimationFrame(h.swayFrame);
+  const step=()=>{drawShape();h.swayFrame=h.hoverSnapAt&&performance.now()-h.hoverSnapAt<1200?requestAnimationFrame(step):0;};
+  h.swayFrame=requestAnimationFrame(step);
 }
 
 /* Round a corner: the part still on the edge it is leaving, shortening, and the part on the edge it is
