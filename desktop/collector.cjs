@@ -24,8 +24,8 @@ function normalize(raw) {
     const id = accountId(base, a.id || index);
     const name = clean(base === 'gemini' ? 'Antigravity' : base === 'codex' ? `Codex ${a.label || ''}`.trim() : a.label || 'Claude', 100);
     const details = [];
-    if (a.plan) details.push(clean(a.plan, 100));
-    if (Number.isInteger(a.resetCredits)) details.push(`${a.resetCredits} banked resets`);
+    if (a.plan && base !== 'claude') details.push(clean(a.plan, 100));
+    if (Number.isInteger(a.resetCredits)) details.push(base === 'claude' ? `${a.resetCredits} ${a.resetCredits === 1 ? 'reset' : 'resets'} available` : `${a.resetCredits} banked resets`);
     if (Array.isArray(a.resetCreditDetails)) for (const credit of a.resetCreditDetails.slice(0, 30)) {
       details.push(!credit.expirationKnown ? 'Reset expiration unknown' : finite(credit.expiresAt)
         ? `Reset expires ${new Date(credit.expiresAt * 1000).toLocaleString()}` : 'Reset does not expire');

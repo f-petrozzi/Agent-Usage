@@ -10,7 +10,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const now = Date.now();
 const win = (id, used, h) => ({ id, label: id, used, resets_at: now + h * 3600e3, count: null, derived: false });
 const accounts = [
-  { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['Plan: Max'] } },
+  { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['1 reset available', 'Reset expires Oct 22, 2026, 12:00 PM'] } },
   { id: 'codex', base: 'codex', name: 'Codex', glyph: 'Cx', snap: { status: 'ok', windows: [win('primary', .18, 2), win('secondary', .33, 100)], fetched_at: now, note: '', details: ['Plan: Plus'] } },
 ];
 const glyphs = {};
@@ -96,7 +96,7 @@ const answers = {
     const geometry=await page.evaluate(()=>({ink:detailPath.getAttribute('d'),pill:pill.getBoundingClientRect().toJSON()}));
     const vertical=edge==='left'||edge==='right';
     if(vertical){
-      assert.equal(await page.locator('#card .inline-extras').innerText(),'Plan: Max','side metadata opens inside the usage frame by default');
+      assert.equal(await page.locator('#card .inline-extras').innerText(),'1 reset available\nReset expires Oct 22, 2026, 12:00 PM','side metadata opens inside the usage frame by default');
       assert.equal(await page.locator('.metadata-trigger').count(),0);
     }else{
     assert.equal(await page.evaluate(()=>extraTarget),0,'top/bottom extras start hidden');

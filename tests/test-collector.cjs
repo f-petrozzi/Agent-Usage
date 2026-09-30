@@ -32,3 +32,13 @@ test('Automatic account selection stays automatic when Antigravity arrives',()=>
   assert.equal(enrollAntigravity(cfg,[{base:'gemini',id:'gemini_agy'}]),true);
   assert.deepEqual(cfg.slots,[]);
 });
+
+test('Claude replaces plan with available resets and preserves expiry',()=>{
+  const [a]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:1,
+    resetCreditDetails:[{expiresAt:4070908800,expirationKnown:true}],limits:[]}]});
+  assert.equal(a.snap.details[0],'1 reset available');
+  assert.match(a.snap.details[1],/^Reset expires /);
+  assert.ok(!a.snap.details.includes('pro'));
+  const [unknown]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:null,limits:[]}]});
+  assert.deepEqual(unknown.snap.details,[],'unknown reset count is not fabricated');
+});

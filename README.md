@@ -56,3 +56,5 @@ While reading one account, the other gauges become small account glyphs. Hover
 a glyph or focus it with the keyboard to switch; leaving restores all gauges.
 
 AGY CLI activity uses its live presence lock and local conversation status database. Active work spins the inner arc; explicit pending questions and reported waiting steps pulse yellow. Idle, canceled, killed, and disconnected conversations clear the indicator. Approval waits that AGY does not expose in its transcript cannot be distinguished from active work.
+
+Claude extras show available free limit resets and their expiry instead of the subscription name. The collector requests the `cedar_ember` grant block with the installed Claude CLI version, counts usable unpaused grants, and never forwards redemption handles. Unsupported or ineligible responses leave the count unknown. Redeem resets in Claude itself.

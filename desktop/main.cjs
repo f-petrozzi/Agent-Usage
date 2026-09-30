@@ -9,6 +9,7 @@ const { pointerPlacement } = require('./perimeter.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity } = require('./collector.cjs');
 
 app.setName('Agent Usage');
+app.setAppUserModelId('ink.petro.agent-usage');
 app.setPath('userData', path.join(app.getPath('appData'), 'Agent Usage'));
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 if (!app.requestSingleInstanceLock()) { app.quit(); } else {
@@ -65,7 +66,7 @@ async function start() {
   // Shown once and then only moved (see place): Windows zooms a window in from its middle each time
   // it is shown, and on this screen-sized overlay that made the notch float in to the edge
   win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, resizable: false,
-    focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
+    icon: resource('icon.ico'), focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true,
       nodeIntegration: false, backgroundThrottling: false, spellcheck: false } });
   secure(win); win.setIgnoreMouseEvents(true, { forward: true });
