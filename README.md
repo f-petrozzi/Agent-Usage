@@ -62,12 +62,14 @@ It stays about six seconds, for as long as the pointer rests on it, and a click 
 ring under the pointer turns it into that account's usage. The sound is a short chime
 made by the app.
 
-Since 3.1.7 the notch keeps them too: a bell at the end of the rings collects the last
-week of alerts (up to 40). A yellow dot and a count show what arrived since you last
-looked; point at the bell and the log opens in the same lobe as an account's usage,
-newest first, with the alert switches (Usage, Waiting, Finished, Sound) along the
-top. A row turns into that account's usage and Clear empties the log. Turn the bell
-off under Settings → Appearance → Controls.
+The notch keeps them too (3.1.8): the pin's pocket holds more than one control. Point
+at the pin and scroll, and it flows back into the notch while a bell buds out of the
+same flare; scroll again for the pin. A yellow dot on that pocket means something
+arrived since you last looked. Press the bell and the last week of alerts (up to 40)
+grows out of that end of the notch, newest first, with the alert switches (Usage,
+Waiting, Finished, Sound) along the top. A row turns into that account's usage and
+Clear empties the log. Settings → Appearance → Controls chooses what the pocket holds.
+The notch's expansions, alerts included, are liquid while they grow and sharp at rest.
 
 Warnings track each reported quota window, retain their threshold across app
 restarts, and rearm when a later reset boundary confirms a new window. The initial

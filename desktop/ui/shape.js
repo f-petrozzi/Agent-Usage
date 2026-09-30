@@ -37,7 +37,8 @@ let openness=1, openVelocity=0, openFrame=0, openLast=0;
 // How far the arms have come away from the flares (0 in the black, 1 at their place), and the tween moving it
 let armsOut=0, armsFrame=0;
 let absorbing=false;
-const handles=[{el:pinHandle,ink:armStart,value:0,target:0,velocity:0,frame:0},{el:orb,ink:armEnd,value:0,target:0,velocity:0,frame:0}];
+// swap: how far a handle is out of its pocket while it changes what it holds (1 out, 0 flowed back into the notch)
+const handles=[{el:pinHandle,ink:armStart,value:0,target:0,velocity:0,frame:0,swap:1,swapping:false,swapFrame:0},{el:orb,ink:armEnd,value:0,target:0,velocity:0,frame:0,swap:1,swapping:false,swapFrame:0}];
 
 // A round-ended stroke rolls up from the arc's midpoint into the disc. Reversing the same
 // drawing spreads the disc back into its arc, without swapping HTML and SVG silhouettes.
@@ -121,17 +122,21 @@ function drawStraight(){
   partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
   const detailRetreat=typeof detailArm==='number'?1-smooth(Math.max(0,Math.min(1,detailArm))):1;
-  const merging=absorbing||(typeof detailTarget==='number'&&detailTarget===1&&detailRetreat<1);
-  const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4)*detailRetreat;
+  const mergingAll=absorbing||(typeof detailTarget==='number'&&detailTarget===1&&detailRetreat<1);
+  const armsOutAll=armsOut*(1-cornerNear)*smooth((grown-.6)/.4)*detailRetreat;
   const stroke=proportions.stroke*grown;
   setGoo(0,-300,-300,L+600,d+600);
   handles.forEach((h,i)=>{
     const cx=i?u1+F:u0-F, mid=(i?225:-45)*Math.PI/180, disc=Math.max(0,Math.min(1,h.value));
     const filter=handleFilters[i], group=liquids[i];
+    // A handle changing what it holds takes the same way home and back out as the arms do when absorbed
+    const out=armsOutAll*h.swap, merging=mergingAll||h.swapping;
     bands[i].setAttribute('d',partA.getAttribute('d'));
     for(const [key,value] of Object.entries({x:cx-90,y:-60,width:180,height:190}))bandClips[i].setAttribute(key,value);
     necks[i].removeAttribute('d');
-    h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35));
+    h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35)*smooth((h.swap-.45)/.55)*smooth((detailRetreat-.5)/.5));
+    // A disc budding out of a swap overshoots and settles, the glyph with it
+    const swell=Math.max(1,h.swap);h.el.style.setProperty('--swell',n(swell));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
     const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
     // The complete arm emerges from the flare as one continuous contour.
@@ -153,7 +158,7 @@ function drawStraight(){
     }
     h.ink.setAttribute('d',points.join(''));
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
-    let width=arcWidth+(proportions.disc-arcWidth)*blend;
+    let width=(arcWidth+(proportions.disc-arcWidth)*blend)*swell;
     if(merging)width*=disc?(1-.72*home):smooth(out/.35);
     const goo=merging
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
@@ -255,5 +260,35 @@ function moveArms(to,seconds,ease=t=>t*t){
     if(t===1) finish();
   };
   armsFrame=requestAnimationFrame(step);
+}
+/* Scrolling over a handle changes what it holds: the disc flows back into the notch along the arm's own way
+   home, accelerating, then the next one buds out of the flare and settles. `onHome` swaps the glyph while it
+   is inside the black. A second scroll mid-swap is ignored rather than queued. */
+function swapHandle(i,onHome){
+  const h=handles[i];
+  if(h.swapping)return false;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){onHome();drawShape();return true;}
+  h.swapping=true;cancelAnimationFrame(h.swapFrame);
+  const leg=(to,seconds,ease,done)=>{
+    const from=h.swap,t0=performance.now();
+    const step=now=>{const t=Math.min(1,(now-t0)/(seconds*1000));h.swap=from+(to-from)*ease(t);drawShape();
+      if(t<1)h.swapFrame=requestAnimationFrame(step);else{h.swapFrame=0;done();}};
+    h.swapFrame=requestAnimationFrame(step);
+  };
+  // Home on an accelerating ease; back out on a spring that swells a little past full and settles, like a drop
+  leg(0,.26,t=>t*t,()=>{
+    onHome();
+    let last=performance.now(),velocity=0;
+    const omega=2*Math.PI/.46,zeta=.55;
+    const step=now=>{
+      const dt=Math.min(.032,(now-last)/1000);last=now;
+      velocity+=(-omega*omega*(h.swap-1)-2*zeta*omega*velocity)*dt;h.swap+=velocity*dt;
+      const settled=Math.abs(h.swap-1)<.002&&Math.abs(velocity)<.02;
+      if(settled){h.swap=1;h.swapping=false;h.swapFrame=0;}else h.swapFrame=requestAnimationFrame(step);
+      drawShape();
+    };
+    h.swapFrame=requestAnimationFrame(step);
+  });
+  return true;
 }
 new ResizeObserver(()=>drawShape()).observe(pill);

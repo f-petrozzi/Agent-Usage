@@ -45,6 +45,14 @@ function drawDetails(){
   // There is no second rectangle or narrow connector beneath the original notch.
   const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
   detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
+  // While it grows or draws back in, the lobe is liquid: blurred and cut back, so its corners round and it swells
+  // like a drop leaving the notch. Settled, it is sharp again.
+  const goo=reducedDetails()?0:4.2*Math.sin(Math.PI*Math.min(1,t)),detailFilter=detailSvg.querySelector('#detail-goo');
+  if(goo>.25&&detailFilter){
+    detailFilter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(goo));
+    for(const [key,value] of Object.entries({x:Math.min(u0,a0)-60,y:-SHAPE.bleed-60,width:Math.max(u1,a1)-Math.min(u0,a0)+120,height:expandedDepth+SHAPE.bleed+120}))detailFilter.setAttribute(key,n(value));
+    detailPath.setAttribute('filter','url(#detail-goo)');
+  }else detailPath.removeAttribute('filter');
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
@@ -114,7 +122,7 @@ function setDetailsShown(on,instant=false){
 const extraCard=document.createElement('div');extraCard.id='extra-card';extraCard.setAttribute('aria-hidden','true');
 card.parentElement.append(extraCard);
 const extraPath=document.createElementNS(SVG_NS,'path');detailSvg.append(extraPath);
-detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}</defs>`);
+detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}${gooDefinition('detail-goo')}</defs>`);
 const extraFilter=detailSvg.querySelector('#extra-goo');
 let extraOpen=0,extraTarget=0,extraVelocity=0,extraFrame=0,extraLast=0;
 function renderExtraContent(rows,windows=[]){

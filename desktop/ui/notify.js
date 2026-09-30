@@ -90,9 +90,10 @@ function chime(kind){
 }
 
 /* ---- The bell: the alert log ----
-   Alerts no longer go to Windows' notification centre, so the bell at the end of the rings keeps them. Its count
-   is what arrived since the log was last open; pointing at it opens the log in the same lobe as an account's
-   usage, with the alert switches along the top. A row turns into that account's usage; Clear empties it. */
+   Alerts no longer go to Windows' notification centre, so the notch keeps them. The bell is one of what the
+   leading pocket holds (scroll over the pin to reach it); a yellow dot on that pocket says something arrived
+   since the log was last open. Pressing the bell grows the log out of that end of the notch, the disc melting
+   into the widening flare, with the alert switches along the top. A row turns into that account's usage. */
 let alertLogData=[],alertPrefsData=null,markTimer=0;
 const unreadCount=()=>alertLogData.filter(e=>!e.read).length;
 const logShowing=()=>card.classList.contains('show')&&hoverId===ALERTS_ID&&!alertShowing;
@@ -105,18 +106,22 @@ invoke('get_alert_log').then(v=>{alertLogData=Array.isArray(v)?v:[];paintBell();
 listen('alert_preferences',e=>{alertPrefsData=e.payload;if(logShowing())renderCard();}).catch(()=>{});
 invoke('get_alert_preferences').then(v=>{alertPrefsData=v;}).catch(()=>{});
 function paintBell(){
-  const cell=pill.querySelector('.alerts-cell');if(!cell)return;
-  const n=unreadCount();
-  cell.classList.toggle('unread',n>0);cell.querySelector('.pct').textContent=n?String(Math.min(n,99)):'';
-  cell.setAttribute('aria-label',n?`Alerts, ${n} new`:'Alerts');
+  pinHandle.classList.toggle('unread',unreadCount()>0&&leadFaces.includes('alerts'));
+  renderLead();
 }
-// A swing that dies away, from the top of the bell, as it takes an alert in
-function ringBell(){
-  const mark=pill.querySelector('.alerts-cell .bell-mark');
-  if(!mark||!unreadCount()||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  mark.animate([{rotate:'0deg'},{rotate:'18deg'},{rotate:'-14deg'},{rotate:'9deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)'});
-  const count=pill.querySelector('.alerts-cell .pct');
-  count?.animate([{scale:1.35},{scale:1}],{duration:500,easing:'cubic-bezier(.34,1.56,.64,1)'});
+// Something new: the bell swings from its top if it is out, otherwise the pocket's dot pops. `always` swings it
+// even with nothing unread, as it buds out of the flare
+function ringBell(always=false){
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches||(!always&&!unreadCount()))return;
+  if(leadFace()==='alerts'){
+    pinHandle.querySelector('.h-glyph.bell')?.animate([{rotate:'0deg'},{rotate:'20deg'},{rotate:'-15deg'},{rotate:'10deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)'});
+  }
+  if(unreadCount())pinHandle.querySelector('.lead-dot')?.animate([{scale:0},{scale:1.5},{scale:1}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
+}
+// Pressing the bell: the log grows out of the notch where the bell was
+function openAlertLog(){
+  hoverId=ALERTS_ID;clearTimeout(hideTimer);clearTimeout(showTimer);pendingAccount=null;
+  if(card.classList.contains('show'))renderCard();else showCard();
 }
 const CHIPS=[['quota','Usage'],['waiting','Waiting'],['completion','Finished'],['sound','Sound']];
 function logWhen(at){

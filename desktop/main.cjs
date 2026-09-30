@@ -256,14 +256,14 @@ function endMove() {
   carrying=false;send('release');send('move_end');send('drag_end');
   broadcast('ui_flags',flags());visibleUntil=Date.now()+1800;save();
 }
-const CONTROLS = ['settings', 'pin', 'refresh'];
+const CONTROLS = ['settings', 'pin', 'refresh', 'alerts'];
 function activateControl(name) {
   if(!visible||!CONTROLS.includes(name))return;
   const now=Date.now();if(lastControl.name===name&&now-lastControl.at<300)return;
   lastControl={name,at:now};send('control_pressed',name);
   if(name==='settings')openSettings(['available','downloading','ready','error'].includes(updates?.get().status)?'general':'accounts');
   else if(name==='pin')setPinned(!pinned);
-  else requestRefresh();
+  else if(name==='refresh')requestRefresh(); // 'alerts' opens the log in the page, which control_pressed tells it
 }
 function requestRefresh() {
   const started=collector.refresh();if(started)send('refresh_started');return started;

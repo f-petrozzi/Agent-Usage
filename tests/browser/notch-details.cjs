@@ -152,7 +152,6 @@ const answers = {
   await page.evaluate(value=>__emit('agent_accounts',value),[...accounts,{...accounts[1],id:'codex-b',name:'Codex b'},agy]);
   await page.waitForTimeout(500);await sample(640);await page.evaluate(()=>{window.agentTracking=false;});
   assert.equal(await page.locator('.cell:not(.alerts-cell)').count(),4);
-  assert.equal(await page.locator('.alerts-cell').count(),1,'the bell follows the rings');
   await page.locator('.cell[data-p="antigravity"]').hover();await page.waitForTimeout(2000);
   assert.equal(await page.evaluate(()=>card.dataset.account),'antigravity');
   assert.equal(await page.locator('#card .g-box').count(),0);assert.equal(await page.locator('#card .w-track').count(),2);

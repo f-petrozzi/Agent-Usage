@@ -793,29 +793,22 @@ function svgArc(r,frac,color,width,extra=''){
 }
 
 // Pin occupies the near flare's pocket; refreshing a ring or Settings refreshes usage.
-let notchButtons={pin:true,alerts:true}, pinnedNow=false;
-// The bell at the end of the rings: the alert log (notify.js). It is a cell like the rings, so it rides the
-// corners and recedes with them, but it is never an account: no reading, no refresh.
+let notchButtons={pin:true,alerts:true}, pinnedNow=false, leadFaces=['pin','alerts'], leadIndex=0;
+// The alert log's place in the card (notify.js); its button is one of what the leading pocket holds
 const ALERTS_ID='__alerts';
 const BELL_MARK='<svg class="bell-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 16.6V11a5.6 5.6 0 0 1 11.2 0v5.6l1.7 1.9H4.7z"/><path d="M10 21h4"/></svg>';
 function renderRing(){
-  const ps=providers(), bell=notchButtons.alerts!==false;
+  const ps=providers();
   // Rebuild the DOM only when the structure changes (never swap the element under the cursor)
-  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}|${bell}`;
+  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}`;
   if(pill.dataset.cells!==want){
     pill.innerHTML=ps.map((p,i)=>`<div class="cell" role="button" tabindex="0" aria-label="${esc(p.name)}" data-p="${p.id}" style="--i:${i}">
       <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><div class="activity-layer"><svg class="activity" viewBox="0 0 56 56"></svg></div><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
-      <div class="pct">…</div></div>`).join('')+(bell?`<div class="cell alerts-cell" role="button" tabindex="0" aria-label="Alerts" data-p="${ALERTS_ID}" style="--i:${ps.length}">
-      <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"><circle cx="28" cy="28" r="22" fill="${HOLE}"/><circle cx="28" cy="28" r="25" fill="none" stroke="${TRACK}" stroke-width="5"/></svg><div class="glyph">${BELL_MARK}</div></div>
-      <div class="pct"></div></div>`:'');
+      <div class="pct">…</div></div>`).join('');
     pill.dataset.cells=want;
   }
-  const cells=ps.length+(bell?1:0);
-  pill.style.setProperty('--length',`${cells*68+Math.max(0,cells-1)*14+36}px`);
-  if(typeof paintBell==='function')paintBell();
-  const pinButton=document.getElementById('pin-handle');
-  pinButton.classList.toggle('on',pinnedNow);pinButton.setAttribute('aria-pressed',String(pinnedNow));
-  pinButton.title=pinnedNow?'Unpin':'Pin';pinButton.setAttribute('aria-label',pinButton.title);
+  pill.style.setProperty('--length',`${ps.length*68+Math.max(0,ps.length-1)*14+36}px`);
+  document.getElementById('pin-handle').classList.toggle('on',pinnedNow);renderLead();
   for(const p of ps){
     const cell=pill.querySelector(`.cell[data-p="${p.id}"]`); if(!cell) continue;
     const svg=cell.querySelector('svg.ring'), reading=cell.querySelector('svg.reading'), activity=cell.querySelector('svg.activity'), pct=cell.querySelector('.pct'), glyph=cell.querySelector('.glyph'), wrap=cell.querySelector('.ringwrap');
@@ -1029,6 +1022,10 @@ function placeCard(){
   if(notchEdge==='right') x=r.left-w;
   if(notchEdge==='top') y=r.bottom;
   if(notchEdge==='bottom') y=r.top-h;
+  // The log grows out of the end whose pocket holds the bell: along the edge from there, not centred
+  if(hoverId===ALERTS_ID&&!(typeof alertShowing!=='undefined'&&alertShowing)){
+    if(edgeIsVertical())y=r.top-12;else x=r.left-12; // that pocket is at the top on a side edge, the left end lying flat
+  }
   // An alert's words sit beside the ring they are about, within the notch's length
   if(typeof alertShowing!=='undefined'&&alertShowing&&edgeIsVertical()&&cell!==pill){
     const c=cell.getBoundingClientRect();y=Math.max(r.top,Math.min(r.bottom-h,c.top+c.height/2-h/2));
@@ -1104,7 +1101,7 @@ function flushHot(){
   const controls={};
   if(placeHandles()){
     controls.settings=rectOf(orb);rects.push(controls.settings);
-    if(showPin){controls.pin=rectOf(pinHandle);rects.push(controls.pin);}
+    if(showPin){const lead=rectOf(pinHandle);controls[leadFace()]=lead;rects.push(lead);} // named for what the pocket holds
   }
   const data={rects,controls,expanded:open,alerting:typeof alertShowing!=='undefined'&&!!alertShowing};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
@@ -1172,6 +1169,7 @@ listen('notch_reveal',()=>{ document.documentElement.style.visibility=''; }).cat
    Leaving the window: document mouseout (relatedTarget=null) plus the Rust watchdog (system cursor) as a second line. */
 function inRect(x,y,r,pad){return x>=r.left-pad&&y>=r.top-pad&&x<r.right+pad&&y<r.bottom+pad;}
 function syncAccountFocus(on){
+  if(hoverId===ALERTS_ID)on=false; // the log is about every account, so none recedes
   for(const el of pill.querySelectorAll('.cell')){
     const selected=on&&el.dataset.p===hoverId;
     el.classList.toggle('focused-account',selected);
@@ -1214,6 +1212,8 @@ document.addEventListener('mousemove',e=>{
   if(carrying) return; // the notch is in hand; the card would only be in the way
   setHovered(onHandle(e.clientX,e.clientY));
   // Over a handle or the pin/refresh row, the card gives way
+  // The bell's own log stays open while the pointer is back on the bell; any other handle takes over from the card
+  if(hovered==='pin'&&leadFace()==='alerts'&&card.classList.contains('show')&&hoverId===ALERTS_ID){clearTimeout(hideTimer);return;}
   if(hovered||e.target.closest?.('.ctl')){ clearTimeout(showTimer);pendingAccount=null;if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
   const hot=pointerInHot(e.clientX,e.clientY);
   if(typeof alertShowing!=='undefined'&&alertShowing){
@@ -1253,7 +1253,7 @@ let press=null, dragging=false;
 const PRESS_MIN=380, PRESS_MAX=6000;
 const refreshing={};
 function refreshRing(id){
-  if(refreshing[id]||id===ALERTS_ID) return;
+  if(refreshing[id]) return;
   refreshing[id]={at:Date.now(),timer:setTimeout(()=>settle(id),PRESS_MAX)};
   renderRing();
   turnReading(id);
@@ -1353,8 +1353,8 @@ function setHovered(which){
 }
 orb.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'settings'}).catch(()=>{});});
 orb.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'settings'}).catch(()=>{});});
-pinHandle.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'pin'}).catch(()=>{});});
-pinHandle.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'pin'}).catch(()=>{});});
+pinHandle.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:leadFace()}).catch(()=>{});});
+pinHandle.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:leadFace()}).catch(()=>{});});
 // The Mac's press: down fast, back with a little bounce
 function pressIn(el){
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -1364,12 +1364,34 @@ function pressIn(el){
 listen('control_pressed',e=>{
   if(e.payload==='settings'){orb.style.setProperty('--spins',++orbSpins);pressIn(orb);}
   if(e.payload==='pin')pressIn(pinHandle);
+  if(e.payload==='alerts'){pressIn(pinHandle);if(typeof openAlertLog==='function')openAlertLog();}
 });
+/* The leading pocket holds more than one control: pin, then the alert log, each there unless turned off in
+   Settings. Scrolling over it swaps them (swapHandle in shape.js), the one in the pocket flowing back into the
+   notch and the next budding out; it stays on the last one chosen. */
+function leadFace(){return leadFaces[Math.min(leadIndex,leadFaces.length-1)]||'pin';}
+function renderLead(){
+  const face=leadFace(),pinHandle=document.getElementById('pin-handle'); // callable before the handle constants below exist
+  pinHandle.classList.toggle('face-alerts',face==='alerts');pinHandle.classList.toggle('face-pin',face==='pin');
+  if(face==='pin'){pinHandle.title=pinnedNow?'Unpin':'Pin';pinHandle.setAttribute('aria-pressed',String(pinnedNow));}
+  else{const n=typeof unreadCount==='function'?unreadCount():0;pinHandle.title=n?`Alerts, ${n} new`:'Alerts';pinHandle.removeAttribute('aria-pressed');}
+  pinHandle.setAttribute('aria-label',pinHandle.title);
+  if(typeof reportHot==='function')reportHot();
+}
 function renderNotchButtons(value){
   if(!value)return;
-  notchButtons={pin:value.pin!==false,alerts:value.alerts!==false};showPin=notchButtons.pin;
-  renderRing();reportHot();if(typeof drawShape==='function')drawShape();
+  notchButtons={pin:value.pin!==false,alerts:value.alerts!==false};
+  const was=leadFace();leadFaces=['pin','alerts'].filter(f=>notchButtons[f]);
+  leadIndex=Math.max(0,leadFaces.indexOf(was));showPin=leadFaces.length>0;
+  renderRing();renderLead();reportHot();if(typeof drawShape==='function')drawShape();
 }
+document.addEventListener('wheel',e=>{
+  if(hovered!=='pin'||leadFaces.length<2)return;
+  e.preventDefault();
+  if(Math.abs(e.deltaY)<4)return;
+  const step=e.deltaY>0?1:-1;
+  swapHandle(0,()=>{leadIndex=(leadIndex+step+leadFaces.length)%leadFaces.length;renderLead();if(leadFace()==='alerts'&&typeof ringBell==='function')setTimeout(()=>ringBell(true),260);});
+},{passive:false});
 listen('notch_buttons',e=>renderNotchButtons(e.payload)).catch(()=>{});
 invoke('get_notch_buttons').then(renderNotchButtons).catch(()=>{});
 // Legacy Alt-drag still retracts the handles while carrying; the shortcut moves the notch directly.

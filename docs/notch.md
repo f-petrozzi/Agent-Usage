@@ -140,7 +140,7 @@ not the source repository. The version starts at 3.0.0 to supersede the existing
 
 General contains global usage, waiting, completion and sound switches. Alerts open
 out of the notch itself, from the account's ring, instead of as Windows toasts.
-The bell at the end of the rings keeps a week of them, with the same switches.
+Scroll over the pin to reach the bell, which keeps a week of them with the same switches.
 Accounts contains per-account usage-warning bells and drag (or Alt+↑/↓) ordering.
 The tray menu follows the visible account order and includes all quota windows,
 reset countdowns, and stale/error labels.

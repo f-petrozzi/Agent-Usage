@@ -184,13 +184,6 @@
   .a-sub{margin-top:4px;font-size:11.5px;color:var(--ink-dim)}
   .alert-content.stacked .a-block + .a-block{margin-top:10px;padding-top:10px;border-top:1px solid var(--card-rule)}
   #card.alerting{cursor:pointer}
-  /* The bell: a cell like the rings, with no reading. New alerts put a yellow dot on it and a count beneath. */
-  .alerts-cell .glyph .bell-mark{display:block;width:calc(25px * var(--k));height:calc(25px * var(--k));fill:none;stroke:var(--ink-2);stroke-width:1.8;
-    stroke-linecap:round;stroke-linejoin:round;transform-origin:50% 12%}
-  .alerts-cell .glyph::after{content:"";position:absolute;left:calc(50% + 4px);top:calc(50% - 12px);width:7px;height:7px;border-radius:50%;
-    background:var(--watch);box-shadow:0 0 0 2px var(--hole);scale:0;transition:scale .4s cubic-bezier(.34,1.56,.64,1)}
-  .alerts-cell.unread .glyph::after{scale:1}
-  .alerts-cell .pct{min-height:18px}
   /* The log: the alert switches along the top, then what came in, newest first */
   .log-mark{display:inline-grid;place-items:center;width:16px;height:16px;flex:none}
   .log-mark .bell-mark{width:16px;height:16px;fill:none;stroke:var(--ink-2);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
@@ -216,7 +209,7 @@
   .a-when{min-width:44px;text-align:right;font-size:11px;color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
   .a-detail{grid-column:2 / -1;font-size:11.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .a-empty{margin-top:12px;font-size:12px;color:var(--ink-dim)}
-  @media (prefers-reduced-motion: reduce){.log-content.entering .a-row{animation:none}.a-chip,.alerts-cell .glyph::after{transition:none}}
+  @media (prefers-reduced-motion: reduce){.log-content.entering .a-row{animation:none}.a-chip{transition:none}}
 
   /* ---- The other three edges -------------------------------------------------
      The rules above draw the right-hand edge, the original layout and still the default. Each block
@@ -343,6 +336,8 @@
     </svg>
     <div class="h-disc"></div>
     <svg class="h-glyph pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4v2H6v-2l4-4z"/><path d="M12 15v6"/></svg>
+    <svg class="h-glyph bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 16.6V11a5.6 5.6 0 0 1 11.2 0v5.6l1.7 1.9H4.7z"/><path d="M10 21h4"/></svg>
+    <span class="lead-dot"></span>
   </button>
   <button id="orb" class="handle" type="button" aria-label="Settings" title="Settings">
     <svg class="h-rest" viewBox="-36 -36 72 72" aria-hidden="true">
