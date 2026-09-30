@@ -107,7 +107,7 @@ const answers = {
         const box=h.el.getBoundingClientRect();
         return {value:h.value,width:+h.ink.getAttribute('stroke-width'),distance:Math.hypot(at.x-box.x-box.width/2,at.y-box.y-box.height/2)};
       },which);
-      assert.equal(disc.value,1);assert.equal(disc.width,38);assert.ok(disc.distance<.1,JSON.stringify(disc));
+      assert.equal(disc.value,1);assert.ok(Math.abs(disc.width-await page.evaluate(()=>handleMetrics().disc))<.01);assert.ok(disc.distance<.1,JSON.stringify(disc));
       await page.screenshot({path:path.join(OUT,`hover-${t}-${which}.png`)});
       const forming=await page.evaluate(which=>{
         const h=handles.find(h=>h.el.id===(which==='pin'?'pin-handle':which));h.value=.85;drawShape();
@@ -119,6 +119,22 @@ const answers = {
       await page.evaluate(()=>setHovered(null));await page.waitForTimeout(1100);
       assert.ok(await page.evaluate(()=>handles.every(h=>h.value===0)));
     }
+  }
+  // Compact, tall and long notches scale their arms, discs, glyphs and click targets together.
+  for(const t of [640,3760]){
+    await sample(t);
+    const sizes=await page.evaluate(()=>{
+      const saved=pill.style.getPropertyValue('--length');handles[1].el.classList.add('hover');
+      const results=[104,186,350].map(length=>{
+        pill.style.setProperty('--length',length+'px');handles[1].value=1;drawShape();placeHandles();
+        const h=handles[1],box=h.el.getBoundingClientRect(),glyph=getComputedStyle(h.el.querySelector('.h-glyph'));
+        const p=h.ink.getPointAtLength(h.ink.getTotalLength()/2),point=new DOMPoint(p.x,p.y).matrixTransform(h.ink.getScreenCTM());
+        return {disc:+h.ink.getAttribute('stroke-width'),target:box.width,glyph:parseFloat(glyph.width),centering:Math.hypot(point.x-box.x-box.width/2,point.y-box.y-box.height/2)};
+      });
+      pill.style.setProperty('--length',saved);handles[1].value=0;handles[1].el.classList.remove('hover');drawShape();placeHandles();return results;
+    });
+    assert.ok(sizes[0].disc<sizes[1].disc&&sizes[1].disc<sizes[2].disc,'longer notches have proportionally larger buttons');
+    for(const size of sizes){assert.ok(size.centering<.1);assert.ok(size.target>size.disc);assert.ok(Math.abs(size.glyph/size.disc-18/38)<.002);}
   }
   // Hovering the bottom-right button must leave the opposite arm's rendered pixels untouched.
   await sample(2720);

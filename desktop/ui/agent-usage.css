@@ -26,7 +26,7 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 .handle{z-index:4;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;appearance:none}
 .handle:focus-visible{outline:1px solid #aaa;outline-offset:-4px;border-radius:50%}
 .h-disc{display:none}
-.h-glyph{width:18px;height:18px;margin:-9px 0 0 -9px;transform-origin:center;translate:var(--glyph-x,0px) var(--glyph-y,0px)}
+.h-glyph{width:var(--glyph-size,18px);height:var(--glyph-size,18px);margin:calc(var(--glyph-size,18px) / -2) 0 0 calc(var(--glyph-size,18px) / -2);transform-origin:center;translate:var(--glyph-x,0px) var(--glyph-y,0px)}
 .handle.hover .h-glyph{opacity:var(--disc-glyph,0)}
 .h-glyph.pin{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 #pin-handle.on .pin path:first-child{fill:currentColor}
@@ -49,14 +49,11 @@ body[data-edge="top"] #card,body[data-edge="bottom"] #card{max-height:calc(100vh
 .account-extra{margin-top:12px;border-top:1px solid #252525;padding-top:8px}
 .extra-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:5px 0;background:none;border:0;color:#aaa;font:inherit;font-size:12px;cursor:pointer;text-align:left}
 .extra-toggle svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;transition:transform .22s}
-.extra-fold{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .24s ease,opacity .2s ease}
-.extra-content{min-height:0;overflow:hidden}
 .extra-row{font-size:12px;line-height:1.5;color:#b8b8bb;padding:4px 0}
-.account-extra.expanded .extra-fold{grid-template-rows:1fr;opacity:1}
 .account-extra.expanded .extra-toggle svg{transform:rotate(90deg)}
 .account-extra.expanded .extra-toggle{color:#eee}
 svg.reading{transform-origin:50% 50%}
-@media(prefers-reduced-motion:reduce){.extra-fold,.extra-toggle svg{transition:none}}
+@media(prefers-reduced-motion:reduce){.extra-toggle svg{transition:none}}
 
 #orb.update-available::after{content:"";position:absolute;right:3px;top:3px;width:6px;height:6px;border:2px solid #000;border-radius:50%;background:#8bafff;pointer-events:none}
 
@@ -74,3 +71,8 @@ body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{gap:6px}
    order the rings oppositely, the rings dip out mid-bend (--cross) rather than pass through each other */
 #pill .cell{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--cross,0) - var(--bend,0))}
 .handle.placed{opacity:calc(1 - var(--hf,0))}
+
+#extra-card{position:absolute;z-index:2;box-sizing:border-box;padding:16px 24px;border-radius:22px;background:transparent;color:var(--ink-2);font-size:12px;overflow:auto;visibility:hidden;pointer-events:none;
+  opacity:clamp(0,(var(--extra-open,0) - .75) / .25,1);translate:0 var(--extra-rise,0px)}
+#extra-card.show,#extra-card.closing{visibility:visible}
+#extra-card.show{pointer-events:auto}

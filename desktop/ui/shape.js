@@ -109,9 +109,9 @@ function drawStraight(){
   const w=pill.offsetWidth, h=pill.offsetHeight;
   if(!w||!h) return;
   const vertical=notchEdge==='left'||notchEdge==='right', L=vertical?h:w;
-  const depth=edgeDepth(notchEdge), d=Math.max(0,depth*openness), grown=Math.min(1,d/depth);
+  const proportions=handleMetrics(),depth=edgeDepth(notchEdge), d=Math.max(0,depth*openness), grown=Math.min(1,d/depth);
   const spread=Math.min(1.02,.75+.25*openness); // opening, it spreads along the edge a little too
-  const Ls=L*spread, u0=(L-Ls)/2, u1=u0+Ls, F=SHAPE.flare*grown, r=SHAPE.corner*grown;
+  const Ls=L*spread, u0=(L-Ls)/2, u1=u0+Ls, F=proportions.flare*grown, r=SHAPE.corner*grown;
   shapeSvg.style.transform=pillTransform;
   shapeSvg.setAttribute('width',w);shapeSvg.setAttribute('height',h);
   shapeBody.setAttribute('transform',`matrix(${edgeMatrix(notchEdge,w,h).join(' ')})`);
@@ -122,7 +122,7 @@ function drawStraight(){
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
   const detailRetreat=typeof detailOpen==='number'?1-smooth(detailOpen/.4):1;
   const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4)*detailRetreat;
-  const stroke=SHAPE.armStroke*grown;
+  const stroke=proportions.stroke*grown;
   setGoo(0,-300,-300,L+600,d+600);
   handles.forEach((h,i)=>{
     const cx=i?u1+F:u0-F, mid=(i?225:-45)*Math.PI/180, disc=Math.max(0,Math.min(1,h.value));
@@ -132,12 +132,12 @@ function drawStraight(){
     necks[i].removeAttribute('d');
     h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
-    const rest=14.625*grown, buried=rest+stroke*1.4;
+    const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
     // Mac GooArc: a buried drop pushes past its resting place on a neck, then unrolls.
     const slide=-buried*(1-out)+rest*(absorbing?1.2:2.1)*Math.sin(Math.PI*Math.min(out/(absorbing?.85:.8),1));
     const unrolled=smooth((out-(absorbing?.6:.52))/(absorbing?.35:.43));
     const onto=smooth((1-disc)/.55), half=Math.PI/4*unrolled*smooth(((1-disc)-.08)/.82);
-    const radius=SHAPE.arm, morphShift=radius*(1-onto);
+    const radius=proportions.arm, morphShift=radius*(1-onto);
     const home=absorbing?smooth(1-out):0;
     const baseMid=radius-morphShift-(1-disc)*slide;
     const centre=baseMid+(F+stroke-baseMid)*home*disc;
@@ -152,12 +152,12 @@ function drawStraight(){
     }
     h.ink.setAttribute('d',points.join(''));
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
-    let width=38+(arcWidth-38)*smooth((1-disc)/.8);
+    let width=proportions.disc+(arcWidth-proportions.disc)*smooth((1-disc)/.8);
     if(absorbing)width*=disc?(1-.72*home):smooth(out/.35);
     const goo=absorbing
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
       :stroke*.4*smooth(out/.15)*(1-smooth((out-.6)/.35));
-    const blur=Math.max(goo,5.5*Math.sin(Math.PI*disc));
+    const blur=Math.max(goo,5.5*proportions.scale*Math.sin(Math.PI*disc));
     h.ink.setAttribute('stroke-width',n(width+blur*.4));
     // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
     const armNeck=absorbing?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
@@ -182,6 +182,7 @@ function drawStraight(){
    corner closes up square only as the other part grows, and runs on past the screen edge so the goo has
    black to work with right up to the bezel. Blurred together at most half way round, they meet in the
    bend as one round body with no seam and no point (the Mac's CornerPassage). */
+function notchAlongLength(){return notchEdge==='top'||notchEdge==='bottom'?pill.offsetWidth:pill.offsetHeight;}
 function drawPassage(){
   const W=innerWidth, H=innerHeight, D=Math.max(edgeDepth(passage.first),edgeDepth(passage.second)), L=passage.before+passage.after;
   shapeSvg.style.transform='none';
@@ -192,8 +193,9 @@ function drawPassage(){
     if(length<1){ el.removeAttribute('d'); return; }
     const len=edge==='top'||edge==='bottom'?W:H, at=cornerAtStart?0:len;
     const depth=edgeDepth(edge), square=smooth(other/depth), size=smooth(length/depth);
-    const rc=SHAPE.corner*(1-square), fc=SHAPE.flare*(1-square), ext=bleed*square;
-    const rf=SHAPE.corner*size, ff=SHAPE.flare*size;
+    const flare=handleMetrics(edge,notchAlongLength()).flare;
+    const rc=SHAPE.corner*(1-square), fc=flare*(1-square), ext=bleed*square;
+    const rf=SHAPE.corner*size, ff=flare*size;
     const d=cornerAtStart
       ? partPath(at-ext,at+length,depth,rc,fc,rf,ff)
       : partPath(at-length,at+ext,depth,rf,ff,rc,fc);

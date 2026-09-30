@@ -909,7 +909,6 @@ function renderCard(){
   }
   if(snap.details?.length) html+=`<section class="account-extra">
     <button class="extra-toggle" type="button" aria-expanded="false">Account details <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 5 5-5 5"/></svg></button>
-    <div class="extra-fold"><div class="extra-content">${snap.details.map(detail=>`<div class="extra-row">${esc(detail)}</div>`).join('')}</div></div>
   </section>`;
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
     const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
@@ -922,15 +921,16 @@ function renderCard(){
       html+=moreRow(acts.length-SESSION_ROWS)+`</div>`;
     }
   }
-  const wasOpen=c.querySelector('.account-extra')?.classList.contains('expanded') && c.dataset.account===p.id;
+  const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   c.innerHTML=html;c.dataset.account=p.id;
+  if(typeof setExtraContent==='function')setExtraContent(snap.details||[]);
   const extra=c.querySelector('.account-extra');
   if(extra){
     const button=extra.querySelector('button');let closeTimer;
-    const expand=on=>{extra.classList.toggle('expanded',on);button.setAttribute('aria-expanded',String(on));};
+    const expand=on=>{extra.classList.toggle('expanded',on);button.setAttribute('aria-expanded',String(on));if(typeof setExtraShown==='function')setExtraShown(on);};
     extra.addEventListener('mouseenter',()=>{clearTimeout(closeTimer);expand(true);});
-    extra.addEventListener('mouseleave',()=>{closeTimer=setTimeout(()=>expand(false),220);});
+    extra.addEventListener('mouseleave',()=>{closeTimer=setTimeout(()=>{if(extra.isConnected&&!extraCard.matches(':hover'))expand(false);},220);});
     extra.addEventListener('focusin',()=>expand(true));
     button.addEventListener('click',()=>expand(!extra.classList.contains('expanded')));
     if(wasOpen) expand(true);
@@ -939,12 +939,12 @@ function renderCard(){
   if(changedAccount&&typeof changeDetailAccount==='function')changeDetailAccount();
   placeCard();
 }
-// Details stay aligned with their account, joined to the notch by a broad liquid shoulder.
+// Usage stays centered on the notch when the hovered account changes.
 function placeCard(){
   // Measured on screen, written inside #root, which is offset while it slides
   const o=document.getElementById('root').getBoundingClientRect();
   const r=pill.getBoundingClientRect(), cell=pill.querySelector(`.cell[data-p="${hoverId}"]`)||pill;
-  const cr=cell.getBoundingClientRect(), w=card.offsetWidth, h=card.offsetHeight;
+  const cr=r, w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
   if(notchEdge==='left') x=r.right;
   if(notchEdge==='right') x=r.left-w;
@@ -964,6 +964,7 @@ function placeCard(){
     tail.style.cssText=`left:${left-o.left}px;top:${top-o.top}px;width:${right-left}px;height:${bottom-top}px`;
   }
   if(typeof syncDetails==='function')syncDetails();
+  if(typeof placeExtraCard==='function')placeExtraCard();
 
 }
 
@@ -981,7 +982,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,250);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1001,6 +1002,7 @@ function flushHot(){
   const open=card.classList.contains('show');
   const rects=open?[rectOf(pill),rectOf(tail),rectOf(card)]:[rectOf(pill)];
   if(open&&typeof detailHotRect==='function'){const expanded=detailHotRect();if(expanded)rects.push(expanded);}
+  if(open&&typeof extraTarget==='number'&&extraTarget){rects.push(rectOf(extraCard));const bridge=extraBridgeRect();if(bridge)rects.push(bridge);}
   const controls={};
   if(placeHandles()){
     controls.settings=rectOf(orb);rects.push(controls.settings);
@@ -1079,6 +1081,7 @@ function pointerInHot(x,y){
   const p=pill.getBoundingClientRect();
   if(inRect(x,y,p,4))return true;
   if(!card.classList.contains('show'))return false;
+  if(typeof extraTarget==='number'&&extraTarget&&(inRect(x,y,extraCard.getBoundingClientRect(),4)||extraContains(x,y)))return true;
   if(typeof detailContains==='function'&&detailContains(x,y))return true;
   const c=card.getBoundingClientRect();
   if(inRect(x,y,c,4))return true;
@@ -1191,17 +1194,25 @@ function notice(msg){
    centre, as on the Mac, not the whole box; the card gives way while either is under the pointer.
    Settings opens the panel; Pin keeps the notch visible at its current location. */
 const orb=document.getElementById('orb'), pinHandle=document.getElementById('pin-handle');
-const HANDLE_REACH=28.5; // the Mac's hot zone, half of 57; square, so it matches the rect main.cjs tests
+function handleMetrics(edge=notchEdge,length){
+  const horizontal=edge==='top'||edge==='bottom';
+  const depth=horizontal?90:70;
+  length??=horizontal?pill.offsetWidth:pill.offsetHeight;
+  const scale=Math.max(.72,Math.min(1.25,Math.sqrt(depth/70)*(.72+.28*Math.min(1,length/228))));
+  return {scale,flare:38.7*scale,arm:28.5*scale,stroke:8.8*scale,disc:38*scale,reach:28.5*scale,glyph:18*scale};
+}
 let orbAt=null,pinAt=null,hovered=null,orbSpins=0,showPin=true,carrying=false;
 // x and y are on screen; the handles live in #root, which is offset while it slides
 function put(el,x,y){
   const o=document.getElementById('root').getBoundingClientRect();
-  el.style.left=(x-o.left-HANDLE_REACH)+'px';el.style.top=(y-o.top-HANDLE_REACH)+'px';
-  el.classList.add('placed');return {x,y,reach:HANDLE_REACH};
+  const {reach,glyph}=handleMetrics();
+  el.style.left=(x-o.left-reach)+'px';el.style.top=(y-o.top-reach)+'px';
+  el.style.width=el.style.height=2*reach+'px';el.style.setProperty('--glyph-size',glyph+'px');
+  el.classList.add('placed');return {x,y,reach};
 }
 function placeHandles(){
   const r=pill.getBoundingClientRect();if(!r.width)return false;
-  const R=parseFloat(getComputedStyle(pill).getPropertyValue('--fillet'))||38.7;
+  const R=handleMetrics().flare;
   // Each fillet's centre: the corner of its square diagonally opposite the one on the screen edge
   const far=notchEdge==='left'?[r.left+R,r.bottom+R]:notchEdge==='top'?[r.right+R,r.top+R]
     :notchEdge==='bottom'?[r.right+R,r.bottom-R]:[r.right-R,r.bottom+R];

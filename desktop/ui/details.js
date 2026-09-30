@@ -9,6 +9,7 @@ let detailBox=null,detailAim=null;
 let detailReading=1;
 
 function changeDetailAccount(){
+  setExtraShown(false,true);
   detailReading=reducedDetails()?1:0;card.style.setProperty('--detail-reading',detailReading);
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
@@ -41,7 +42,8 @@ function drawDetails(){
   // One outline starts at the bezel, grows around the readings, and returns to the bezel.
   // There is no second rectangle or narrow connector beneath the original notch.
   const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
-  detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,SHAPE.flare,radius,SHAPE.flare));
+  detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
+  if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
 function detailHotRect(){
@@ -97,3 +99,77 @@ function setDetailsShown(on,instant=false){
   }
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
+
+// Account metadata unfolds as its own frame; it never changes the main notch outline.
+const extraCard=document.createElement('div');extraCard.id='extra-card';extraCard.setAttribute('aria-hidden','true');
+card.parentElement.append(extraCard);
+const extraPath=document.createElementNS(SVG_NS,'path');detailSvg.append(extraPath);
+detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}</defs>`);
+const extraFilter=detailSvg.querySelector('#extra-goo');
+let extraOpen=0,extraTarget=0,extraVelocity=0,extraFrame=0,extraLast=0;
+function setExtraContent(rows){
+  extraCard.innerHTML=rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('');
+  if(!rows.length)setExtraShown(false,true);
+  placeExtraCard();
+}
+function placeExtraCard(){
+  const gap=12,origin=document.getElementById('root').getBoundingClientRect(),c=card.getBoundingClientRect();
+  extraCard.style.width=c.width+'px';
+  extraCard.style.maxHeight=Math.max(48,innerHeight-c.height-32)+'px';
+  const h=extraCard.offsetHeight;
+  let y=notchEdge==='bottom'?c.top-h-gap:c.bottom+gap;
+  if(y+h>innerHeight-8)y=c.top-h-gap;
+  y=Math.max(8,Math.min(innerHeight-h-8,y));
+  extraCard.style.left=c.left-origin.left+'px';extraCard.style.top=y-origin.top+'px';
+  drawExtra();
+}
+function drawExtra(){
+  extraCard.style.setProperty('--extra-open',Math.max(0,extraOpen));
+  extraCard.classList.toggle('show',extraTarget===1);extraCard.classList.toggle('closing',extraTarget===0&&extraOpen>.001);
+  if(extraOpen<.001){extraPath.removeAttribute('d');return;}
+  const x=extraCard.offsetLeft,y=extraCard.offsetTop,w=extraCard.offsetWidth,h=extraCard.offsetHeight;
+  const above=y<card.offsetTop,anchor=above?card.offsetTop:card.offsetTop+card.offsetHeight;
+  const t=Math.max(0,extraOpen),near=anchor+((above?y+h:y)-anchor)*t;
+  const far=anchor+((above?y:y+h)-anchor)*t,top=Math.min(near,far),bottom=Math.max(near,far);
+  const mid=x+w/2,left=mid-w/2*Math.min(1,t),right=mid+w/2*Math.min(1,t),r=Math.min(22,(bottom-top)/2,(right-left)/2);
+  const rect=`M${n(left+r)} ${n(top)}H${n(right-r)}Q${n(right)} ${n(top)} ${n(right)} ${n(top+r)}V${n(bottom-r)}Q${n(right)} ${n(bottom)} ${n(right-r)} ${n(bottom)}H${n(left+r)}Q${n(left)} ${n(bottom)} ${n(left)} ${n(bottom-r)}V${n(top+r)}Q${n(left)} ${n(top)} ${n(left+r)} ${n(top)}Z`;
+  // The bridge rounds and thins as the growing frame separates from the usage view.
+  const neck=32*(1-smooth((t-.25)/.65));
+  const bridge=neck>.1?`M${n(mid-neck)} ${n(anchor)}Q${n(mid-neck*.35)} ${n((anchor+near)/2)} ${n(mid-neck)} ${n(near)}H${n(mid+neck)}Q${n(mid+neck*.35)} ${n((anchor+near)/2)} ${n(mid+neck)} ${n(anchor)}Z`:'';
+  extraPath.setAttribute('d',rect+bridge);
+  const blur=3*Math.sin(Math.PI*Math.min(1,t));
+  extraFilter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  for(const [key,value] of Object.entries({x:left-24,y:Math.min(top,anchor)-24,width:right-left+48,height:Math.max(bottom,anchor)-Math.min(top,anchor)+48}))extraFilter.setAttribute(key,n(value));
+  if(blur>.2)extraPath.setAttribute('filter','url(#extra-goo)');else extraPath.removeAttribute('filter');
+  extraCard.style.setProperty('--extra-rise',`${(anchor-(above?y+h:y))*(1-Math.min(1,t))}px`);
+}
+function extraBridgeRect(){
+  const c=card.getBoundingClientRect(),e=extraCard.getBoundingClientRect(),above=e.top<c.top;
+  return [c.left+c.width/2-36,above?e.bottom:c.bottom,72,Math.max(0,above?c.top-e.bottom:e.top-c.bottom)];
+}
+function extraContains(x,y){
+  const r=extraBridgeRect();return x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3];
+}
+function setExtraShown(on,instant=false){
+  extraTarget=on&&extraCard.textContent?1:0;extraCard.setAttribute('aria-hidden',String(!extraTarget));
+  card.querySelector('.extra-toggle')?.setAttribute('aria-expanded',String(!!extraTarget));
+  card.querySelector('.account-extra')?.classList.toggle('expanded',!!extraTarget);
+  placeExtraCard();
+  if(instant||reducedDetails()){
+    cancelAnimationFrame(extraFrame);extraFrame=0;extraLast=0;extraVelocity=0;extraOpen=extraTarget;drawExtra();reportHot();return;
+  }
+  if(extraFrame)return;
+  const step=now=>{
+    const dt=Math.min(.032,(now-(extraLast||now-16))/1000);extraLast=now;
+    const omega=2*Math.PI/.58,damping=extraTarget?.78:1;
+    extraVelocity+=(-omega*omega*(extraOpen-extraTarget)-2*damping*omega*extraVelocity)*dt;
+    extraOpen+=extraVelocity*dt;
+    const settled=Math.abs(extraOpen-extraTarget)<.002&&Math.abs(extraVelocity)<.025;
+    if(settled){extraOpen=extraTarget;extraVelocity=0;}
+    drawExtra();reportHot();
+    if(settled){extraFrame=0;extraLast=0;}else extraFrame=requestAnimationFrame(step);
+  };
+  extraFrame=requestAnimationFrame(step);
+}
+extraCard.addEventListener('mouseenter',()=>{clearTimeout(hideTimer);});
+extraCard.addEventListener('mouseleave',()=>{setTimeout(()=>{if(!extraCard.matches(':hover')&&!card.querySelector('.account-extra')?.matches(':hover'))setExtraShown(false);},220);});
