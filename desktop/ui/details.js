@@ -152,8 +152,7 @@ function extraContains(x,y){
 }
 function setExtraShown(on,instant=false){
   extraTarget=on&&extraCard.textContent?1:0;extraCard.setAttribute('aria-hidden',String(!extraTarget));
-  card.querySelector('.extra-toggle')?.setAttribute('aria-expanded',String(!!extraTarget));
-  card.querySelector('.account-extra')?.classList.toggle('expanded',!!extraTarget);
+  card.querySelector('.metadata-trigger')?.setAttribute('aria-expanded',String(!!extraTarget));
   placeExtraCard();
   if(instant||reducedDetails()){
     cancelAnimationFrame(extraFrame);extraFrame=0;extraLast=0;extraVelocity=0;extraOpen=extraTarget;drawExtra();reportHot();return;
@@ -172,4 +171,4 @@ function setExtraShown(on,instant=false){
   extraFrame=requestAnimationFrame(step);
 }
 extraCard.addEventListener('mouseenter',()=>{clearTimeout(hideTimer);});
-extraCard.addEventListener('mouseleave',()=>{setTimeout(()=>{if(!extraCard.matches(':hover')&&!card.querySelector('.account-extra')?.matches(':hover'))setExtraShown(false);},220);});
+extraCard.addEventListener('mouseleave',()=>{setTimeout(()=>{if(!extraCard.matches(':hover')&&!card.matches(':hover'))setExtraShown(false);},220);});

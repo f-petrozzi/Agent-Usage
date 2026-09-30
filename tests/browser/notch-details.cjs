@@ -11,7 +11,7 @@ const now = Date.now();
 const win = (id, used, h) => ({ id, label: id, used, resets_at: now + h * 3600e3, count: null, derived: false });
 const accounts = [
   { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['Plan: Max'] } },
-  { id: 'codex', base: 'codex', name: 'Codex', glyph: 'Cx', snap: { status: 'ok', windows: [win('primary', .18, 2), win('secondary', .33, 100)], fetched_at: now, note: '', details: [] } },
+  { id: 'codex', base: 'codex', name: 'Codex', glyph: 'Cx', snap: { status: 'ok', windows: [win('primary', .18, 2), win('secondary', .33, 100)], fetched_at: now, note: '', details: ['Plan: Plus'] } },
 ];
 const glyphs = {};
 for (const p of ['claude', 'codex']) glyphs[p] = { kind: 'svg', svg: fs.readFileSync(path.join(UI, 'glyphs', p + '.svg'), 'utf8') };
@@ -82,8 +82,9 @@ const answers = {
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),true,'cross the connected shoulder');
     await page.mouse.move(initial.box.x+initial.box.width/2,initial.box.y+initial.box.height/2);await page.waitForTimeout(400);
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),true,'read within the expansion');
+    assert.equal(await page.locator('.account-extra,.extra-toggle').count(),0,'no separate Account details row');
     const geometry=await page.evaluate(()=>({ink:detailPath.getAttribute('d'),pill:pill.getBoundingClientRect().toJSON()}));
-    await page.locator('.extra-toggle').hover();await page.waitForTimeout(950);
+    await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
     assert.equal(await page.evaluate(()=>extraOpen),1);
     assert.equal(await page.evaluate(()=>detailPath.getAttribute('d')),geometry.ink,'metadata never enlarges the main notch');
     const metadata=await page.locator('#extra-card').boundingBox();
@@ -97,6 +98,8 @@ const answers = {
     assert.equal(await page.evaluate(()=>extraTarget),0,'switching accounts closes metadata');
     const switched=await page.locator('#card').boundingBox();
     assert.ok(edge==='top'||edge==='bottom'?Math.abs(switched.x+switched.width/2-(initial.box.x+initial.box.width/2))<1:Math.abs(switched.y+switched.height/2-(initial.box.y+initial.box.height/2))<1,'usage frame stays centered when accounts switch');
+    await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
+    assert.equal(await page.locator('#extra-card').innerText(),'Plan: Plus','name hover shows the newly selected account metadata');
     await page.mouse.move(640,400);await page.waitForTimeout(1100);
     assert.equal(await page.evaluate(()=>detailOpen),0);assert.equal(await page.evaluate(()=>detailPath.getAttribute('d')),null);
     assert.equal(await page.evaluate(()=>card.classList.contains('closing')),false);

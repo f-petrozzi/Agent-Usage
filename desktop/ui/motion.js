@@ -25,8 +25,8 @@ function aim(edge,along,snap=false){
 }
 /* Carried round a corner, each ring keeps its offset from the notch's middle along
    the border, clockwise, and follows a line half the notch's depth in that takes the corner on one cubic
-   rather than stepping across it (the Mac's ringPoint). Where the two edges lay the rings out in opposite
-   orders (bottom-right and top-left), they dip out mid-bend instead of passing through each other. */
+   rather than stepping across it (the Mac's ringPoint). The layout keeps account order clockwise
+   on every edge, so the same trajectory and per-ring fade work at all four corners. */
 const HEADING={top:[1,0],right:[0,1],bottom:[-1,0],left:[0,-1]}, CLOCKWISE={top:1,right:1,bottom:-1,left:-1};
 function trackPoint(t){
   const w=innerWidth,h=innerHeight,total=2*(w+h),round=72;
@@ -43,20 +43,18 @@ function trackPoint(t){
 }
 let carriedRound=false;
 function carryItems(pass,px,py,vertical,L){
-  const items=[...pill.querySelectorAll('.cell')], root=document.getElementById('root');
+  const items=[...pill.querySelectorAll('.cell')];
   if(!pass){
-    if(carriedRound){ for(const el of items){ el.style.transform=''; el.style.removeProperty('--bend'); } root.style.setProperty('--cross','0'); carriedRound=false; }
+    if(carriedRound){ for(const el of items){ el.style.transform=''; el.style.removeProperty('--bend'); } carriedRound=false; }
     return;
   }
   carriedRound=true;
   const w=innerWidth,h=innerHeight,total=2*(w+h), cornerAt={tr:w,br:w+h,bl:2*w+h,tl:0}[pass.corner];
-  const p=pass.after/(pass.before+pass.after), mix=p*p*(3-2*p), s1=CLOCKWISE[pass.first], s2=CLOCKWISE[pass.second];
-  root.style.setProperty('--cross',(s1===s2?0:clamp(1-Math.abs(1-2*p)*2.2,0,1)).toFixed(3));
   for(const el of items){
     el.style.transform='';
     const cx=px+el.offsetLeft+el.offsetWidth/2, cy=py+el.offsetTop+el.offsetHeight/2;
-    const a=(vertical?el.offsetTop+el.offsetHeight/2:el.offsetLeft+el.offsetWidth/2)-L/2;
-    const t=position+(s1+(s2-s1)*mix)*a, [tx,ty]=trackPoint(t);
+    const a=CLOCKWISE[notchEdge]*((vertical?el.offsetTop+el.offsetHeight/2:el.offsetLeft+el.offsetWidth/2)-L/2);
+    const t=position+a, [tx,ty]=trackPoint(t);
     el.style.transform=`translate(${(tx-cx).toFixed(1)}px,${(ty-cy).toFixed(1)}px)`;
     // The line in from the border is shorter round the bend than the border, so rings would crowd there:
     // each goes through the bend inside the black instead, fading out and back as it passes the corner

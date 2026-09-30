@@ -46,14 +46,8 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 body[data-edge="left"] #card{--ride-x:-1;--ride-y:0}body[data-edge="right"] #card{--ride-x:1;--ride-y:0}
 body[data-edge="top"] #card{--ride-x:0;--ride-y:-1}body[data-edge="bottom"] #card{--ride-x:0;--ride-y:1}
 body[data-edge="top"] #card,body[data-edge="bottom"] #card{max-height:calc(100vh - 120px)!important}
-.account-extra{margin-top:12px;border-top:1px solid #252525;padding-top:8px}
-.extra-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:5px 0;background:none;border:0;color:#aaa;font:inherit;font-size:12px;cursor:pointer;text-align:left}
-.extra-toggle svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;transition:transform .22s}
 .extra-row{font-size:12px;line-height:1.5;color:#b8b8bb;padding:4px 0}
-.account-extra.expanded .extra-toggle svg{transform:rotate(90deg)}
-.account-extra.expanded .extra-toggle{color:#eee}
 svg.reading{transform-origin:50% 50%}
-@media(prefers-reduced-motion:reduce){.extra-toggle svg{transition:none}}
 
 #orb.update-available::after{content:"";position:absolute;right:3px;top:3px;width:6px;height:6px;border:2px solid #000;border-radius:50%;background:#8bafff;pointer-events:none}
 
@@ -67,12 +61,17 @@ svg.reading{transform-origin:50% 50%}
 body[data-edge="top"] #pill,body[data-edge="bottom"] #pill{padding:0 18px;height:90px;width:var(--length);align-items:center;gap:38px}
 body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{gap:6px}
 
-/* Near a corner the handles step back (--hf, 0 to 1, from motion.js); carried round one whose two edges
-   order the rings oppositely, the rings dip out mid-bend (--cross) rather than pass through each other */
-#pill .cell{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--cross,0) - var(--bend,0))}
+/* Near a corner the handles step back (--hf). Every corner uses the same per-ring bend fade. */
+#pill .cell{opacity:calc(min(1, var(--open,1) * 2.6 - 1.55) - var(--bend,0))}
 .handle.placed{opacity:calc(1 - var(--hf,0))}
 
 #extra-card{position:absolute;z-index:2;box-sizing:border-box;padding:16px 24px;border-radius:22px;background:transparent;color:var(--ink-2);font-size:12px;overflow:auto;visibility:hidden;pointer-events:none;
   opacity:clamp(0,(var(--extra-open,0) - .75) / .25,1);translate:0 var(--extra-rise,0px)}
 #extra-card.show,#extra-card.closing{visibility:visible}
 #extra-card.show{pointer-events:auto}
+
+.metadata-trigger{appearance:none;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:14px;font-weight:700;text-align:left;cursor:default}
+.metadata-trigger:focus-visible{outline:1px solid #888;outline-offset:3px;border-radius:3px}
+/* Keep account order clockwise on every edge, so gauges never swap places inside a corner. */
+body[data-edge="bottom"] #pill{flex-direction:row-reverse}
+body[data-edge="left"] #pill{flex-direction:column-reverse}

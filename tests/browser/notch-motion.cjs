@@ -53,11 +53,18 @@ const answers = {
     return {pass:passage,edge:notchEdge,clip:getComputedStyle(pill).clipPath,
       transforms:[partA,partB].map(p=>p.getAttribute('transform'))};
   },t);
+  const cornerFades=new Map();
+  await page.addStyleTag({content:'#pill .cell{transition:none!important}'});
   for(const [corner,at] of [['tl',0],['tr',1280],['br',2080],['bl',3360]]){
     for(const direction of [1,-1]){
       for(const offset of [-300,-160,-110,-80,-60,-20,0,20,60,80,110,160,300]){
         const result=await sample(at+direction*offset);
         assert.equal(result.clip,'none');
+        const fades=await page.evaluate(()=>[...pill.querySelectorAll('.cell')].map(el=>+getComputedStyle(el).opacity));
+        const key=direction+':'+offset;
+        if(cornerFades.has(key))for(let i=0;i<fades.length;i++)assert.ok(Math.abs(fades[i]-cornerFades.get(key)[i])<.01,JSON.stringify({corner,direction,offset,fades,expected:cornerFades.get(key)}));
+        else cornerFades.set(key,fades);
+        if(offset===0)assert.ok(fades.every(opacity=>opacity>.05),'all gauges retain the same visible bend fade at each corner');
         if(!result.pass) assert.deepEqual(result.transforms,[null,null],corner+' leaves no page transform on a straight part');
         else assert.equal(result.pass.corner,corner);
         // Check the actual rendered black behind every visible ring, including those outside the pill.

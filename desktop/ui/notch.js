@@ -877,7 +877,8 @@ function renderCard(){
   const headIcon=glyphHtml(p,true);
   // p.name is no longer a constant: for a second account it is built from the home
   // directory's slug and the subscriptionType read out of .credentials.json.
-  let html=`<div class="c-head">${headIcon}<span class="c-title">${esc(ui().title(p.name))}</span></div>`;
+  const title=esc(ui().title(p.name));
+  let html=`<div class="c-head">${headIcon}${snap.details?.length?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -907,9 +908,6 @@ function renderCard(){
     if(group) html+=`</div>`;
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
-  if(snap.details?.length) html+=`<section class="account-extra">
-    <button class="extra-toggle" type="button" aria-expanded="false">Account details <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3 5 5-5 5"/></svg></button>
-  </section>`;
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
     const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
     if(acts.length){
@@ -925,15 +923,17 @@ function renderCard(){
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   c.innerHTML=html;c.dataset.account=p.id;
   if(typeof setExtraContent==='function')setExtraContent(snap.details||[]);
-  const extra=c.querySelector('.account-extra');
-  if(extra){
-    const button=extra.querySelector('button');let closeTimer;
-    const expand=on=>{extra.classList.toggle('expanded',on);button.setAttribute('aria-expanded',String(on));if(typeof setExtraShown==='function')setExtraShown(on);};
-    extra.addEventListener('mouseenter',()=>{clearTimeout(closeTimer);expand(true);});
-    extra.addEventListener('mouseleave',()=>{closeTimer=setTimeout(()=>{if(extra.isConnected&&!extraCard.matches(':hover'))expand(false);},220);});
-    extra.addEventListener('focusin',()=>expand(true));
-    button.addEventListener('click',()=>expand(!extra.classList.contains('expanded')));
-    if(wasOpen) expand(true);
+  const titleTrigger=c.querySelector('.metadata-trigger');
+  if(titleTrigger){
+    let closeTimer;
+    const expand=on=>setExtraShown(on);
+    titleTrigger.addEventListener('mouseenter',()=>{clearTimeout(closeTimer);expand(true);});
+    titleTrigger.addEventListener('mouseleave',()=>{closeTimer=setTimeout(()=>{
+      if(titleTrigger.isConnected&&!c.matches(':hover')&&!extraCard.matches(':hover'))expand(false);
+    },250);});
+    titleTrigger.addEventListener('focusin',()=>expand(true));
+    titleTrigger.addEventListener('click',()=>expand(!extraTarget));
+    if(wasOpen)expand(true);
   }
   c.scrollTop=scroll;
   if(changedAccount&&typeof changeDetailAccount==='function')changeDetailAccount();
