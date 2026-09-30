@@ -21,16 +21,33 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       }};
     });
     await page.goto('file://'+path.resolve(__dirname,'../../desktop/ui/settings.html'));
-    await page.getByRole('button',{name:'Move Codex B down',exact:true}).waitFor();
-    await page.getByRole('button',{name:'Move Codex B down',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelector('.acct-label').textContent==='Claude');
-    assert.deepEqual(await page.locator('.acct-label').allTextContents(),['Claude','Codex B','Antigravity']);
+    const names=()=>page.locator('.acct-name').allTextContents();
+    const notchOrder=()=>page.evaluate(()=>[...document.querySelectorAll('#notch .n-cell')].sort((a,b)=>a.getBoundingClientRect().x-b.getBoundingClientRect().x).map(c=>c.getBoundingClientRect().x));
+    await page.getByRole('listitem',{name:'Codex B',exact:true}).waitFor();
+    // Alt+arrow moves the focused account, and focus stays on it
+    await page.getByRole('listitem',{name:'Codex B',exact:true}).focus();
+    await page.keyboard.press('Alt+ArrowDown');
+    await page.waitForFunction(()=>document.querySelector('.acct-name').textContent==='Claude');
+    assert.deepEqual(await names(),['Claude','Codex B','Antigravity']);
+    assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('aria-label')),'Codex B');
+    await page.waitForFunction(()=>window.__calls.some(c=>c.cmd==='set_account_order'));
+    // The notch shows the two visible accounts; the hidden one has no ring there
+    await page.waitForFunction(()=>document.querySelectorAll('#notch .n-cell').length===2);
+    assert.equal((await notchOrder()).length,2);
     assert.equal(await page.getByRole('switch',{name:'Antigravity',exact:true}).getAttribute('aria-checked'),'false');
     await page.getByRole('switch',{name:'Usage warnings for Claude',exact:true}).click();
     await page.waitForFunction(()=>window.__calls.some(c=>c.cmd==='set_alert_preferences'&&c.args.muted?.includes('1')));
     assert.equal(await page.getByRole('switch',{name:'Usage warnings for Claude',exact:true}).getAttribute('aria-checked'),'false');
+    // A drag let go with Escape puts the row back where it was
+    const box=await page.locator('.acct').nth(2).boundingBox();
+    await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+    await page.mouse.move(box.x+box.width/2,box.y-100,{steps:6});
+    await page.keyboard.press('Escape');await page.mouse.up();
+    assert.deepEqual(await names(),['Claude','Codex B','Antigravity']);
     await page.locator('.acct').nth(2).dragTo(page.locator('.acct').nth(0));
-    await page.waitForFunction(()=>document.querySelector('.acct-label').textContent==='Antigravity');
+    await page.waitForFunction(()=>document.querySelector('.acct-name').textContent==='Antigravity');
+    assert.deepEqual(await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='set_account_order').at(-1).args.ids),['2','1','0']);
+    await page.waitForFunction(()=>[...document.querySelectorAll('.acct')].every(e=>!e.style.transform));
     assert.equal(await page.getByRole('switch',{name:'Antigravity',exact:true}).getAttribute('aria-checked'),'false');
     await page.screenshot({path:'/tmp/agent-usage-3.1-accounts.png'});
     await page.getByRole('tab',{name:'General',exact:true}).click();

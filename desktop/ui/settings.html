@@ -5,82 +5,102 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
 <title>Agent Usage Settings</title>
 <style>
-  /* The Mac's Settings (Sources/Settings/SettingsView.swift) over Windows 11's Mica: a sidebar card
-     darker than the pane, grouped sections with captions as rows, and Windows' own control cues : 
-     a soft fill with an accent bar for the selected section, outlined toggles, the system accent.
-     The panel is translucent so Mica shows through; without Mica, body.solid draws the same tones. */
+  /* Colour means usage in this app, so the chrome is graphite and ink: the selected state is ink, and the
+     only colour on the page is a usage reading. The notch is true black in every theme, so it reads as a
+     cut-out of the window rather than another surface on it. */
   :root{
-    /* Colour means usage in this app, so the chrome itself is black and white: the selected state is ink */
-    --accent:#f2f2f4; --on-accent:#000000;
-    --text:#f2f2f4; --text2:rgba(235,235,245,.62); --text3:rgba(235,235,245,.38);
-    --pane:rgba(255,255,255,.13); --side:rgba(0,0,0,.40); --group:rgba(255,255,255,.06);
-    --line:rgba(255,255,255,.08); --hi:rgba(255,255,255,.05); --sep:rgba(255,255,255,.08);
-    --seg-bg:rgba(255,255,255,.09); --hover:rgba(255,255,255,.06); --sel-soft:rgba(255,255,255,.08);
-    --btn:rgba(255,255,255,.10); --btn-hover:rgba(255,255,255,.16);
-    --danger-bg:rgba(255,99,99,.14); --danger:#ff8a8a;
+    --ground:#1d1d20; --surface:#27272b; --surface-hover:#2b2b30; --raised:#313136; --well:rgba(255,255,255,.07); --well-hover:rgba(255,255,255,.12);
+    --ink:#f4f4f6; --on-ink:#000000;
+    --text:#f4f4f6; --text2:rgba(235,235,245,.60); --text3:rgba(235,235,245,.34);
+    --line:rgba(255,255,255,.06); --hi:rgba(255,255,255,.05); --sep:rgba(255,255,255,.07);
+    --hover:rgba(255,255,255,.05); --nav-sel:rgba(255,255,255,.075);
+    --danger-bg:rgba(255,99,99,.12); --danger:#ff8a80;
+    --shadow:rgba(0,0,0,.55); --track:rgba(255,255,255,.11);
+    --ample:#00FF88; --watch:#F2FF00; --crit:#FF3F00;
+    --caret:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23ebebf5' stroke-opacity='.6' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --spring:cubic-bezier(.32,.72,.24,1); --bounce:cubic-bezier(.34,1.4,.64,1);
+    color-scheme:dark;
   }
   /* Rust says which appearance this is (get_theme_resolved), so a forced Light or Dark lands here
-     whatever Windows is set to. WebView2's own scheme does not follow a live theme change. */
+     whatever Windows is set to. */
   :root[data-theme="light"]{
-      --accent:#1d1d1f; --on-accent:#ffffff;
-      --text:#1d1d1f; --text2:rgba(60,60,67,.70); --text3:rgba(60,60,67,.45);
-      --pane:rgba(255,255,255,.50); --side:rgba(0,0,0,.06); --group:rgba(255,255,255,.72);
-      --line:rgba(0,0,0,.07); --hi:rgba(255,255,255,.80); --sep:rgba(0,0,0,.07);
-      --seg-bg:rgba(0,0,0,.06); --hover:rgba(0,0,0,.04); --sel-soft:rgba(0,0,0,.05);
-      --btn:rgba(0,0,0,.05); --btn-hover:rgba(0,0,0,.09);
-      --danger-bg:rgba(196,43,28,.10); --danger:#c42b1c;
+    --ground:#f1f1f3; --surface:#ffffff; --surface-hover:#fcfcfd; --raised:#ffffff; --well:rgba(0,0,0,.055); --well-hover:rgba(0,0,0,.09);
+    --ink:#1d1d1f; --on-ink:#ffffff;
+    --text:#1d1d1f; --text2:rgba(60,60,67,.68); --text3:rgba(60,60,67,.40);
+    --line:rgba(0,0,0,.07); --hi:rgba(255,255,255,.9); --sep:rgba(0,0,0,.07);
+    --hover:rgba(0,0,0,.04); --nav-sel:rgba(0,0,0,.06);
+    --danger-bg:rgba(196,43,28,.09); --danger:#c42b1c;
+    --shadow:rgba(28,28,40,.22); --track:rgba(0,0,0,.10);
+    --ample:#00A356; --watch:#B08800; --crit:#FF3F00;
+    --caret:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%233c3c43' stroke-opacity='.7' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    color-scheme:light;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:transparent;overflow:hidden;user-select:none}
-  body{font:13.5px/1.35 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:var(--text)}
-  body.solid{--pane:#3d3d40;--side:#1f2022;--group:#48484b;--hi:transparent;background:#2b2b2e}
-  :root[data-theme="light"] body.solid{--pane:#f0f0f2;--side:#e2e2e6;--group:#ffffff;background:#f0f0f2}
-  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  button{font:inherit;color:inherit}
+  html,body{margin:0;height:100%;overflow:hidden;user-select:none}
+  body{font:13.5px/1.35 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;color:var(--text);background:var(--ground);
+    -webkit-font-smoothing:antialiased}
+  :focus{outline:none}
+  :focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  button{font:inherit;color:inherit;cursor:default}
   html[lang="ko"] body{word-break:keep-all}
   [hidden]{display:none!important}
 
-  #app{display:flex;height:100%;background:var(--pane)}
+  #app{display:flex;height:100%}
 
-  /* ---- sidebar: a card inset from the window, as on the Mac ---- */
-  #side{width:196px;margin:4px;border-radius:14px;background:var(--side);border:1px solid var(--line);
-    box-shadow:inset 0 1px 0 var(--hi);display:flex;flex-direction:column;padding:0 8px 8px;flex:none}
-  #side .band{height:48px;flex:none}
+  /* ---- sidebar: flush with the window; the selection is one soft pill with Windows' stretching bar ---- */
+  #side{position:relative;width:208px;flex:none;display:flex;flex-direction:column;padding:0 10px 10px}
+  #side .band{height:78px;flex:none}
   #side .grow{flex:1}
-  .row{position:relative;display:flex;align-items:center;gap:9px;width:100%;height:32px;padding:0 8px;margin-bottom:2px;
-    border:0;border-radius:8px;background:transparent;text-align:left;font-size:13.5px}
-  .row:hover{background:var(--hover)}
-  .row.sel{background:var(--sel-soft)}
-  .row.sel::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:var(--accent)}
+  .row{position:relative;z-index:1;display:flex;align-items:center;gap:11px;width:100%;height:36px;padding:0 12px;margin-bottom:2px;
+    border:0;border-radius:9px;background:transparent;text-align:left;font-size:13.5px;color:var(--text2);transition:color .18s ease}
+  .row:hover{color:var(--text)}
+  .row:not(.sel):hover{background:var(--hover)}
+  .row.sel{color:var(--text)}
+  #nav-pill{position:absolute;left:10px;right:10px;top:0;height:36px;border-radius:9px;background:var(--nav-sel);pointer-events:none;
+    box-shadow:inset 0 1px 0 var(--hi)}
+  #nav-bar{position:absolute;left:10px;top:0;width:3px;height:0;border-radius:2px;background:var(--ink);pointer-events:none;z-index:2}
+  #side:not(.placed) #nav-pill,#side:not(.placed) #nav-bar{opacity:0}
   /* Line icons in the notch's own vocabulary: a reading, the notch leaving the edge, its settings sliders */
-  .ico{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;color:var(--text2)}
+  .ico{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
   .ico .dim{opacity:.35}
   .ico .solid{fill:currentColor;stroke:none}
-  .row.sel .ico,.row:hover .ico{color:var(--text)}
-  #quit:hover .ico{color:var(--danger)}
+  #quit:hover{color:var(--danger)}
 
   /* ---- pane ---- */
-  #pane{flex:1;display:flex;flex-direction:column;min-width:0}
-  #head{height:52px;display:flex;align-items:center;padding-left:24px;position:relative;flex:none}
-  #head h1{font-size:22px;font-weight:600;margin:0}
+  #pane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+  #head{height:60px;display:flex;align-items:center;padding:0 28px 0 32px;position:relative;flex:none}
+  #head h1{font:600 26px/1 "Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;letter-spacing:-.015em;margin:14px 0 0}
   #close{position:absolute;top:0;right:0;width:46px;height:34px;border:0;background:transparent;color:var(--text2);
-    display:grid;place-items:center;border-top-right-radius:8px}
+    display:grid;place-items:center;z-index:3;transition:background-color .12s ease,color .12s ease}
   #close svg{width:10px;height:10px;stroke:currentColor;stroke-width:1.2}
   #close:hover{background:#c42b1c;color:#fff}
-  #strip{margin:0 20px 8px;padding:7px 10px;border-radius:8px;background:var(--danger-bg);color:var(--danger);font-size:12px;overflow-wrap:anywhere}
-  #body{flex:1;overflow:auto;padding:0 20px 20px;scrollbar-width:none}
+  #strip{margin:0 32px 10px;padding:8px 12px;border-radius:10px;background:var(--danger-bg);color:var(--danger);font-size:12.5px;overflow-wrap:anywhere}
+  #body{flex:1;overflow:auto;padding:14px 32px 28px;scrollbar-width:none}
   #body::-webkit-scrollbar{display:none}
 
-  .sec{font-size:13.5px;font-weight:600;margin:18px 12px 8px}
-  .pane > .sec:first-child{margin-top:6px}
-  .group{background:var(--group);border:1px solid var(--line);border-radius:10px;box-shadow:inset 0 1px 0 var(--hi)}
-  .group + .group{margin-top:14px}
-  .pane > .group:first-child{margin-top:6px}
-  .group > * + *{border-top:1px solid var(--sep)}
-  .item{padding:9px 12px;min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-  #update-row{position:relative;isolation:isolate;overflow:hidden}
+  /* ---- the window's own notch: the Accounts tab's order and visibility, as the notch will show them ---- */
+  #notch{position:absolute;top:0;left:0;height:44px;pointer-events:none;z-index:2;will-change:transform}
+  #notch svg.body{position:absolute;top:0;left:0;height:44px;overflow:visible}
+  #notch svg.body path{fill:#000}
+  .n-cell{position:absolute;top:8px;left:0;width:28px;height:28px;margin-left:-14px;will-change:transform}
+  .n-cell svg{position:absolute;inset:0;width:28px;height:28px}
+  .n-cell .glyph{position:absolute;inset:0;margin:auto;width:12px;height:12px;color:#fff}
+  .n-cell .glyph svg{position:static;width:12px;height:12px}
+  .n-cell .glyph.letter{font-size:7px;background:none}
+  .n-cell.stale svg.ring{opacity:.45}
+
+  /* ---- grouped settings ---- */
+  .sec{font-size:12.5px;font-weight:600;color:var(--text2);margin:26px 4px 9px}
+  .pane{max-width:720px}
+  .pane > .sec:first-child{margin-top:4px}
+  .group{background:var(--surface);border-radius:12px;box-shadow:inset 0 1px 0 var(--hi),0 0 0 1px var(--line)}
+  .pane > .group:first-child{margin-top:4px}
+  .item{position:relative;padding:8px 14px 8px 16px;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+  /* Separators start under the text, not at the group's edge */
+  .group > * + *::after{content:"";position:absolute;left:16px;right:0;top:0;height:1px;background:var(--sep);pointer-events:none}
+  #update-row{isolation:isolate;overflow:hidden}
   #update-progress{position:absolute;inset:0;pointer-events:none}
-  #update-row::before{content:"";position:absolute;inset:0 auto 0 0;width:var(--update-progress,0%);background:#00FF88;opacity:.22;z-index:-1;
+  #update-row::before{content:"";position:absolute;inset:0 auto 0 0;width:var(--update-progress,0%);background:var(--ample);opacity:.18;z-index:-1;
     transition:width .18s linear}
   @media(prefers-reduced-motion:reduce){#update-row::before{transition:none}}
   /* A segmented control that does not fit beside its label (three Russian options do not) moves under it,
@@ -89,59 +109,99 @@
   .item > .seg{margin-left:auto}
   .value{color:var(--text2);font-variant-numeric:tabular-nums}
 
-  /* ---- account rows ---- */
-  .acct{padding:9px 12px}
-  .acct-line{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:24px}
-  .acct-name{display:flex;align-items:center;gap:10px;min-width:0}
-  .acct-line .glyph{margin-right:10px}
-  .acct-label{display:flex;align-items:center;min-width:0}
-  .acct.off .acct-name{color:var(--text2)}
-  .acct.off .glyph{opacity:.5}
-  .acct[draggable="true"]{cursor:grab}.acct.drag-over{outline:2px solid var(--text3);outline-offset:-2px}
-  .acct-order{display:flex;gap:4px}.acct-order button{padding:2px 7px}.acct-warnings{display:flex;align-items:center;justify-content:space-between;margin-top:5px;color:var(--text2);font-size:12px}
-  .acct-detail{margin:4px 0 0 26px;font-size:12px;color:var(--text2)}
-  .acct-sub{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 0 26px;font-size:13px}
+  /* ---- accounts: tiles, because each one is picked up and put down somewhere else ---- */
+  #acc-list{position:relative;display:flex;flex-direction:column;gap:6px;margin-top:4px}
+  .acct{position:relative;display:flex;align-items:center;gap:14px;min-height:60px;padding:10px 12px 10px 14px;
+    border-radius:14px;background:var(--surface);box-shadow:inset 0 1px 0 var(--hi),0 0 0 1px var(--line);
+    cursor:grab;touch-action:none;transform-origin:50% 50%}
+  /* The lifted shadow is its own layer, faded by the lift spring, so the drag never repaints a blur */
+  .acct::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:var(--lift,0);
+    box-shadow:0 22px 44px -12px var(--shadow),0 6px 14px -4px var(--shadow),0 0 0 1px var(--line)}
+  .acct:hover{background:var(--surface-hover)}
+  .acct.lifted{z-index:5;background:var(--raised);cursor:grabbing}
+  .acct.settling{z-index:4}
+  .acct:focus-visible{outline-offset:3px}
+  .acct-mark{position:relative;width:36px;height:36px;flex:none;display:grid;place-items:center}
+  .acct-mark svg.ring{position:absolute;inset:0;width:36px;height:36px;transition:opacity .25s ease}
+  .acct-mark .glyph{position:relative}
+  .acct-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .acct-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .2s ease}
+  .acct-detail{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acct.stale svg.ring{opacity:.5}
+  .acct.off .acct-name{color:var(--text3)}
+  .acct.off .acct-mark{opacity:.4}
+  .acct-mark{transition:opacity .25s ease}
   .glyph{width:16px;height:16px;display:inline-grid;place-items:center;flex:none;color:var(--text)}
   .glyph svg{width:16px;height:16px;fill:currentColor}
-  .glyph img{width:16px;height:16px;border-radius:4px;display:block}
-  .glyph.letter{font-size:10px;font-weight:700;background:var(--seg-bg);border-radius:4px}
+  .glyph.letter{font-size:10px;font-weight:700;background:var(--well);border-radius:4px}
+  html.dragging,html.dragging *{cursor:grabbing!important}
+  html.dragging [data-tauri-drag-region]{-webkit-app-region:no-drag}
 
-  /* ---- controls: Windows 11 cues in the system accent ---- */
+  /* A bell that is struck through when muted: the stroke draws across rather than the icon swapping */
+  .bell{width:34px;height:34px;flex:none;border:0;border-radius:17px;background:transparent;color:var(--text);display:grid;place-items:center;
+    transition:background-color .15s ease,color .2s ease}
+  .bell:hover{background:var(--hover)}
+  .bell svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+  .bell .strike{stroke-dasharray:16;stroke-dashoffset:16;transition:stroke-dashoffset .28s var(--spring)}
+  .bell .gap{stroke:var(--surface);stroke-width:3.4;stroke-dasharray:16;stroke-dashoffset:16;transition:stroke-dashoffset .28s var(--spring),stroke .15s}
+  .acct.lifted .bell .gap{stroke:var(--raised)}
+  .bell[aria-checked="false"]{color:var(--text3)}
+  .bell[aria-checked="false"] .strike,.bell[aria-checked="false"] .gap{stroke-dashoffset:0}
+  .bell:active svg{transform:scale(.9)}
+  .bell svg{transition:transform .25s var(--bounce)}
+
+  /* ---- controls ---- */
   /* The knob travels with a little overshoot and stretches while pressed, so the click is felt */
-  .switch{width:40px;height:22px;border-radius:11px;border:1px solid var(--text3);background:transparent;position:relative;flex:none;padding:0;cursor:pointer;
-    transition:background-color .18s ease,border-color .18s ease}
-  .switch::after{content:"";position:absolute;top:4px;left:4px;width:12px;height:12px;border-radius:6px;background:var(--text2);
-    transition:transform .3s cubic-bezier(.34,1.4,.64,1),width .16s ease,background-color .18s ease}
-  .switch:active::after{width:15px}
-  .switch.on{background:var(--accent);border-color:var(--accent)}
-  .switch.on::after{transform:translateX(18px);background:var(--on-accent)}
-  .switch.on:active::after{transform:translateX(15px)}
+  .switch{width:42px;height:24px;border-radius:12px;border:0;background:var(--well-hover);position:relative;flex:none;padding:0;
+    transition:background-color .2s ease}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:9px;background:var(--text);
+    box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .32s var(--bounce),width .16s ease,background-color .2s ease}
+  :root[data-theme="light"] .switch::after{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22),0 0 0 .5px rgba(0,0,0,.06)}
+  .switch:active::after{width:22px}
+  .switch.on{background:var(--ink)}
+  .switch.on::after{transform:translateX(18px);background:var(--on-ink)}
+  :root[data-theme="light"] .switch.on::after{background:#fff}
+  .switch.on:active::after{transform:translateX(14px)}
   .switch:disabled,.switch.locked{opacity:.5}
   /* One selection pill slides between the options rather than each button repainting */
-  .seg{position:relative;display:inline-flex;background:var(--seg-bg);border-radius:7px;padding:2px;gap:2px;flex:none}
+  .seg{position:relative;display:inline-flex;background:var(--well);border-radius:9px;padding:2px;gap:2px;flex:none}
   .seg::before{content:"";position:absolute;top:2px;bottom:2px;left:0;width:var(--seg-w,0);transform:translateX(var(--seg-x,0));
-    border-radius:5px;background:var(--accent);transition:transform .3s cubic-bezier(.32,.72,.24,1),width .3s cubic-bezier(.32,.72,.24,1)}
+    border-radius:7px;background:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.25);
+    transition:transform .34s var(--spring),width .34s var(--spring)}
   .seg:not(.placed)::before{transition:none}
-  .seg button{position:relative;z-index:1;border:0;background:transparent;font-size:13px;padding:3px 14px;border-radius:5px;transition:color .18s ease}
-  .seg button:hover:not(.on):not(:disabled){background:var(--hover)}
-  .seg button.on{color:var(--on-accent)}
+  .seg button{position:relative;z-index:1;border:0;background:transparent;font-size:13px;height:28px;padding:0 13px;border-radius:7px;color:var(--text2);
+    transition:color .2s ease}
+  .seg button:hover:not(.on):not(:disabled){color:var(--text)}
+  .seg button.on{color:var(--on-ink)}
   .seg button:disabled{opacity:.45}
-  @media (prefers-reduced-motion: reduce){.switch,.switch::after,.seg::before,.seg button{transition:none}}
-  .btn{border:0;background:var(--btn);font-size:13px;padding:5px 12px;border-radius:6px;flex:none}
-  .btn:hover{background:var(--btn-hover)}
-  select{font:inherit;font-size:13px;color:var(--text);background:var(--seg-bg);border:0;border-radius:6px;padding:4px 8px}
-  select option{color:#000}
+  @media (prefers-reduced-motion: reduce){.switch,.switch::after,.seg::before,.seg button,.bell .strike,.bell .gap,.bell svg{transition:none}}
+  .btn{border:0;background:var(--well);font-size:13px;height:30px;padding:0 14px;border-radius:8px;flex:none;
+    box-shadow:inset 0 1px 0 var(--hi);transition:background-color .15s ease,transform .2s var(--bounce)}
+  .btn:hover:not(:disabled){background:var(--well-hover)}
+  .btn:active:not(:disabled){transform:scale(.97)}
+  .btn:disabled{opacity:.45}
+  select{appearance:none;font:inherit;font-size:13px;color:var(--text);background:var(--well) var(--caret) no-repeat right 11px center/10px 6px;
+    border:0;border-radius:8px;height:30px;padding:0 30px 0 11px;box-shadow:inset 0 1px 0 var(--hi);transition:background-color .15s ease;max-width:60%}
+  select:hover{background-color:var(--well-hover)}
+  select option{color:#000;background:#fff}
+  input{font:inherit;font-size:13px;color:var(--text);background:var(--well);border:0;border-radius:8px;height:30px;padding:0 11px;width:220px;max-width:60%;
+    box-shadow:inset 0 1px 0 var(--hi),0 0 0 1px transparent;transition:box-shadow .15s ease;user-select:text}
+  input::placeholder{color:var(--text3)}
+  input:focus{box-shadow:inset 0 1px 0 var(--hi),0 0 0 1.5px var(--ink)}
+  input:focus-visible{outline:none}
 
-  #toast{position:fixed;right:18px;bottom:14px;background:var(--side);border:1px solid var(--line);border-radius:8px;
-    padding:5px 10px;font-size:12px;color:var(--text2);opacity:0;transition:opacity .3s;pointer-events:none}
+  #toast{position:fixed;right:18px;bottom:14px;background:var(--raised);border-radius:9px;box-shadow:0 0 0 1px var(--line),0 8px 20px -6px var(--shadow);
+    padding:6px 11px;font-size:12px;color:var(--text2);opacity:0;transition:opacity .3s;pointer-events:none}
   #toast.show{opacity:1}
-[data-tauri-drag-region]{-webkit-app-region:drag}button,input,select{-webkit-app-region:no-drag}input{font:inherit;color:var(--text);background:var(--seg-bg);border:1px solid var(--line);border-radius:5px;padding:5px}
+  [data-tauri-drag-region]{-webkit-app-region:drag}
+  button,input,select{-webkit-app-region:no-drag}
 </style>
 </head>
-<body class="solid">
+<body>
 <div id="app">
   <nav id="side" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
     <div class="band" data-tauri-drag-region></div>
+    <span id="nav-pill" aria-hidden="true"></span><span id="nav-bar" aria-hidden="true"></span>
     <button class="row" id="tab-accounts" role="tab" aria-controls="pane-accounts" aria-selected="false" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" class="dim"/><path d="M8 2.5a5.5 5.5 0 0 1 5.2 7.3"/></svg>Accounts</button>
     <button class="row" id="tab-appearance" role="tab" aria-controls="pane-appearance" aria-selected="false" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path class="solid" d="M8 2.25a5.75 5.75 0 0 1 0 11.5z"/></svg>Appearance</button>
     <button class="row" id="tab-general" role="tab" aria-controls="pane-general" aria-selected="false" tabindex="-1"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h3m3 0h5m-11 4h7m3 0h1m-11 4h1m3 0h7"/><circle cx="7" cy="4.5" r="1.5"/><circle cx="11" cy="8.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/></svg>General</button>
@@ -152,18 +212,14 @@
   <main id="pane">
     <div id="head" data-tauri-drag-region>
       <h1 id="title" data-tauri-drag-region data-dynamic>Accounts</h1>
+      <div id="notch" aria-hidden="true"><svg class="body"><path/></svg></div>
       <button id="close" title="Close" aria-label="Close"><svg viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9"/></svg></button>
     </div>
     <div id="strip" data-dynamic hidden></div>
     <div id="body">
 
       <section class="pane" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
-        <div class="sec">Connected · drag to reorder</div>
-        <div class="group" id="acc-on" data-dynamic></div>
-        <div id="acc-off-wrap" hidden>
-          <div class="sec">Not connected</div>
-          <div class="group" id="acc-off" data-dynamic></div>
-        </div>
+        <div id="acc-list" role="list" aria-label="Accounts" data-dynamic></div>
       </section>
 
       <section class="pane" id="pane-appearance" role="tabpanel" aria-labelledby="tab-appearance" hidden>
@@ -184,9 +240,6 @@
         <div class="sec">Controls</div>
         <div class="group">
           <div class="item"><span>Pin button</span><button class="switch" id="sw-pin-button" role="switch" aria-checked="false" aria-label="Pin button"></button></div>
-        </div>
-        <div class="sec">App</div>
-        <div class="group">
           <div class="item"><span>Tray icon</span><button class="switch" id="sw-tray" role="switch" aria-checked="false" aria-label="Tray icon"></button></div>
         </div>
       </section>

@@ -56,8 +56,9 @@ completion and sound are off. Windows notification settings control toast delive
 Warnings track each reported quota window, retain their threshold across app
 restarts, and rearm when a later reset boundary confirms a new window. The initial
 reading establishes a baseline, so starting the app does not send old warnings.
-Mute individual accounts under Settings → Accounts. Drag an account, or use its
-up/down buttons, to reorder the notch and tray; visibility stays independent.
+Mute individual accounts with the bell under Settings → Accounts. Drag an account
+(or focus it and press Alt+↑/↓) to reorder the notch and tray; the small notch at
+the top of the page follows along. Visibility stays independent.
 
 Enable the tray icon under Appearance for account usage, every reported window,
 reset countdowns, and stale status, plus a Refresh action.

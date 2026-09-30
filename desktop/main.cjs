@@ -272,7 +272,7 @@ function glyphs() {
 function openSettings(tab = 'accounts') {
   if (settings && !settings.isDestroyed()) { settings.show(); settings.focus(); settings.webContents.send('event', 'settings_tab', tab); return; }
   settings = new BrowserWindow({ width: 820, height: 680, minWidth: 680, minHeight: 500, show: false, frame: false,
-    backgroundColor: '#171719', icon: resource('icon.ico'), title: 'Agent Usage settings',
+    backgroundColor: '#1d1d20', icon: resource('icon.ico'), title: 'Agent Usage settings',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
   secure(settings);
   settings.once('ready-to-show', () => settings.show());
