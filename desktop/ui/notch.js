@@ -624,43 +624,43 @@ const UI={
       resetsAt:t=>`${t}에 재설정`,resetsOn:(d,t)=>`${d} ${t}에 재설정`,resetsDate:d=>`${d}에 재설정`,
       ago:m=>m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`,
       usedLeft:(used,left)=>`${used}% 사용 · ${left}% 남음`,
-      left:v=>`${v}% 남음`,resets:n=>`재설정 ${n}회 사용 가능`,until:d=>`${d}까지`,
+      left:v=>`${v}% 남음`,resets:n=>`재설정 ${n}회 사용 가능`,until:d=>`${d}까지`,never:'만료 없음',unknown:'만료일 알 수 없음',
       kick:{warning:'사용량 경고',limit:'한도 도달',waiting:'확인 필요',finished:'완료'},andMore:n=>`외 ${n}개`,updated:a=>`${a}에 마지막 업데이트됨`},
   'pt-BR':{locale:'pt-BR',title:n=>n,resetting:'Renovando…',resetsIn:m=>`Renova em ${m} min`,
       resetsAt:t=>`Renova às ${t}`,resetsOn:(d,t)=>`Renova ${d} às ${t}`,resetsDate:d=>`Renova ${d}`,
       ago:m=>m<60?`há ${m} min`:`há ${Math.round(m/60)} h`,
       usedLeft:(used,left)=>`${used}% usado · ${left}% restante`,
-      left:v=>`${v}% restante`,resets:n=>n===1?'1 renovação disponível':`${n} renovações disponíveis`,until:d=>`até ${d}`,
+      left:v=>`${v}% restante`,resets:n=>n===1?'1 renovação disponível':`${n} renovações disponíveis`,until:d=>`até ${d}`,never:'Não expira',unknown:'Validade desconhecida',
       kick:{warning:'Aviso de uso',limit:'Limite atingido',waiting:'Precisa de você',finished:'Concluído'},andMore:n=>`e mais ${n}`},
   en:{locale:'en-US',title:n=>n,resetting:'Resetting…',resetsIn:m=>`Resets in ${m} min`,
       resetsAt:t=>`Resets at ${t}`,resetsOn:(d,t)=>`Resets ${d} ${t}`,resetsDate:d=>`Resets ${d}`,
       ago:m=>m<60?`${m}m ago`:`${Math.round(m/60)}h ago`,
       usedLeft:(used,left)=>`${used}% used · ${left}% left`,
-      left:v=>`${v}% left`,resets:n=>`${n} ${n===1?'reset':'resets'} available`,until:d=>`until ${d}`,
+      left:v=>`${v}% left`,resets:n=>`${n} ${n===1?'reset':'resets'} available`,until:d=>`until ${d}`,never:'Doesn’t expire',unknown:'Expiry unknown',
       kick:{warning:'Usage warning',limit:'Limit reached',waiting:'Needs you',finished:'Finished'},andMore:n=>`and ${n} more`,updated:a=>`Updated ${a}`},
   uk:{locale:'uk-UA',title:n=>n,resetting:'Скидання…',resetsIn:m=>`Скидання через ${m} хв`,
       resetsAt:t=>`Скидання о ${t}`,resetsOn:(d,t)=>`Скидання: ${d} ${t}`,resetsDate:d=>`Скидання: ${d}`,
       ago:m=>m<60?`${m} хв тому`:`${Math.round(m/60)} год тому`,
       usedLeft:(used,left)=>`Використано ${used}% · лишилось ${left}%`,
-      left:v=>`лишилось ${v}%`,resets:n=>`Доступно скидань: ${n}`,until:d=>`до ${d}`,
+      left:v=>`лишилось ${v}%`,resets:n=>`Доступно скидань: ${n}`,until:d=>`до ${d}`,never:'Без терміну',unknown:'Термін невідомий',
       kick:{warning:'Попередження',limit:'Ліміт вичерпано',waiting:'Потрібна увага',finished:'Готово'},andMore:n=>`і ще ${n}`,updated:a=>`Оновлено ${a}`},
   ru:{locale:'ru-RU',title:n=>n,resetting:'Сброс…',resetsIn:m=>`Сброс через ${m} мин`,
       resetsAt:t=>`Сброс в ${t}`,resetsOn:(d,t)=>`Сброс: ${d} ${t}`,resetsDate:d=>`Сброс: ${d}`,
       ago:m=>m<60?`${m} мин назад`:`${Math.round(m/60)} ч назад`,
       usedLeft:(used,left)=>`Использовано ${used}% · осталось ${left}%`,
-      left:v=>`осталось ${v}%`,resets:n=>`Доступно сбросов: ${n}`,until:d=>`до ${d}`,
+      left:v=>`осталось ${v}%`,resets:n=>`Доступно сбросов: ${n}`,until:d=>`до ${d}`,never:'Бессрочно',unknown:'Срок неизвестен',
       kick:{warning:'Предупреждение',limit:'Лимит исчерпан',waiting:'Нужно внимание',finished:'Готово'},andMore:n=>`и ещё ${n}`,updated:a=>`Обновлено ${a}`},
   zh:{locale:'zh-CN',title:n=>n,resetting:'正在重置…',resetsIn:m=>`${m} 分钟后重置`,
       resetsAt:t=>`${t} 重置`,resetsOn:(d,t)=>`${d} ${t} 重置`,resetsDate:d=>`${d} 重置`,
       ago:m=>m<60?`${m} 分钟前`:`${Math.round(m/60)} 小时前`,
       usedLeft:(used,left)=>`已用 ${used}% · 剩余 ${left}%`,
-      left:v=>`剩余 ${v}%`,resets:n=>`可用重置 ${n} 次`,until:d=>`${d} 前有效`,
+      left:v=>`剩余 ${v}%`,resets:n=>`可用重置 ${n} 次`,until:d=>`${d} 前有效`,never:'不会过期',unknown:'到期时间未知',
       kick:{warning:'用量提醒',limit:'已达上限',waiting:'需要你',finished:'已完成'},andMore:n=>`另有 ${n} 个`,updated:a=>`更新于 ${a}`},
   'zh-Hant':{locale:'zh-TW',title:n=>n,resetting:'正在重置…',resetsIn:m=>`${m} 分鐘後重置`,
       resetsAt:t=>`${t} 重置`,resetsOn:(d,t)=>`${d} ${t} 重置`,resetsDate:d=>`${d} 重置`,
       ago:m=>m<60?`${m} 分鐘前`:`${Math.round(m/60)} 小時前`,
       usedLeft:(used,left)=>`已用 ${used}% · 剩餘 ${left}%`,
-      left:v=>`剩餘 ${v}%`,resets:n=>`可用重置 ${n} 次`,until:d=>`${d} 前有效`,
+      left:v=>`剩餘 ${v}%`,resets:n=>`可用重置 ${n} 次`,until:d=>`${d} 前有效`,never:'不會過期',unknown:'到期時間未知',
       kick:{warning:'用量提醒',limit:'已達上限',waiting:'需要你',finished:'已完成'},andMore:n=>`另有 ${n} 個`,updated:a=>`更新於 ${a}`},
 };
 function ui(){return UI[uiLang]||UI.en;}
@@ -915,10 +915,33 @@ function renderUsageWindows(windows,boxed=true,headings=true){
 
 // A banked or granted reset is worth seeing at a glance, so it is a row of the card, not metadata
 const RESET_ICON='<svg class="r-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg>';
-function resetsRow(r){
+// Under the pointer (or focused) the row opens to each reset against its own date and how long is left,
+// so it is clear which to use first. It stays open through re-renders while the pointer is on it.
+let resetsOpen=null;
+function resetsRow(r,account){
   if(!r||!(r.count>0))return '';
   const until=r.expires>Date.now()?`<span class="r-until">${esc(ui().until(new Date(r.expires).toLocaleDateString(ui().locale,{month:'short',day:'numeric'})))}</span>`:'';
-  return `<div class="c-resets">${RESET_ICON}<span class="r-count">${esc(ui().resets(r.count))}</span>${until}</div>`;
+  const each=(r.each||[]).filter(e=>e.at===null||e.at>Date.now());
+  const head=`<div class="r-head">${RESET_ICON}<span class="r-count">${esc(ui().resets(r.count))}</span>${until}</div>`;
+  if(!each.length)return `<div class="c-resets">${head}</div>`;
+  const rows=each.map(e=>`<div class="r-item">${e.count>1?`<span class="r-times">×${e.count}</span>`:''}<span class="r-when">${esc(e.at?resetStamp(e.at):e.known?ui().never:ui().unknown)}</span>${e.at?`<span class="r-rel">${esc(resetLeft(e.at))}</span>`:''}</div>`).join('');
+  return `<div class="c-resets expandable${resetsOpen===account?' open':''}" tabindex="0" data-account="${esc(account)}">${head}<div class="r-list"><div>${rows}</div></div></div>`;
+}
+function resetStamp(ms){
+  return new Date(ms).toLocaleString(ui().locale,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hourCycle:stateSnap.clock_24h?'h23':'h12'});
+}
+// "in 3 days", "tomorrow", "in 5 hours", in the reader's language
+function resetLeft(ms){
+  const diff=ms-Date.now(),rtf=new Intl.RelativeTimeFormat(ui().locale,{numeric:'auto'});
+  if(diff<3600e3)return rtf.format(Math.max(1,Math.round(diff/60000)),'minute');
+  if(diff<36*3600e3)return rtf.format(Math.round(diff/3600e3),'hour');
+  return rtf.format(daysApart(Date.now(),ms),'day');
+}
+let resetsGrowing=false,resetsGrowTimer=0;
+function openResets(row,on){
+  if(!row||row.classList.contains('open')===on)return;
+  resetsOpen=on?row.dataset.account:null;row.classList.toggle('open',on);
+  if(on){resetsGrowing=true;clearTimeout(resetsGrowTimer);resetsGrowTimer=setTimeout(()=>{resetsGrowing=false;},520);}
 }
 function renderCard(){
   // An alert holds the card until it is read or turned into this account's usage (notify.js)
@@ -944,7 +967,7 @@ function renderCard(){
     html+=`<div class="c-note">${esc(textCopy(snap.note||'Waiting for first reading…'))}</div>`;
   }else{
     html+=renderUsageWindows(mainWindows,p.base!=='gemini',p.base!=='gemini');
-    html+=resetsRow(snap.resets);
+    html+=resetsRow(snap.resets,p.id);
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
@@ -1017,6 +1040,21 @@ function esc(s){const d=document.createElement('div');d.textContent=s||'';return
 
 /* Hover: stays expanded while either the pill or the card is under the cursor; collapses after a 250 ms grace period (upstream motion rule) */
 const card=document.getElementById('card'), pill=document.getElementById('pill'), tail=document.getElementById('tail');
+// The reset row opens under the pointer or focus (resetsRow)
+card.addEventListener('mouseover',e=>openResets(e.target.closest?.('.c-resets.expandable'),true));
+card.addEventListener('mouseout',e=>{const row=e.target.closest?.('.c-resets.expandable');if(row&&!row.contains(e.relatedTarget))openResets(row,false);});
+card.addEventListener('focusin',e=>openResets(e.target.closest?.('.c-resets.expandable'),true));
+card.addEventListener('focusout',e=>{const row=e.target.closest?.('.c-resets.expandable');if(row&&!row.contains(e.relatedTarget))openResets(row,false);});
+// The card grows while the row opens, and the notch's ink follows it frame by frame. While it opens the ink leads
+// rather than easing after it, so no line of the list is ever drawn outside the black.
+new ResizeObserver(()=>{
+  if(!card.classList.contains('show'))return;
+  placeCard();
+  if(resetsGrowing&&detailBox&&detailAim&&detailBox.edge===detailAim.edge){
+    for(const [lo,hi] of [['u0','u1'],['v0','v1']]){detailBox[lo]=Math.min(detailBox[lo],detailAim[lo]);detailBox[hi]=Math.max(detailBox[hi],detailAim[hi]);}
+    drawDetails();
+  }
+}).observe(card);
 let hideTimer=null,showTimer=null,pendingAccount=null;
 function showCard(){clearTimeout(hideTimer);card.classList.remove('closing');card.classList.add('show');renderCard();setDetailsShown(true);armWatchdog();refreshClock();} // show first, then render: placeCard needs offsetHeight
 // Nothing is broadcast when the Windows clock format changes, so ask again each time the card opens

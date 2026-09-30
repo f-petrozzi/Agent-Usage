@@ -10,7 +10,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const now = Date.now();
 const win = (id, used, h) => ({ id, label: id, used, resets_at: now + h * 3600e3, count: null, derived: false });
 const accounts = [
-  { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['$83.85 extra usage'], resets: { count: 1, expires: now + 22 * 86400e3 } } },
+  { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['$83.85 extra usage'], resets: { count: 1, expires: now + 22 * 86400e3, each: [{ at: now + 22 * 86400e3, known: true, count: 1 }] } } },
   { id: 'codex', base: 'codex', name: 'Codex', glyph: 'Cx', snap: { status: 'ok', windows: [win('primary', .18, 2), win('secondary', .33, 100)], fetched_at: now, note: '', details: ['Plan: Plus'] } },
 ];
 const glyphs = {};
@@ -95,7 +95,15 @@ const answers = {
     assert.equal(await page.locator('.account-extra,.extra-toggle').count(),0,'no separate Account details row');
     const geometry=await page.evaluate(()=>({ink:detailPath.getAttribute('d'),pill:pill.getBoundingClientRect().toJSON()}));
     // Resets are in the card itself on every edge, not behind the name
-    assert.match(await page.locator('#card .c-resets').innerText(),/^1 reset available\s+until \w{3} \d{1,2}$/);
+    assert.match(await page.locator('#card .c-resets .r-head').innerText(),/^1 reset available\s+until \w{3} \d{1,2}$/);
+    { // Hovered, it opens to each reset's date and time, inside the notch's ink
+      const row=await page.locator('#card .c-resets').boundingBox(),back=await page.mouse;
+      await page.mouse.move(row.x+row.width/2,row.y+row.height/2,{steps:3});await page.waitForTimeout(700);
+      assert.match(await page.locator('#card .r-item').innerText(),/^\w{3}, \w{3} \d{1,2}, \d{1,2}:\d{2} [AP]M\s+in 2[12] days$/);
+      assert.ok(await page.evaluate(()=>{const r=card.querySelector('.c-resets').getBoundingClientRect();return detailContains(r.left+3,r.bottom-3)&&detailContains(r.right-3,r.bottom-3);}),'the opened list has black beneath it');
+      await page.mouse.move(initial.box.x+initial.box.width/2,initial.box.y+12);await page.waitForTimeout(500);
+      assert.equal(await page.locator('#card .c-resets.open').count(),0,'and closes when the pointer leaves it');
+    }
     const vertical=edge==='left'||edge==='right';
     if(vertical){
       assert.equal(await page.locator('#card .inline-extras').innerText(),'$83.85 extra usage','side metadata opens inside the usage frame by default');

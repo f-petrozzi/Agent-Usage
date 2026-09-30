@@ -14,7 +14,8 @@ block={'eligible':True,'grants':[grant,{**grant,'paused':True},{**grant,'usable_
 count,details=parse({'cedar_ember':block})
 assert count==1 and len(details)==1 and details[0]['expirationKnown']
 assert 'redemption-handle' not in str(details)
-assert parse({'cedar_ember':{'eligible':True,'grants':[{**grant,'ends_at':None}]}})==(1,[{'expiresAt':None,'expirationKnown':False}])
+assert parse({'cedar_ember':{'eligible':True,'grants':[{**grant,'ends_at':None}]}})==(1,[{'expiresAt':None,'expirationKnown':False,'count':1}])
+assert parse({'cedar_ember':{'eligible':True,'grants':[{**grant,'resets_left':2}]}})[1][0]['count']==2,'each grant says how many resets it holds'
 query=m['_query_claude_uncached']
 with patch.dict(query.__globals__,{'_claude_token':lambda:('test-token','pro',False),'_claude_fetch':lambda *_:{'five_hour':{'utilization':10},'cedar_ember':block}}):
  account=query(1)

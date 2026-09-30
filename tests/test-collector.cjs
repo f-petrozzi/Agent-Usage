@@ -36,10 +36,17 @@ test('Automatic account selection stays automatic when Antigravity arrives',()=>
 test('Resets are a count and the soonest expiry, not metadata lines',()=>{
   const [a]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:2,
     resetCreditDetails:[{expiresAt:4070908800,expirationKnown:true},{expiresAt:4070000000,expirationKnown:true},{expiresAt:null,expirationKnown:false}],limits:[]}]});
-  assert.deepEqual(a.snap.resets,{count:2,expires:4070000000000});
+  assert.equal(a.snap.resets.count,2);assert.equal(a.snap.resets.expires,4070000000000);
+  assert.deepEqual(a.snap.resets.each,[{at:4070000000000,known:true,count:1},{at:4070908800000,known:true,count:1},{at:null,known:false,count:1}],'each reset against its date, soonest first');
   assert.deepEqual(a.snap.details,[],'no reset lines and no Claude plan in metadata');
   const [codex]=normalize({schema:2,accounts:[{provider:'codex',label:'a',plan:'Plus',resetCredits:1,limits:[]}]});
-  assert.deepEqual(codex.snap.resets,{count:1,expires:null},'an unknown expiry is left unknown');
+  assert.deepEqual(codex.snap.resets,{count:1,expires:null,each:[{at:null,known:false,count:1}]},'an unknown expiry is left unknown');
+  const [mixed]=normalize({schema:2,accounts:[{provider:'codex',label:'b',resetCredits:4,
+    resetCreditDetails:[{expiresAt:null,expirationKnown:true},{expiresAt:4070000000,expirationKnown:true}],limits:[]}]});
+  assert.deepEqual(mixed.snap.resets.each,[{at:4070000000000,known:true,count:1},{at:null,known:true,count:1},{at:null,known:false,count:2}],
+    'dated, then never expiring, then the ones the details did not account for');
+  const [grant]=normalize({schema:2,accounts:[{provider:'claude',resetCredits:2,resetCreditDetails:[{expiresAt:4070000000,expirationKnown:true,count:2}],limits:[]}]});
+  assert.deepEqual(grant.snap.resets.each,[{at:4070000000000,known:true,count:2}],'a grant of two is one line of two');
   assert.deepEqual(codex.snap.details,['Plus']);
   const [unknown]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:null,limits:[]}]});
   assert.equal(unknown.snap.resets,null,'unknown reset count is not fabricated');

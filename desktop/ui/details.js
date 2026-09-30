@@ -78,7 +78,7 @@ function detailStep(now){
     const mix=1-Math.exp(-dt/.075);
     for(const key of ['u0','u1','v0','v1','a0','a1']){
       detailBox[key]+=(detailAim[key]-detailBox[key])*mix;
-      if(Math.abs(detailBox[key]-detailAim[key])>.1)settled=false;
+      if(Math.abs(detailBox[key]-detailAim[key])>.1)settled=false;else detailBox[key]=detailAim[key]; // lands exactly, no sub-pixel remainder
     }
   }
   detailReading=Math.min(1,detailReading+dt/.12);card.style.setProperty('--detail-reading',detailReading);

@@ -633,7 +633,7 @@ def _claude_reset_credits(payload: dict[str, Any]) -> tuple[int | None, list[dic
         if expires is not None and expires <= time.time():
             continue
         count += left
-        details.append({"expiresAt": expires, "expirationKnown": expires is not None})
+        details.append({"expiresAt": expires, "expirationKnown": expires is not None, "count": left})
     return count, details
 
 

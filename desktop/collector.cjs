@@ -25,13 +25,20 @@ function normalize(raw) {
     const name = clean(base === 'gemini' ? 'Antigravity' : base === 'codex' ? `Codex ${a.label || ''}`.trim() : a.label || 'Claude', 100);
     const details = [];
     if (a.plan && base !== 'claude') details.push(clean(a.plan, 100));
-    // Resets are a row of their own in the card rather than a line of metadata: how many, and when the
-    // soonest runs out. None at all is no row, and an unknown count is never made up.
+    // Resets are a row of their own in the card rather than a line of metadata: how many, when the soonest
+    // runs out, and each one (or each grant of several) against its own date, soonest first. None at all is no
+    // row, and an unknown count is never made up; resets the details do not account for are listed as unknown.
     let resets = null;
     if (Number.isInteger(a.resetCredits) && a.resetCredits > 0) {
-      const known = (Array.isArray(a.resetCreditDetails) ? a.resetCreditDetails : []).slice(0, 30)
-        .filter(c => c && c.expirationKnown && finite(c.expiresAt)).map(c => c.expiresAt * 1000);
-      resets = { count: Math.min(a.resetCredits, 999), expires: known.length ? Math.min(...known) : null };
+      const count = Math.min(a.resetCredits, 999);
+      const each = (Array.isArray(a.resetCreditDetails) ? a.resetCreditDetails : []).slice(0, 30).filter(c => c && typeof c === 'object')
+        .map(c => ({ at: c.expirationKnown && finite(c.expiresAt) ? c.expiresAt * 1000 : null, known: c.expirationKnown === true,
+          count: Number.isInteger(c.count) && c.count > 0 ? Math.min(c.count, 999) : 1 }))
+        .sort((x, y) => (x.at === null) - (y.at === null) || (x.at || 0) - (y.at || 0) || y.known - x.known);
+      const listed = each.reduce((n, e) => n + e.count, 0);
+      if (listed < count) each.push({ at: null, known: false, count: count - listed });
+      const dated = each.filter(e => e.at !== null).map(e => e.at);
+      resets = { count, expires: dated.length ? Math.min(...dated) : null, each };
     }
     if (finite(a.creditBalance)) details.push(a.creditBalance < 0 ? 'Unlimited credits' : `${a.creditBalance.toFixed(2)} credits available`);
     if (a.extraUsage?.enabled) details.push(finite(a.extraUsage.usedDollars) ? `$${a.extraUsage.usedDollars.toFixed(2)} extra usage` : 'Extra usage enabled');
