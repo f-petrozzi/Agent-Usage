@@ -174,7 +174,7 @@ const answers = {
     assert.equal(await page.evaluate(() => leadFace()), 'pin');
     // Every edge: compact width, centered on flat edges, top aligned on side edges, no horizontal overflow.
     for (const edge of ['top', 'bottom', 'left', 'right']) {
-      await page.evaluate(edge => { hideCard(); __emit('layout', { width: innerWidth, height: innerHeight, scale: 1, edge, along: .5, visible: true, tracking: false, pinned: true }); openAlertLog(); }, edge);
+      await page.evaluate(edge => { hideCard(); __emit('alert_log',Array.from({length:40},(_,i)=>({id:'history-'+i,at:Date.now()-i*60000,kind:'completion',account:'codex',session:'homelab',took:60000,read:true}))); __emit('layout', { width: innerWidth, height: innerHeight, scale: 1, edge, along: .5, visible: true, tracking: false, pinned: true }); openAlertLog(); }, edge);
       await page.waitForTimeout(700);
       const geometry = await page.evaluate(() => { const r = pill.getBoundingClientRect(), c = card.getBoundingClientRect(); return { r: { x: r.x, y: r.y, w: r.width }, c: { x: c.x, y: c.y, w: c.width }, overflow: card.scrollWidth > card.clientWidth }; });
       assert.equal(geometry.overflow, false);
@@ -188,6 +188,16 @@ const answers = {
         assert.ok(Math.abs(geometry.c.y - geometry.r.y + 12) < 2, 'preserves top alignment');
       }
       assert.equal(await page.locator('[title], svg title').count(), 0, 'tooltips removed, including generated controls');
+      assert.equal(await page.locator('.a-row').count(),40,'the entire retained history remains reachable');
+      const history=await page.locator('.a-log').boundingBox();assert.ok(history.height<=228,'history stops at the default notch length');
+      const titleTop=await page.locator('.c-head').evaluate(e=>e.getBoundingClientRect().top);
+      await page.mouse.move(history.x+history.width/2,history.y+history.height/2);
+      await page.mouse.wheel(0,400);
+      await page.waitForFunction(()=>document.querySelector('.a-log').scrollTop>0);
+      assert.ok(Math.abs(await page.locator('.c-head').evaluate(e=>e.getBoundingClientRect().top)-titleTop)<1,'title stays still while history scrolls');
+      const scroll=await page.locator('.a-log').evaluate(e=>e.scrollTop);
+      await page.evaluate(()=>renderCard());
+      assert.equal(await page.locator('.a-log').evaluate(e=>e.scrollTop),scroll,'refresh preserves history scroll');
       await page.screenshot({ path: path.join(OUT, 'log-' + edge + '.png') });
     }
     assert.deepEqual(errors, []);

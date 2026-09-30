@@ -10,6 +10,22 @@ let pumpTimer=0, slivHeld=false, sliverSerial=0;
 const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
 pill.before(sliverSvg);
 const slivering=()=>slivers.size>0;
+let notificationTestTimer=0;
+function queueNotificationTest(){
+  clearTimeout(notificationTestTimer);
+  const account=window.notificationTestAccount;if(!account)return;
+  if(alertWaits()){notificationTestTimer=setTimeout(queueNotificationTest,200);return;}
+  if(slivers.get(account)?.test){drawSliver(slivers.get(account));return;}
+  showSliver(account,[{kind:'completion',account,session:'Test notification · A longer sample to check scrolling',took:120000,test:true}],0);
+}
+listen('notification_test',e=>{
+  window.notificationTestAccount=e.payload||null;clearTimeout(notificationTestTimer);
+  for(const s of [...slivers.values()])if(s.test)dropSliver(s);
+  renderRing();
+  if(window.notificationTestAccount){hideCard();retractSlivers(true);queueNotificationTest();}else pumpAlert();
+}).catch(()=>{});
+listen('appear',()=>queueNotificationTest()).catch(()=>{});
+listen('layout',()=>queueNotificationTest()).catch(()=>{});
 listen('alert',e=>{
   const p=e.payload;if(!p||!Array.isArray(p.events)||!p.events.length)return;
   // Already reading the log: the alert is there at the top of it, so it does not open a second time
@@ -70,14 +86,15 @@ function showSliver(account,events,hold){
     el.addEventListener('click',activate);
     el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
   }
-  s.events=[...events,...s.events].slice(0,6);s.to=1;s.seen=false;
+  s.test=events.every(e=>e.test===true);
+  s.events=[...events,...s.events.filter(e=>!e.test)].slice(0,6);s.to=1;s.seen=false;
   s.scroll?.cancel();s.scroll=null;s.scrollDistance=null;
   s.el.innerHTML=sliverLine(s.events);
   // Only as long as the line: measured laid out on one line, then the sliver is cut to it
   s.el.style.height='auto';s.el.style.width='max-content';
   const natural=s.el.scrollWidth;
   s.length=Math.min(SLIVER.max,natural+2*SLIVER.pad);
-  clearTimeout(s.timer);s.hold=hold;if(!slivHeld)s.timer=setTimeout(()=>retract(s),hold);
+  clearTimeout(s.timer);s.hold=hold;if(!slivHeld&&!s.test)s.timer=setTimeout(()=>retract(s),hold);
   springSliver(s);
 }
 function springSliver(s){
@@ -148,9 +165,9 @@ function scrollSliver(s){
     {transform:`translateX(-${distance}px)`,offset:(pause+travel)/duration},
     {transform:`translateX(-${distance}px)`,offset:(2*pause+travel)/duration},{transform:'translateX(0)',offset:1}],
     {duration,iterations:Infinity,easing:'linear'});
-  if(!slivHeld){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
+  if(!slivHeld&&!s.test){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);reportHot();if(!slivers.size)ringBell();}
+function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);reportHot();if(!slivers.size)ringBell();if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);}
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -166,7 +183,7 @@ function holdSlivers(held,over=null){
   if(over)markSeen(over);
   if(held===slivHeld||!slivers.size)return;
   slivHeld=held;
-  for(const s of slivers.values()){clearTimeout(s.timer);if(!held&&s.to)s.timer=setTimeout(()=>retract(s),SLIVER.grace);}
+  for(const s of slivers.values()){clearTimeout(s.timer);if(!held&&s.to&&!s.test)s.timer=setTimeout(()=>retract(s),SLIVER.grace);}
 }
 // Seen, an alert no longer counts toward the dot on the pocket; only ones that came and went unread do
 function markSeen(s){
@@ -254,7 +271,8 @@ function logWhen(at){
   return new Date(at).toLocaleDateString(ui().locale,{weekday:'short'});
 }
 function renderAlertLog(){
-  const kick=ui().kick||UI.en.kick, rows=[...alertLogData].reverse().slice(0,30);
+  const scroll=card.dataset.account===ALERTS_ID?(card.querySelector('.a-log')?.scrollTop||0):0;
+  const kick=ui().kick||UI.en.kick, rows=[...alertLogData].reverse();
   const chips=CHIPS.map(([key,label])=>`<button class="a-chip${alertPrefsData?.[key]?' on':''}" type="button" data-pref="${key}" aria-pressed="${!!alertPrefsData?.[key]}">${esc(textCopy(label))}</button>`).join('');
   let html=`<div class="c-head"><span class="log-mark">${BELL_MARK}</span><span class="c-title">${esc(textCopy('Alerts'))}</span>${rows.length?`<button class="a-clear" type="button">${esc(textCopy('Clear'))}</button>`:''}</div>
     <div class="a-chips">${chips}</div>`;
@@ -263,6 +281,7 @@ function renderAlertLog(){
   // The rows come in one after another only as the log opens, not each time it refreshes while open
   const entering=detailOpen<.9||card.dataset.account!==ALERTS_ID;
   card.innerHTML=`<div class="usage-content log-content${entering?' entering':''}">${html}</div>`;
+  const list=card.querySelector('.a-log');if(list)list.scrollTop=scroll;
   // Read once it has been open long enough to have been seen
   if(unreadCount()&&!markTimer)markTimer=setTimeout(()=>{markTimer=0;if(logShowing())invoke('mark_alerts_read').catch(()=>{});},1400);
 }

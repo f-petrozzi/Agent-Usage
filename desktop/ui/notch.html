@@ -209,7 +209,8 @@
   .a-chip:hover{border-color:#555;color:var(--ink-2)}
   .a-chip.on{background:var(--ink);border-color:var(--ink);color:#000}
   .a-chip:active{transform:scale(.93)}
-  .a-log{display:flex;flex-direction:column;margin:8px -8px 0}
+  .a-log{display:flex;flex-direction:column;margin:8px -8px 0;max-height:min(228px,calc(100vh - 240px));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable}
+  .a-log > .a-row{flex:none}
   .a-row{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;display:grid;
     grid-template-columns:16px minmax(0,1fr) auto auto;column-gap:8px;row-gap:3px;align-items:baseline;padding:8px;border-radius:10px;transition:background-color .15s ease}
   #card.alert-card{max-width:none;margin:0;padding:14px}

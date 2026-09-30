@@ -130,6 +130,18 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     await linked.page.evaluate(() => openNotifiedAlert({id:'failed',kind:'completion'},'claude'));
     assert.equal(await linked.page.evaluate(() => card.classList.contains('show')),true,'notification launch failures show a visible card');
     assert.equal(await linked.page.locator('.session-link-error').textContent(),'VS Code was not found.');
+    // Settings previews use the notification geometry, stay until disabled, and do not enter history.
+    await linked.page.evaluate(()=>__emit('notification_test','claude'));
+    await linked.page.waitForFunction(()=>slivers.get('claude')?.test);
+    assert.equal(await linked.page.evaluate(()=>slivers.get('claude').timer),0,'sample stays while enabled');
+    assert.equal(await linked.page.evaluate(()=>alertLogData.length),0,'sample does not change history');
+    await linked.page.evaluate(()=>{__emit('notch_slots',[{provider:'claude'}]);__emit('notification_test','codex');});
+    await linked.page.waitForFunction(()=>slivers.get('codex')?.test);
+    assert.equal(await linked.page.evaluate(()=>slivers.size),1,'switching the test replaces the preview');
+    assert.equal(await linked.page.locator('.cell[data-p="codex"]').count(),1,'hidden accounts get their own temporary gauge for the test');
+    await linked.page.evaluate(()=>__emit('notification_test',null));
+    assert.equal(await linked.page.evaluate(()=>slivers.size),0,'off dismisses the preview');
+    assert.equal(await linked.page.locator('.cell[data-p="codex"]').count(),0,'hidden account visibility returns after the test');
     await linked.page.close();
 
     // On a flat edge it hangs below its ring, spreading to its length

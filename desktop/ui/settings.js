@@ -1,6 +1,7 @@
 'use strict';
 const api=window.agentUsage, $=id=>document.getElementById(id);
 let flags={},slots=[],accounts=[],glyphs={},alertPrefs={muted:[]},colorTransition='hard_step',activeTab='';
+let notificationTestAccount=null;
 function error(e){$('strip').hidden=false;$('strip').textContent=String(e.message||e);}
 async function call(cmd,args){try{return await api.invoke(cmd,args);}catch(e){error(e);throw e;}}
 function action(fn){return ()=>Promise.resolve().then(fn).catch(()=>{});}
@@ -94,9 +95,10 @@ function createRow(id){
   el.setAttribute('role','listitem');el.setAttribute('aria-keyshortcuts','Alt+ArrowUp Alt+ArrowDown');
   el.innerHTML=`<span class="acct-mark"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"></svg><span class="glyph" aria-hidden="true"></span></span>
     <span class="acct-text"><span class="acct-name"></span><span class="acct-detail" hidden></span></span>
+    <button class="notification-test" type="button" aria-pressed="false">Test notification</button>
     <button class="bell" role="switch" aria-label="Usage warnings">${BELL}</button><button class="switch" role="switch" aria-label="Show in notch"></button>`;
   const r={id,el,ringEl:el.querySelector('svg.ring'),glyph:el.querySelector('.glyph'),name:el.querySelector('.acct-name'),
-    detail:el.querySelector('.acct-detail'),bell:el.querySelector('.bell'),sw:el.querySelector('.switch'),ringKey:''};
+    detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),bell:el.querySelector('.bell'),sw:el.querySelector('.switch'),ringKey:''};
   const paint=()=>paintRow(r);
   r.y=spring(0,paint,.08);r.x=spring(0,paint,.08);r.tilt=spring(0,paint,.004);r.lift=spring(0,paint,.002);
   r.lift.done=()=>{if(!r.lift.x&&drag?.r!==r)el.classList.remove('settling');};
@@ -114,6 +116,9 @@ function createRow(id){
     alertPrefs={...alertPrefs,muted};renderAccounts();
     try{renderAlerts(await call('set_alert_preferences',{muted}));}catch(e){renderAlerts(before);throw e;}
   });
+  r.test.onclick=action(async()=>{
+    notificationTestAccount=await call('set_notification_test',{account:id,on:notificationTestAccount!==id});renderAccounts();
+  });
   el.addEventListener('pointerdown',e=>press(r,e));
   el.addEventListener('keydown',e=>{if(e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')){e.preventDefault();nudge(id,e.key==='ArrowUp'?-1:1);}});
   rows.set(id,r);return r;
@@ -128,6 +133,7 @@ function updateRow(r,a,on){
   r.el.classList.toggle('off',!shown);
   r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
   r.bell.setAttribute('aria-checked',String(!muted));r.bell.setAttribute('aria-label',`Usage warnings for ${a.name}`);
+  r.test.setAttribute('aria-pressed',String(notificationTestAccount===a.id));r.test.setAttribute('aria-label',`Test notification for ${a.name}`);
   // A healthy account needs no status line; a stale or failed one says what went wrong
   const problem=a.snap.status==='ok'?'':a.snap.note||(a.snap.status==='stale'?'Showing the last reading':a.snap.status==='loading'?'Reading usage…':'Usage could not be read');
   r.detail.hidden=!problem;if(r.detail.textContent!==problem){r.detail.textContent=problem;}
@@ -341,6 +347,8 @@ api.on('settings_tab',tab=>{if(TABS.includes(tab))$('tab-'+tab).click();});
 function renderAlerts(prefs){alertPrefs=prefs;for(const key of ['quota','waiting','completion','sound'])toggle('sw-alert-'+key,!!prefs[key]);renderAccounts();}
 for(const key of ['quota','waiting','completion','sound'])$('sw-alert-'+key).onclick=action(async()=>renderAlerts(await call('set_alert_preferences',{[key]:!alertPrefs[key]})));
 api.on('alert_preferences',renderAlerts);
+api.on('notification_test',v=>{notificationTestAccount=v;renderAccounts();});
+call('get_notification_test').then(v=>{notificationTestAccount=v;renderAccounts();}).catch(()=>{});
 api.on('notch_slots',v=>{slots=v;renderAccounts();});
 $('close').onclick=action(()=>call('close_settings'));
 $('quit').onclick=action(()=>call('quit_app'));

@@ -727,7 +727,7 @@ let agentAccounts=[];
 function providers(){
   const list=agentAccounts.length?agentAccounts:[{id:'collector',base:'claude',name:'Agent Usage',glyph:'…',snap:usage}];
   const picked=list.filter(p=>!!slotFor(p.id));
-  return picked.length?picked:list;
+  return picked.length?list.filter(p=>picked.includes(p)||p.id===window.notificationTestAccount):list;
 }
 // Antigravity's "Notch reads" and "Model data", as in the Mac app; chosen in settings
 let agPrefs={limit:'automatic',model:'gemini'};
@@ -1428,6 +1428,7 @@ function renderNotchButtons(value){
   renderRing();renderLead();reportHot();if(typeof drawShape==='function')drawShape();
 }
 document.addEventListener('wheel',e=>{
+  if(e.target.closest?.('#card'))return;
   if(hovered!=='pin'||leadFaces.length<2)return;
   e.preventDefault();
   if(Math.abs(e.deltaY)<4)return;

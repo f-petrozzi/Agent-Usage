@@ -125,6 +125,9 @@
   .acct-mark svg.ring{position:absolute;inset:0;width:36px;height:36px;transition:opacity .25s ease}
   .acct-mark .glyph{position:relative}
   .acct-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .notification-test{flex:none;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--text2);font:inherit;font-size:12px;padding:7px 9px;cursor:pointer}
+  .notification-test:hover{background:var(--hover)}
+  .notification-test[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
   .acct-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .2s ease}
   .acct-detail{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .acct.stale svg.ring{opacity:.5}

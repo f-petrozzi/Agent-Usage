@@ -9,13 +9,33 @@ function codeLocations(env = process.env) {
     env['ProgramFiles(x86)'] && path.join(env['ProgramFiles(x86)'], 'Microsoft VS Code', 'Code.exe')].filter(Boolean);
 }
 const installed = new Map();
-async function installHelper(executable, helper, run = execFile) {
-  const cli = path.join(path.dirname(executable), 'resources', 'app', 'out', 'cli.js');
+function codeCli(executable, { exists = fs.existsSync, read = fs.readFileSync } = {}) {
+  const root = path.dirname(executable), bin = path.join(root, 'bin');
+  // Follow the installed wrapper's entrypoint rather than assuming Code's layout.
+  try {
+    const match = read(path.join(bin, 'code.cmd'), 'utf8').match(/"%~dp0([^"\r\n]*cli\.js)"/i);
+    if (match) {
+      const cli = path.resolve(bin, match[1].replace(/\\/g, path.sep));
+      if (exists(cli)) return cli;
+    }
+  } catch {}
+  const cli = path.join(root, 'resources', 'app', 'out', 'cli.js');
+  if (exists(cli)) return cli;
+  throw new Error('VS Code’s command-line installer was not found. Finish updating VS Code, then try again.');
+}
+function installFailure(error, stdout, stderr) {
+  const detail = error.killed ? 'Installation timed out after 60 seconds.'
+    : String(stderr || stdout || error.message || '').replace(/\x1b\[[0-9;]*m/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, 600);
+  return new Error('The VS Code terminal helper could not be installed. ' + detail);
+}
+async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
+  if (!exists(helper)) throw new Error('The bundled VS Code helper is missing. Reinstall the latest Agent Usage update.');
+  const cli = codeCli(executable, { exists, read });
   const key = executable + ':' + helper;
   if (!installed.has(key)) {
-    const promise = new Promise((resolve, reject) => run(executable, [cli, '--install-extension', helper, '--force'],
-      { windowsHide: true, timeout: 30000, maxBuffer: 65536, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
-      error => error ? reject(new Error('The VS Code terminal helper could not be installed. Open VS Code and try again.')) : resolve()));
+    const promise = new Promise((resolve, reject) => run(executable, [cli, '--install-extension', helper, '--force', ...extraArgs],
+      { windowsHide: true, timeout: 60000, maxBuffer: 65536, env: { ...env, VSCODE_DEV: '', ELECTRON_RUN_AS_NODE: '1' } },
+      (error, stdout, stderr) => error ? reject(installFailure(error, stdout, stderr)) : resolve()));
     installed.set(key, promise); promise.catch(() => installed.delete(key));
   }
   return installed.get(key);
@@ -39,4 +59,4 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
   }
   return true;
 }
-module.exports = { codeLocations, openSession, installHelper };
+module.exports = { codeLocations, codeCli, openSession, installHelper };

@@ -134,3 +134,11 @@ Side notifications stop growing at the default 228px notch length. Overflowing d
 The four alert switches never wrap. Account details retain session ids and render Working/Waiting rows as keyboard-accessible buttons. `vscode-link/` is a small UI extension using `Terminal.processId` and `Terminal.show(false)`; `scripts/package-vscode-link.py` produces the dependency-free VSIX bundled with the installer. `desktop/session-open.cjs` installs it through Code's CLI, then launches a fixed URI built from validated session/process identities. Standard user/system Code install locations are checked before a registered-protocol fallback. Keep the matching workspace open in the focused window; the helper does not switch workspaces automatically.
 
 Validation: 36 desktop regression checks, 15 collector checks, notification and bell browser checks on every edge including single-row controls, old-link errors and Working clicks. Helper/launcher tests cover terminal selection, installation, direct Code launch, fallback and invalid targets. Update the collector alongside the Windows app. Actual Windows focus and first-click installation need a device check.
+
+## Notification testing and history (3.2.6)
+
+Settings → Accounts has a Test notification button for each account. One sample stays visible until turned off, replaced by another account's test, or Settings closes. Hidden accounts receive a temporary gauge without changing their saved visibility. Samples use the normal notification shape and scrolling, without sound, history entries or session links.
+
+The bell history scrolls within a 228px list while the heading and switches remain visible. All 40 retained alerts are reachable; refreshes preserve the list's scroll position. Helper installation follows the installed Code CLI wrapper, clears its development flag and allows 60 seconds. Failures include the underlying installer reason. The Windows workflow installs the packaged VSIX through real Code from Electron using isolated settings/extensions before publishing. SSH terminal focus still requires the matching remote workspace to be open.
+
+Validation: 37 desktop checks; browser checks cover history wheel scrolling on every edge, preserved scroll position, per-account testing, hidden-account restoration and reduced motion.

@@ -27,6 +27,7 @@ let visible = false, held = false, mouseDown = false, carrying = false, dismisse
 // is open, and the notch never goes before it has closed
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
+let notificationTestAccount = null;
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
 const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
@@ -293,7 +294,7 @@ function openSettings(tab = 'accounts') {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false } });
   secure(settings);
   settings.once('ready-to-show', () => settings.show());
-  settings.on('closed', () => { settings = null; visibleUntil = Date.now() + 1800; });
+  settings.on('closed', () => { settings = null; notificationTestAccount = null; broadcast('notification_test', null); visibleUntil = Date.now() + 1800; });
   settings.loadFile(path.join(uiRoot, 'settings.html'), { query: { tab } });
 }
 function configureTray() {
@@ -364,6 +365,15 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
     case 'get_alert_preferences': return config.alerts;
+    case 'get_notification_test': return notificationTestAccount;
+    case 'set_notification_test': {
+      if (event.sender !== settings?.webContents) throw new Error('Open Settings to test a notification.');
+      const account = accounts().find(a => a.id === args.account);
+      if (!account) throw new Error('This account is no longer available.');
+      notificationTestAccount = args.on === true ? account.id : null;
+      if (notificationTestAccount) { reveal(false); visibleUntil = Math.max(visibleUntil, Date.now() + 2500); }
+      broadcast('notification_test', notificationTestAccount); return notificationTestAccount;
+    }
     case 'open_alert_session': {
       // Resolve a stored alert, never accept a URL or command from the renderer.
       const entry = alertLog(config.alertLog).find(e => e.id === args.id);

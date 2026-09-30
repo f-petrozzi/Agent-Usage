@@ -191,3 +191,11 @@ The bundled Agent Usage Link helper is installed on the first terminal-linked cl
 Old completion rows try a bounded `--session-links` query, matching account, name and one recorded turn end within 15 seconds of the alert. The query exports no message bodies. Missing/ambiguous links and launch failures display an explanation. Update the collector for historical recovery and terminal identities. Actual Windows focus and first-click VSIX installation require a device check.
 
 The unread dot uses existing space inside the bezel corner. During a pocket swap it shrinks there, then appears on the revealed bell. Returning to the pin restores the corner dot; the pin never carries it. Reduced motion makes these changes immediate.
+
+## History scrolling and notification tests (3.2.6)
+
+The history list is capped at 228px and scrolls below the fixed title/switches. All 40 retained alerts appear, and refreshes preserve the scroll position. Wheel events over a card never swap the bell/pin pocket.
+
+Settings → Accounts includes a Test notification toggle for each account. A single persistent completion sample uses the regular sliver; choosing another account replaces it. Tests do not chime, write history or link to a real session. Hidden accounts appear temporarily during their test. Turning it off or closing Settings removes the preview and restores saved visibility.
+
+The helper installer resolves the Code CLI entrypoint from `bin/code.cmd`, clears `VSCODE_DEV` as the official wrapper does, verifies the bundled file exists, and waits up to 60 seconds. Errors retain the actual installer reason. The Windows release workflow now installs the packaged helper into isolated Code data/extensions through Electron before publishing.

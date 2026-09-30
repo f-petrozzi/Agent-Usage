@@ -38,6 +38,17 @@ jobs:
       - run: python scripts/package-vscode-link.py
       - run: npm run pack:windows
         working-directory: desktop
+      - name: Verify packaged VS Code helper installation
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:RUNNER_TEMP 'agent-usage-vscode-check'
+          New-Item -ItemType Directory -Force $testRoot | Out-Null
+          $archive = Join-Path $testRoot 'code.zip'
+          Invoke-WebRequest 'https://update.code.visualstudio.com/latest/win32-x64-archive/stable' -OutFile $archive
+          $codeRoot = Join-Path $testRoot 'code'
+          Expand-Archive $archive $codeRoot
+          node tests/vscode-install-windows.cjs "$codeRoot\Code.exe" "$PWD\desktop\dist\win-unpacked\resources\agent-usage-link.vsix" "$testRoot\isolated-data"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged VS Code helper installation failed' }
       - run: python scripts/package-release.py
       - uses: actions/upload-artifact@v4
         with:
