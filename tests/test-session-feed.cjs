@@ -52,3 +52,21 @@ test('Antigravity activity maps to its Gemini usage account', () => {
   assert.equal(activity[0].detail,'Working');
   assert.equal(activity[1].detail,'Input needed');
 });
+
+test('terminal snapshots preserve identity for alerts and leave activity arcs off', () => {
+  const feed = new SessionFeed(() => ({}));
+  const snapshots=[];
+  feed.on('snapshot',value=>snapshots.push(value));
+  feed.line(line([{provider:'codex',account:'codex:b',id:'r1',state:'busy'}]));
+  assert.equal(feed.sessions.length,1);
+  feed.line(line([{provider:'codex',account:'codex:b',id:'r1',state:'idle'}]));
+  assert.equal(feed.sessions.length,0);
+  assert.equal(snapshots[1][0].id,'r1');
+  assert.equal(snapshots[1][0].state,'idle');
+  feed.close();
+});
+test('malformed stream data resets alert continuity', () => {
+  const feed = new SessionFeed(() => ({}));
+  let disconnected=0;feed.on('disconnected',()=>disconnected++);
+  feed.line('not json');assert.equal(disconnected,1);feed.close();
+});

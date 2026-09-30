@@ -97,6 +97,8 @@
   .acct-label{display:flex;align-items:center;min-width:0}
   .acct.off .acct-name{color:var(--text2)}
   .acct.off .glyph{opacity:.5}
+  .acct[draggable="true"]{cursor:grab}.acct.drag-over{outline:2px solid var(--text3);outline-offset:-2px}
+  .acct-order{display:flex;gap:4px}.acct-order button{padding:2px 7px}.acct-warnings{display:flex;align-items:center;justify-content:space-between;margin-top:5px;color:var(--text2);font-size:12px}
   .acct-detail{margin:4px 0 0 26px;font-size:12px;color:var(--text2)}
   .acct-sub{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 0 26px;font-size:13px}
   .glyph{width:16px;height:16px;display:inline-grid;place-items:center;flex:none;color:var(--text)}
@@ -156,7 +158,7 @@
     <div id="body">
 
       <section class="pane" id="pane-accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
-        <div class="sec">Connected</div>
+        <div class="sec">Connected · drag to reorder</div>
         <div class="group" id="acc-on" data-dynamic></div>
         <div id="acc-off-wrap" hidden>
           <div class="sec">Not connected</div>
@@ -191,6 +193,14 @@
 
       <section class="pane" id="pane-general" role="tabpanel" aria-labelledby="tab-general" hidden>
         <div class="group"><div class="item"><span>Usage</span><button class="btn" id="refresh-usage">Refresh</button></div></div>
+        <div class="sec">Alerts</div>
+        <div class="group">
+          <div class="item"><span>Usage warnings at 80% and 100%</span><button class="switch" id="sw-alert-quota" role="switch" aria-checked="false" aria-label="Usage warnings at 80% and 100%"></button></div>
+          <div class="item"><span>Agent waiting for input</span><button class="switch" id="sw-alert-waiting" role="switch" aria-checked="false" aria-label="Agent waiting for input"></button></div>
+          <div class="item"><span>Agent finished working</span><button class="switch" id="sw-alert-completion" role="switch" aria-checked="false" aria-label="Agent finished working"></button></div>
+          <div class="item"><span>Briefly reveal notch for agent alerts</span><button class="switch" id="sw-alert-peek" role="switch" aria-checked="false" aria-label="Briefly reveal notch for agent alerts"></button></div>
+          <div class="item"><span>Notification sound</span><button class="switch" id="sw-alert-sound" role="switch" aria-checked="false" aria-label="Notification sound"></button></div>
+        </div>
         <div class="sec">Collector</div>
         <div class="group">
           <div class="item"><label for="source">Source</label><select id="source"><option value="wsl">Local WSL</option><option value="ssh">SSH</option></select></div>

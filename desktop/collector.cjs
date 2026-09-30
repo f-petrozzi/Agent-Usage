@@ -92,16 +92,16 @@ class Collector extends EventEmitter {
   close() { this.closed = true; clearTimeout(this.timer); this.child?.kill(); }
 }
 // One line of `agent-usage --watch-sessions`: the sessions working or waiting right now, as notch activity
-function parseSessions(line) {
+function parseSessions(line, includeTerminal = false) {
   const raw = JSON.parse(line);
   if (raw.schema !== 1 || !Array.isArray(raw.sessions)) throw new Error('Unsupported session feed');
   return raw.sessions.slice(0, 40)
-    .filter(s => s && ['claude', 'codex', 'antigravity'].includes(s.provider) && ['busy', 'waiting'].includes(s.state) && typeof s.account === 'string')
+    .filter(s => s && ['claude', 'codex', 'antigravity'].includes(s.provider) && (includeTerminal ? ['busy', 'waiting', 'idle', 'canceled'] : ['busy', 'waiting']).includes(s.state) && typeof s.account === 'string')
     .map(s => {
       const reason = s.state === 'waiting' && typeof s.waitingFor === 'string' ? clean(s.waitingFor, 60) : '';
-      return { provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
+      return { ...(includeTerminal ? { id: clean(s.id || '', 100) } : {}), provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
         name: clean(s.name || ({claude:'Claude',codex:'Codex',antigravity:'Antigravity'}[s.provider]), 80),
-        detail: s.state === 'busy' ? 'Working' : reason ? reason[0].toUpperCase() + reason.slice(1) : 'Waiting',
+        detail: s.state === 'idle' ? 'Turn ended' : s.state === 'canceled' ? 'Canceled' : s.state === 'busy' ? 'Working' : reason ? reason[0].toUpperCase() + reason.slice(1) : 'Waiting',
         since: finite(s.since) ? s.since * 1000 : 0 };
     });
 }
@@ -131,9 +131,10 @@ class SessionFeed extends EventEmitter {
   }
   line(text) {
     let sessions;
-    try { sessions = parseSessions(text); } catch { return; }
+    try { sessions = parseSessions(text, true); } catch { this.emit('disconnected'); return; }
     this.failures = 0; this.watchdog();
-    this.set(sessions);
+    this.emit('snapshot', sessions);
+    this.set(sessions.filter(s => ['busy', 'waiting'].includes(s.state)).map(({id, ...activity}) => activity));
   }
   set(sessions) {
     if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return;
@@ -143,7 +144,7 @@ class SessionFeed extends EventEmitter {
   watchdog() { clearTimeout(this.quiet); this.quiet = setTimeout(() => this.child?.kill(), 45000); }
   ended(child, stderr) {
     if (this.child === child) this.child = null;
-    clearTimeout(this.quiet); this.set([]);
+    clearTimeout(this.quiet); this.emit('disconnected'); this.set([]);
     if (this.closed) return;
     // A collector from before --watch-sessions: check back rarely rather than reconnecting every few seconds
     if (/unrecognized arguments/.test(stderr)) return this.retry(600000);

@@ -135,3 +135,21 @@ visible. Branch builds only create workflow artifacts. All update metadata must
 come from the same build as the installer. Release files belong in GitHub Releases,
 not the source repository. The version starts at 3.0.0 to supersede the existing
 2.1.x public releases and the 0.2.x local Electron previews.
+
+## 3.1 alerts and tray
+
+General contains global usage, waiting, completion, notch peek, and sound switches.
+Accounts contains per-account usage-warning switches and drag/up/down ordering.
+The tray menu follows the visible account order and includes all quota windows,
+reset countdowns, and stale/error labels.
+
+The collector feed includes terminal states for alert evaluation; only working
+and waiting states reach the animated activity UI. Stable session ids connect
+transitions, and a broken feed discards the previous baseline. Codex completion
+uses `task_complete`; `turn_aborted` is a separate canceled state. Claude idle
+requires a matching live process; Antigravity idle requires a live presence lock
+and excludes killed conversations. No hooks or screen capture are installed.
+
+Regression checks: `node --test tests/test-alerts.cjs tests/test-session-feed.cjs`
+and `python3 tests/test-sessions.py`. Browser settings interactions:
+`PLAYWRIGHT_MODULE=/path/to/playwright node tests/browser/settings-alerts.cjs`.

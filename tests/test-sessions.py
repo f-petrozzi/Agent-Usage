@@ -47,6 +47,12 @@ class ClaudeSessionTests(unittest.TestCase):
         self.write('3.json', pid=os.getpid(), procStart='1', status='busy')  # pid now someone else's
         self.assertEqual(usage.claude_sessions(self.dir), [])
 
+    def test_terminal_feed_reports_idle_only_while_process_is_alive(self):
+        self.write('live.json', pid=os.getpid(), procStart=own_start(), sessionId='live', status='idle')
+        self.write('dead.json', pid=2**22 + 12345, status='idle')
+        got = usage.claude_sessions(self.dir, include_terminal=True)
+        self.assertEqual([(s['id'], s['state']) for s in got], [('live', 'idle')])
+
     def test_key_files_are_never_opened(self):
         key = self.dir / 'sessions' / '1.abc.key'
         key.write_text('{"peerToken":"secret"}')
@@ -77,6 +83,13 @@ class CodexSessionTests(unittest.TestCase):
         self.assertEqual([(s['id'], s['state'], s['account'], s['name']) for s in got],
                          [('rollout-open', 'busy', 'codex:a', 'Nest')])
         self.assertEqual(got[0]['since'], 1790708400)
+
+    def test_completion_and_cancellation_are_distinct_terminal_states(self):
+        self.rollout('done', 'task_started', 'task_complete')
+        self.rollout('aborted', 'task_started', 'turn_aborted')
+        got = usage.codex_sessions([('a', self.home)], self.now, include_terminal=True)
+        self.assertEqual({s['id']: s['state'] for s in got},
+                         {'rollout-done': 'idle', 'rollout-aborted': 'canceled'})
 
     def test_a_turn_quiet_for_half_an_hour_is_not_busy(self):
         self.rollout('stuck', 'task_started', age=usage.CODEX_QUIET_SECONDS + 60)
@@ -112,6 +125,10 @@ class AntigravitySessionTests(unittest.TestCase):
                 transcript.write_text(json.dumps({'type': 'TOOL', 'status': 'WAITING'}) + '\n{"partial":')
                 got = {s['id']: s for s in usage.antigravity_sessions(root)}
                 self.assertEqual(set(got), {'running', 'waiting', 'background'})
+                terminal = {s['id']: s for s in usage.antigravity_sessions(root, include_terminal=True)}
+                self.assertEqual(terminal['idle']['state'], 'idle')
+                self.assertNotIn('killed', terminal)
+                self.assertNotIn('crashed', terminal)
                 self.assertEqual(got['running']['state'], 'busy')
                 self.assertEqual(got['waiting']['state'], 'waiting')
                 self.assertEqual(got['waiting']['account'], 'antigravity')

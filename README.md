@@ -42,6 +42,30 @@ The app never opens credentials on Windows. [MIT license](LICENSE).
 Codex stream reads frame raw pipe bytes so coalesced notifications and replies do
 not cause false timeouts. Regression: `python3 tests/test-codex-stream.py`.
 
+## Alerts and account order (3.1)
+
+Settings → General now offers usage warnings at 80% and 100%, optional alerts when
+an agent waits for input or finishes working, a five-second notch reveal for agent
+alerts, and notification sound. Usage warnings are enabled by default; waiting,
+completion and sound are off. Windows notification settings control toast delivery.
+
+Warnings track each reported quota window, retain their threshold across app
+restarts, and rearm when a later reset boundary confirms a new window. The initial
+reading establishes a baseline, so starting the app does not send old warnings.
+Mute individual accounts under Settings → Accounts. Drag an account, or use its
+up/down buttons, to reorder the notch and tray; visibility stays independent.
+
+Enable the tray icon under Appearance for account usage, every reported window,
+reset countdowns, and stale status, plus a Refresh action.
+
+Completion requires an observed working → explicit idle/turn-ended transition.
+Canceled turns, vanished processes, stream failures, initial readings, and
+reconnections do not announce completion. “Finished working” means the turn ended,
+not that its result was successful. Waiting → idle does not announce completion.
+Codex does not expose approval waits in its rollout. Update the collector alongside
+the desktop app to enable the new terminal states; older collectors still provide
+usage and active/waiting indicators.
+
 ## Antigravity
 
 Sign into `agy` with your Google AI Pro account on the collector machine.

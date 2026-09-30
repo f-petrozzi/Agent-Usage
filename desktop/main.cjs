@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session, Notification } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity } = require('./collector.cjs');
+const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings } = require('./alerts.cjs');
 
 app.setName('Agent Usage');
 app.setAppUserModelId('ink.petro.agent-usage');
@@ -18,7 +19,9 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
     require('electron').dialog.showErrorBox('Agent Usage could not start', error.message); app.quit();
   });
 }
-let win, settings, tray, input, collector, feed, config, configPath, timer, updates;
+let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
+const notifications = new Set();
+let trayTimer;
 let visible = false, held = false, mouseDown = false, carrying = false, dismissed = false;
 let pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
@@ -27,7 +30,12 @@ const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
 const placeholder = () => ({ id: 'collector', base: 'claude', name: 'Agent Usage', glyph: '…', snap: { ...absent(), status: 'loading', note: 'Reading your collector…', details: [] } });
-const accounts = () => collector?.accounts.length ? collector.accounts : [placeholder()];
+const accounts = () => {
+  const values = collector?.accounts.length ? collector.accounts : [placeholder()];
+  const order = config?.accountOrder || [];
+  const rank = id => order.includes(id) ? order.indexOf(id) : order.length;
+  return [...values].sort((a, b) => rank(a.id) - rank(b.id));
+};
 const broadcast = (name, payload) => { for (const w of [win, settings]) if (w && !w.isDestroyed()) w.webContents.send('event', name, payload); };
 const send = (name, payload) => { if (win && !win.isDestroyed()) win.webContents.send('event', name, payload); };
 function save() { fs.writeFileSync(configPath + '.tmp', JSON.stringify(config, null, 2)); fs.renameSync(configPath + '.tmp', configPath); }
@@ -52,6 +60,9 @@ async function start() {
   // Move the previous default once; later explicit shortcut choices remain intact.
   if ((stored.shortcutRevision || 0) < 2 && ['Ctrl+Shift+Space', 'Shift+F1'].includes(config.shortcut)) config.shortcut = 'Scrolllock';
   config.shortcutRevision = 2;
+  config.alerts = alertPreferences(config.alerts);
+  config.accountOrder = Array.isArray(config.accountOrder) ? [...new Set(config.accountOrder.filter(id => typeof id === 'string'))].slice(0, 40) : [];
+  quotaAlerts = new QuotaAlerts(config.quotaWarnings); sessionAlerts = new SessionAlerts();
   config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false };
   if (!shortcuts[config.shortcut]) config.shortcut = 'Scrolllock';
   if (!['left','right','top','bottom'].includes(config.edge)) config.edge = 'right';
@@ -89,19 +100,29 @@ async function start() {
   screen.on('display-removed', () => { if (!screen.getAllDisplays().some(d => d.id === monitor.id)) useMonitor(screen.getPrimaryDisplay()); });
   screen.on('display-metrics-changed', (_event, display) => { if (display.id === monitor.id) useMonitor(display); });
   timer = setInterval(tick, 16);
+  // Reset countdowns in an open tray menu are refreshed on the next opening.
+  trayTimer = setInterval(updateTray, 60000);
   save();
 }
 function restartCollector() {
+  sessionAlerts.reset();
   collector?.close();
   collector = new Collector(() => config);
   collector.on('change', value => {
     if (enrollAntigravity(config, value)) { save(); broadcast('notch_slots', config.slots); }
-    broadcast('agent_accounts', value); broadcast('glyphs', glyphs()); broadcast('state', stateSnapshot()); });
+    const ordered = accounts();
+    const before = JSON.stringify(quotaAlerts.saved);
+    showAlerts(quotaAlerts.update(value, config.alerts));
+    if (JSON.stringify(quotaAlerts.saved) !== before) { config.quotaWarnings = quotaAlerts.saved; save(); }
+    broadcast('agent_accounts', ordered); broadcast('glyphs', glyphs()); broadcast('state', stateSnapshot()); updateTray(); });
   broadcast('agent_accounts', accounts());
   collector.refresh();
-  feed?.close();
+  if (feed) { feed.removeAllListeners(); feed.close(); }
+  broadcast('activity', []);
   feed = new SessionFeed(() => config);
   feed.on('change', value => broadcast('activity', value));
+  feed.on('snapshot', value => showAlerts(sessionAlerts.update(value, config.alerts)));
+  feed.on('disconnected', () => sessionAlerts.reset());
   feed.start();
 }
 function useMonitor(display) {
@@ -262,8 +283,34 @@ function configureTray() {
   tray?.destroy(); tray = null;
   if (!config.tray) return;
   tray = new Tray(resource('icon.ico'));
-  tray.setToolTip('Agent Usage'); tray.on('click', reveal);
-  tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Show Agent Usage', click: reveal }, { label: 'Settings', click: () => openSettings() }, { label: 'Quit', click: () => app.quit() }]));
+  tray.on('click', reveal); tray.on('right-click', updateTray);
+  updateTray();
+}
+function updateTray() {
+  if (!tray || tray.isDestroyed()) return;
+  const readings = trayReadings(orderedAccounts(accounts(), config.slots));
+  const rows = readings.map(a => ({ label: a.name + (a.lines[0] ? ` · ${a.lines[0]}` : '') + (a.status === 'ok' ? '' : ` (${a.status})`),
+    submenu: a.lines.length ? a.lines.map(label => ({ label, enabled: false })) : [{ label: 'Usage unavailable', enabled: false }] }));
+  tray.setToolTip(['Agent Usage', ...readings.map(a => `${a.name}: ${a.lines[0] || 'unavailable'}${a.status === 'stale' ? ' (stale)' : ''}`)].join('\n').slice(0, 127));
+  tray.setContextMenu(Menu.buildFromTemplate([...rows, { type: 'separator' },
+    { label: 'Refresh usage', click: requestRefresh }, { label: 'Show Agent Usage', click: reveal },
+    { label: 'Settings', click: () => openSettings() }, { label: 'Quit', click: () => app.quit() }]));
+}
+function showAlerts(events) {
+  if (!events.length) return;
+  // Consolidate simultaneous crossings/turns into one toast instead of a burst.
+  const title = events.length === 1 ? events[0].title : `${events.length} Agent Usage alerts`;
+  const body = events.length === 1 ? events[0].body : events.map(e => `${e.title}: ${e.body}`).join('\n');
+  if (Notification.isSupported()) {
+    const notification = new Notification({ title, body, icon: resource('icon.ico'), silent: !config.alerts.sound });
+    notifications.add(notification);
+    if (notifications.size > 20) { const oldest = notifications.values().next().value; notifications.delete(oldest); oldest.close(); }
+    notification.on('close', () => notifications.delete(notification));
+    notification.on('failed', () => notifications.delete(notification));
+    notification.on('click', () => { notifications.delete(notification); if (events.some(e => e.kind === 'quota')) openSettings('accounts'); else reveal(); });
+    notification.show();
+  }
+  if (config.alerts.peek && events.some(e => e.kind !== 'quota')) { reveal(); visibleUntil = Date.now() + 5000; }
 }
 function contextMenu() {
   menuOpen = true;
@@ -300,8 +347,25 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_claude_auth': return { available: false, busy: false, can_sign_in: false };
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
+    case 'get_alert_preferences': return config.alerts;
+    case 'set_alert_preferences': {
+      config.alerts = alertPreferences({ ...config.alerts, ...args }); save(); broadcast('alert_preferences', config.alerts); return config.alerts;
+    }
+    case 'set_account_order': {
+      if (!Array.isArray(args.ids)) throw new Error('Invalid account order');
+      config.accountOrder = [...new Set(args.ids.filter(id => accounts().some(a => a.id === id)))].slice(0, 40);
+      // Visibility is independent of order. An explicit selection follows the new order.
+      if (config.slots.length) config.slots.sort((a, b) => config.accountOrder.indexOf(a.provider) - config.accountOrder.indexOf(b.provider));
+      save(); broadcast('agent_accounts', accounts()); broadcast('notch_slots', config.slots); updateTray(); return accounts();
+    }
     case 'get_notch_slots': return config.slots;
-    case 'set_notch_slots': config.slots = (Array.isArray(args.slots) ? args.slots : []).filter(s => accounts().some(a => a.id === s.provider)).map(s => ({ provider: s.provider })); save(); broadcast('notch_slots', config.slots); return config.slots;
+    case 'set_notch_slots': {
+      const values = accounts();
+      config.slots = (Array.isArray(args.slots) ? args.slots : []).filter(s => s && values.some(a => a.id === s.provider)).map(s => ({ provider: s.provider }));
+      config.slots = [...new Map(config.slots.map(s => [s.provider, s])).values()];
+      config.slots.sort((a, b) => values.findIndex(x => x.id === a.provider) - values.findIndex(x => x.id === b.provider));
+      save(); updateTray(); broadcast('notch_slots', config.slots); return config.slots;
+    }
     case 'get_theme_resolved': return theme();
     case 'get_theme': return config.theme;
     case 'set_theme': config.theme = enumValue(args.theme, ['system','light','dark']); save(); broadcast('theme_resolved', theme()); return config.theme;
@@ -345,7 +409,13 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'install_update': updates?.install(); return null;
     case 'get_version': return app.getVersion();
     case 'get_collector': return { source: config.source, sshTarget: config.sshTarget, shortcut: config.shortcut, error: hotkeyProblem };
-    case 'set_collector': enumValue(args.source, ['wsl','ssh']); if (args.source === 'ssh' && !validHost(args.sshTarget)) throw new Error('Use an SSH host or user@host'); config.source = args.source; config.sshTarget = String(args.sshTarget || ''); save(); restartCollector(); return null;
+    case 'set_collector': {
+      enumValue(args.source, ['wsl','ssh']);
+      if (args.source === 'ssh' && !validHost(args.sshTarget)) throw new Error('Use an SSH host or user@host');
+      const target = String(args.sshTarget || '');
+      if (config.source !== args.source || config.sshTarget !== target) { quotaAlerts = new QuotaAlerts(); config.quotaWarnings = {}; }
+      config.source = args.source; config.sshTarget = target; save(); restartCollector(); return null;
+    }
     case 'set_shortcut': registerShortcut(args.shortcut); hotkeyProblem = ''; save(); return config.shortcut;
     case 'open_settings': openSettings(); return null;
     case 'close_settings': settings?.close(); return null;
@@ -359,4 +429,4 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   }
 });
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { clearInterval(timer); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });
+app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer); for (const notification of notifications) notification.close(); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });

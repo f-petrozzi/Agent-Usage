@@ -796,7 +796,7 @@ def latest_activity(codex_homes: list[Path], include_claude: bool) -> int | None
 #            crash and ignored.
 # * Codex  - each turn appends task_started, then task_complete or
 #            turn_aborted, to the session's rollout. Codex does not record
-#            approval waits there, so Codex only ever reports busy.
+#            approval waits there, so Codex cannot report waiting. Terminal states support completion alerts.
 # * AGY    - locked CLI presence plus its read-only summary database. Pending
 #            transcript steps distinguish explicit questions/permission waits.
 
@@ -804,8 +804,8 @@ SESSION_POLL_SECONDS = 1.5
 SESSION_HEARTBEAT_SECONDS = 15.0
 CODEX_QUIET_SECONDS = 30 * 60  # a busy rollout this quiet is a turn that died without closing
 SESSION_TAIL_BYTES = 256 * 1024
-CLAUDE_STATES = {"busy": "busy", "waiting": "waiting"}
-CODEX_TURN_EVENTS = {"task_started": "busy", "task_complete": None, "turn_aborted": None}
+CLAUDE_STATES = {"busy": "busy", "waiting": "waiting", "idle": "idle"}
+CODEX_TURN_EVENTS = {"task_started": "busy", "task_complete": "idle", "turn_aborted": "canceled"}
 
 
 def _process_matches(pid: Any, proc_start: Any) -> bool:
@@ -822,7 +822,7 @@ def _process_matches(pid: Any, proc_start: Any) -> bool:
     return len(fields) > 19 and fields[19] == str(proc_start)
 
 
-def claude_sessions(config_dir: Path) -> list[dict[str, Any]]:
+def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     for path in sorted((config_dir / "sessions").glob("*.json"))[:64]:
         try:
@@ -834,7 +834,7 @@ def claude_sessions(config_dir: Path) -> list[dict[str, Any]]:
         if not isinstance(record, dict):
             continue
         state = CLAUDE_STATES.get(record.get("status"))
-        if state is None or not _process_matches(record.get("pid"), record.get("procStart")):
+        if state is None or (state == "idle" and not include_terminal) or not _process_matches(record.get("pid"), record.get("procStart")):
             continue
         since = record.get("statusUpdatedAt")
         waiting_for = record.get("waitingFor")
@@ -880,7 +880,7 @@ def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
     return None, None, None
 
 
-def codex_sessions(profiles: list[tuple[str, Path]], now: float) -> list[dict[str, Any]]:
+def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_terminal: bool = False) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     seen: set[Path] = set()
     days = {dt.datetime.fromtimestamp(now - offset).strftime("%Y/%m/%d") for offset in (0, 86400)}
@@ -895,7 +895,7 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float) -> list[dict[st
                     state, started, cwd = _codex_turn_state(path)
                 except OSError:
                     continue
-                if state is None:
+                if state is None or (state != "busy" and not include_terminal):
                     continue
                 sessions.append({
                     "provider": "codex",
@@ -909,7 +909,7 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float) -> list[dict[st
     return sessions
 
 
-def antigravity_sessions(data_dir: Path) -> list[dict[str, Any]]:
+def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list[dict[str, Any]]:
     """Read live CLI presence and status metadata; never open Google credentials."""
     database = data_dir / "conversation_summaries.db"
     if not database.is_file():
@@ -932,9 +932,9 @@ def antigravity_sessions(data_dir: Path) -> list[dict[str, Any]]:
             except OSError:
                 continue
             active = status in {"CASCADE_RUN_STATUS_RUNNING", "CASCADE_RUN_STATUS_BUSY"} or (status == "CASCADE_RUN_STATUS_IDLE" and background)
-            if not active:
+            if not active and not (include_terminal and status == "CASCADE_RUN_STATUS_IDLE"):
                 continue
-            state, reason = "busy", None
+            state, reason = ("busy" if active else "idle"), None
             transcript = data_dir / "brain" / identity / ".system_generated" / "logs" / "transcript.jsonl"
             try:
                 with transcript.open("rb") as handle:
@@ -949,7 +949,7 @@ def antigravity_sessions(data_dir: Path) -> list[dict[str, Any]]:
                         continue
                     calls = step.get("tool_calls")
                     question = isinstance(calls, list) and any(isinstance(call, dict) and call.get("name") in {"ask_question", "ask_permission"} for call in calls)
-                    if step.get("status") == "WAITING" or question:
+                    if active and (step.get("status") == "WAITING" or question):
                         state, reason = "waiting", "input needed"
                     break
             except OSError:
@@ -967,10 +967,10 @@ def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool, inclu
     last_sent, last_line = 0.0, ""
     while True:
         now = time.time()
-        sessions = (claude_sessions(claude_config_dir()) if include_claude else []) + codex_sessions(profiles, now)
+        sessions = (claude_sessions(claude_config_dir(), include_terminal=True) if include_claude else []) + codex_sessions(profiles, now, include_terminal=True)
         if include_antigravity:
-            sessions += antigravity_sessions(Path.home() / ".gemini" / "antigravity-cli")
-        sessions.sort(key=lambda s: (s["provider"], s["account"], s["id"]))
+            sessions += antigravity_sessions(Path.home() / ".gemini" / "antigravity-cli", include_terminal=True)
+        sessions.sort(key=lambda s: (s["state"] not in {"busy", "waiting"}, s["provider"], s["account"], s["id"]))
         line = json.dumps({"schema": 1, "sessions": sessions[:40]}, separators=(",", ":"))
         if line != last_line or now - last_sent >= SESSION_HEARTBEAT_SECONDS:
             try:
