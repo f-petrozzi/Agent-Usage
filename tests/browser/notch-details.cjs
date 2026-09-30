@@ -172,9 +172,9 @@ const answers = {
   assert.equal(await page.locator('#card .inline-extras .w-track').count(),2,'side extra model quotas open by default');
   assert.equal(await page.locator('#extra-card').innerText(),'','side extras stay within the main frame');
   await page.screenshot({path:path.join(OUT,'side-antigravity-extras.png')});
-  for(const [state,selector] of [['busy','.arc-spin'],['waiting','.arc-pulse']]){
+  for(const [state,selector] of [['busy','.activity-layer.running svg.activity > circle'],['waiting','svg.activity .arc-pulse']]){
     await page.evaluate(state=>__emit('activity',[{provider:'antigravity',account:'antigravity',state,name:'AGY',detail:state==='busy'?'Working':'Input needed',since:Date.now()}]),state);
-    assert.equal(await page.locator('.cell[data-p="antigravity"] svg.activity '+selector).count(),1,'AGY shares the existing live activity indicator');
+    assert.equal(await page.locator('.cell[data-p="antigravity"] '+selector).count(),1,'AGY shares the existing live activity indicator');
     await page.screenshot({path:path.join(OUT,'antigravity-'+state+'.png')});
   }
   await page.evaluate(()=>__emit('activity',[]));

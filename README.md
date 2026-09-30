@@ -42,6 +42,10 @@ The app never opens credentials on Windows. [MIT license](LICENSE).
 Codex stream reads frame raw pipe bytes so coalesced notifications and replies do
 not cause false timeouts. Regression: `python3 tests/test-codex-stream.py`.
 
+The working arc rotates smoothly on its own small compositor layer. It pauses
+when the notch is hidden or that account is collapsed, preserves its phase across
+collector updates, and stays still when Windows reduced motion is enabled.
+
 ## Alerts and account order (3.1)
 
 Settings → General now offers usage warnings at 80% and 100%, optional alerts when

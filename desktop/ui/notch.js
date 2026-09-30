@@ -786,7 +786,7 @@ function renderRing(){
   const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}`;
   if(pill.dataset.cells!==want){
     pill.innerHTML=ps.map((p,i)=>`<div class="cell" role="button" tabindex="0" aria-label="${esc(p.name)}" data-p="${p.id}" style="--i:${i}">
-      <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><svg class="activity" viewBox="0 0 56 56"></svg><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
+      <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><div class="activity-layer"><svg class="activity" viewBox="0 0 56 56"></svg></div><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
       <div class="pct">…</div></div>`).join('');
     pill.dataset.cells=want;
   }
@@ -823,9 +823,14 @@ function renderRing(){
     { // thin inner arc: spinning white = working, yellow pulse = waiting on you (one animation for all four, different sources)
       // Its own layer, so a stale reading can dim around it without dimming it: see `.ringwrap.stale`
       const ws=workState(p);
-      if(ws==='running') activity.innerHTML=`<g class="arc-spin">${svgArc(19,0.28,INK,2.5)}</g>`;
-      else if(ws==='attention') activity.innerHTML=`<g class="arc-pulse"><circle cx="28" cy="28" r="19" fill="none" stroke="${WATCH}" stroke-width="2.5"/></g>`;
-      else activity.innerHTML='';
+      const layer=activity.parentElement;
+      // Keep a running arc's DOM and animation phase through quota/heartbeat updates.
+      if(layer.dataset.state!==ws){
+        layer.dataset.state=ws;layer.classList.toggle('running',ws==='running');
+        if(ws==='running') activity.innerHTML=svgArc(19,0.28,INK,2.5);
+        else if(ws==='attention') activity.innerHTML=`<g class="arc-pulse"><circle cx="28" cy="28" r="19" fill="none" stroke="${WATCH}" stroke-width="2.5"/></g>`;
+        else activity.innerHTML='';
+      }
     }
     if(p.snap.status==='needsAuth'||p.snap.status==='none') pct.textContent='N/A';
     else if(h && h.count!=null) pct.textContent='~'+h.count;

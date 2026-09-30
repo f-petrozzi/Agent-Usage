@@ -153,3 +153,18 @@ and excludes killed conversations. No hooks or screen capture are installed.
 Regression checks: `node --test tests/test-alerts.cjs tests/test-session-feed.cjs`
 and `python3 tests/test-sessions.py`. Browser settings interactions:
 `PLAYWRIGHT_MODULE=/path/to/playwright node tests/browser/settings-alerts.cjs`.
+
+## Smooth activity arc (3.1.1)
+
+The white arc rotates a 44 px HTML layer with a continuous linear CSS transform
+(one revolution per 1.2 seconds). Its SVG geometry stays fixed; `will-change` lets
+Chromium composite the small rasterized layer rather than repaint a rotating SVG
+group across the transparent overlay. Hidden and collapsed accounts pause it,
+and reduced motion removes the animation. Collector updates retain the activity
+node while its state is unchanged, preserving the rotation phase.
+
+`PLAYWRIGHT_MODULE=/path/to/playwright node tests/browser/activity-spin.cjs` checks
+frame-by-frame rotation, Chromium layer promotion, phase continuity, hidden and
+compact pauses, waiting/idle transitions, and reduced motion. A headless Chromium
+run measured 61 frames/second; Windows compositor and mixed-refresh behavior still
+need an on-device check.

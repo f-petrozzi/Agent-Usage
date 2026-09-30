@@ -77,13 +77,13 @@ body[data-edge="bottom"] #pill{flex-direction:row-reverse}
 body[data-edge="left"] #pill{flex-direction:column-reverse}
 
 /* Focus keeps each account anchored. Other readings recede to small, live switch targets. */
-.cell .ringwrap > svg,.cell .pct{transition:opacity .4s ease,scale .5s cubic-bezier(.22,1,.36,1)}
+.cell .ringwrap > svg,.cell .activity-layer,.cell .pct{transition:opacity .4s ease,scale .5s cubic-bezier(.22,1,.36,1)}
 .cell .glyph{transition:scale .5s cubic-bezier(.22,1,.36,1),opacity .3s ease}
-.cell.compact-account .ringwrap > svg,.cell.compact-account .pct{opacity:0!important;scale:.7}
+.cell.compact-account .ringwrap > svg,.cell.compact-account .activity-layer,.cell.compact-account .pct{opacity:0!important;scale:.7}
 .cell.compact-account .glyph{scale:.78;opacity:.75}
 .cell:focus-visible{outline:none}
 .cell:focus-visible .glyph{outline:1px solid #888;outline-offset:3px;border-radius:50%}
-@media(prefers-reduced-motion:reduce){.cell .ringwrap > svg,.cell .pct,.cell .glyph{transition:none}}
+@media(prefers-reduced-motion:reduce){.cell .ringwrap > svg,.cell .activity-layer,.cell .pct,.cell .glyph{transition:none}}
 
 .inline-extras{margin-top:10px}
 .inline-extras .g-head{margin-top:8px}
