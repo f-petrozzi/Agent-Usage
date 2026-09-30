@@ -18,7 +18,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
   });
 }
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates;
-let visible = false, held = false, escape = false, mouseDown = false, carrying = false, dismissed = false;
+let visible = false, held = false, mouseDown = false, carrying = false, dismissed = false;
 let pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
@@ -206,8 +206,6 @@ function registerShortcut(value) {
         for(const name of CONTROLS) if(controlHit(controls[name],point)) { activateControl(name); break; }
       }
       if (!mouseDown && previousMouse) endMove();
-      if (value[1] === '1' && !escape && visible) { dismissed = true; carrying = false; hide(); }
-      escape = value[1] === '1';
     }
   });
   input.on('error', () => { hotkeyProblem = 'Held-key helper could not start. Reinstall this build. Shortcut taps can still reveal the notch.'; broadcast('notice', hotkeyProblem); });

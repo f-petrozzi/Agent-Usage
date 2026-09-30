@@ -1,5 +1,5 @@
 'use strict';
-// Account details are a lobe of the notch, with broad concave shoulders instead of a tooltip point.
+// Account details deepen and widen the notch itself, retaining its edge flares.
 // Its ink grows first; readable HTML follows once there is black underneath it.
 const detailSvg=document.createElementNS(SVG_NS,'svg');
 detailSvg.id='detail-shape';detailSvg.setAttribute('aria-hidden','true');
@@ -15,34 +15,46 @@ function changeDetailAccount(){
 
 function detailGeometry(){
   const origin=document.getElementById('root').getBoundingClientRect(),r=pill.getBoundingClientRect();
-  const cell=pill.querySelector(`.cell[data-p="${hoverId}"] .ringwrap`)||pill,ring=cell.getBoundingClientRect();
   const horizontal=!edgeIsVertical(),box={x:card.offsetLeft,y:card.offsetTop,w:card.offsetWidth,h:card.offsetHeight};
   const matrix=edgeMatrix(notchEdge,innerWidth,innerHeight);
   // Invert the edge's orthogonal matrix; these are root-local coordinates, so the hide slide cancels.
   const local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
   const a=local(box.x,box.y),b=local(box.x+box.w,box.y+box.h);
-  const centre=local(ring.x-origin.x+ring.width/2,ring.y-origin.y+ring.height/2)[0];
   const along=horizontal?r.left-origin.left:r.top-origin.top,length=horizontal?r.width:r.height;
   return {u0:Math.min(a[0],b[0]),u1:Math.max(a[0],b[0]),v0:Math.min(a[1],b[1]),v1:Math.max(a[1],b[1]),
-    a0:Math.max(along+12,centre-46),a1:Math.min(along+length-12,centre+46),depth:edgeDepth(notchEdge),edge:notchEdge};
+    a0:along,a1:along+length,depth:edgeDepth(notchEdge),edge:notchEdge};
 }
 function drawDetails(){
+  drawShape(); // The arms merge home as the widened flares grow around them.
   if(!detailBox||detailOpen<.001){detailPath.removeAttribute('d');return;}
   detailSvg.setAttribute('width',innerWidth);detailSvg.setAttribute('height',innerHeight);
   detailPath.setAttribute('transform',`matrix(${edgeMatrix(detailBox.edge,innerWidth,innerHeight).join(' ')})`);
-  const {a0,a1,depth}=detailBox,t=Math.max(0,detailOpen),mid=(a0+a1)/2;
+  const {a0,a1,depth}=detailBox,t=Math.max(0,detailOpen);
   const matrix=edgeMatrix(detailBox.edge,innerWidth,innerHeight);
   const point=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
   const first=point(detailBox.u0,detailBox.v0),last=point(detailBox.u1,detailBox.v1);
   card.style.setProperty('--detail-offset-x',`${Math.min(first[0],last[0])-card.offsetLeft}px`);
   card.style.setProperty('--detail-offset-y',`${Math.min(first[1],last[1])-card.offsetTop}px`);
-  const u0=mid+(detailBox.u0-mid)*Math.min(1,t),u1=mid+(detailBox.u1-mid)*Math.min(1,t);
-  const v0=depth+(detailBox.v0-depth)*t,v1=depth+(detailBox.v1-depth)*t;
-  const radius=Math.min(26,(u1-u0)/2,Math.max(0,(v1-depth)/2)),base=depth-8;
-  const shoulder=v0+radius;
-  detailPath.setAttribute('d',`M${n(a0)} ${n(base)}C${n(a0)} ${n(shoulder)} ${n(u0)} ${n(v0-radius)} ${n(u0)} ${n(shoulder)}`
-    +`V${n(v1-radius)}Q${n(u0)} ${n(v1)} ${n(u0+radius)} ${n(v1)}H${n(u1-radius)}Q${n(u1)} ${n(v1)} ${n(u1)} ${n(v1-radius)}`
-    +`V${n(shoulder)}C${n(u1)} ${n(v0-radius)} ${n(a1)} ${n(shoulder)} ${n(a1)} ${n(base)}Z`);
+  const u0=a0+(Math.min(a0,detailBox.u0)-a0)*t;
+  const u1=a1+(Math.max(a1,detailBox.u1)-a1)*t;
+  const expandedDepth=depth+(detailBox.v1-depth)*t;
+  // One outline starts at the bezel, grows around the readings, and returns to the bezel.
+  // There is no second rectangle or narrow connector beneath the original notch.
+  const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
+  detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,SHAPE.flare,radius,SHAPE.flare));
+}
+// Hit testing follows the same live outline, including the new space beside the gauges.
+function detailHotRect(){
+  if(!detailPath.hasAttribute('d'))return null;
+  const b=detailPath.getBBox(),m=detailPath.getScreenCTM();
+  const points=[new DOMPoint(b.x,b.y),new DOMPoint(b.x+b.width,b.y+b.height)].map(p=>p.matrixTransform(m));
+  const x=Math.max(0,Math.min(...points.map(p=>p.x))),y=Math.max(0,Math.min(...points.map(p=>p.y)));
+  const right=Math.min(innerWidth,Math.max(...points.map(p=>p.x))),bottom=Math.min(innerHeight,Math.max(...points.map(p=>p.y)));
+  return [x,y,right-x,bottom-y];
+}
+function detailContains(x,y){
+  if(!detailPath.hasAttribute('d'))return false;
+  return detailPath.isPointInFill(new DOMPoint(x,y).matrixTransform(detailPath.getScreenCTM().inverse()));
 }
 function detailStep(now){
   const dt=Math.min(.032,(now-(detailLast||now-16))/1000);detailLast=now;

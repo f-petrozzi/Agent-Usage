@@ -37,7 +37,7 @@ let openness=1, openVelocity=0, openFrame=0, openLast=0;
 // How far the arms have come away from the flares (0 in the black, 1 at their place), and the tween moving it
 let armsOut=0, armsFrame=0;
 let absorbing=false;
-const handles=[{el:pinHandle,ink:armStart,value:0,target:0,frame:0},{el:orb,ink:armEnd,value:0,target:0,frame:0}];
+const handles=[{el:pinHandle,ink:armStart,value:0,target:0,velocity:0,frame:0},{el:orb,ink:armEnd,value:0,target:0,velocity:0,frame:0}];
 
 // A round-ended stroke rolls up from the arc's midpoint into the disc. Reversing the same
 // drawing spreads the disc back into its arc, without swapping HTML and SVG silhouettes.
@@ -46,11 +46,16 @@ function morphHandles(){
     const to=!absorbing&&shown&&!carrying&&h.el.classList.contains('hover')?1:0;
     if(absorbing||to===h.target) continue;
     cancelAnimationFrame(h.frame);h.target=to;
-    if(matchMedia('(prefers-reduced-motion: reduce)').matches){h.value=to;drawShape();continue;}
-    const from=h.value,t0=performance.now();
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches){h.value=to;h.velocity=0;drawShape();continue;}
+    let last=performance.now();
     const step=now=>{
-      const t=Math.min(1,(now-t0)/580);h.value=from+(to-from)*smooth(t);drawShape();
-      h.frame=t<1?requestAnimationFrame(step):0;
+      const dt=Math.min(.032,(now-last)/1000);last=now;
+      const omega=2*Math.PI/.68,damping=to?.76:.88;
+      h.velocity+=(-omega*omega*(h.value-to)-2*damping*omega*h.velocity)*dt;
+      h.value+=h.velocity*dt;
+      const settled=Math.abs(h.value-to)<.002&&Math.abs(h.velocity)<.025;
+      if(settled){h.value=to;h.velocity=0;}
+      drawShape();h.frame=settled?0:requestAnimationFrame(step);
     };
     h.frame=requestAnimationFrame(step);
   }
@@ -60,6 +65,24 @@ let passage=null, cornerNear=0, pillTransform='';
 
 const n=v=>+v.toFixed(2);
 const smooth=x=>{ x=Math.max(0,Math.min(1,x)); return x*x*(3-2*x); };
+// Mac's flareWalk eases curvature at both ends, rather than tracing a circle.
+const flareWalk=(()=>{
+  let heading=0,u=0,v=0;const points=[{u:0,v:0,heading:0}];
+  for(let i=0;i<96;i++){
+    const share=(i+.5)/96,before=heading;
+    heading+=Math.PI*Math.min(share/.5,(1-share)/.5)/96;
+    u+=Math.cos(heading)/96;v+=Math.sin(heading)/96;
+    points.push({u,v,heading:(before+heading)/2});
+  }
+  return points.map(p=>({u:p.u/u,v:p.v/v,heading:p.heading}));
+})();
+function flarePoint(share,flare,gap,end){
+  const at=Math.max(0,Math.min(96,share*96)),lo=Math.floor(at),hi=Math.min(96,lo+1),mix=at-lo;
+  const p={};for(const key of ['u','v','heading'])p[key]=flareWalk[lo][key]+(flareWalk[hi][key]-flareWalk[lo][key])*mix;
+  const sign=end?-1:1;
+  return [sign*(flare*p.u-gap*Math.sin(p.heading)),
+    -flare*(1-p.v)+gap*Math.cos(p.heading)];
+}
 // One part of the notch on one edge, u0 to u1 along it, d deep, each end with its own corner and flare
 function partPath(u0,u1,d,r0,f0,r1,f1){
   const room=u1-u0, k=r0+r1>room&&r0+r1>0?room/(r0+r1):1; r0*=k; r1*=k;
@@ -97,18 +120,19 @@ function drawStraight(){
   partA.removeAttribute('transform');partB.removeAttribute('transform');
   partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
-  const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4);
+  const detailRetreat=typeof detailOpen==='number'?1-smooth(detailOpen/.4):1;
+  const out=armsOut*(1-cornerNear)*smooth((grown-.6)/.4)*detailRetreat;
   const stroke=SHAPE.armStroke*grown;
   setGoo(0,-300,-300,L+600,d+600);
   handles.forEach((h,i)=>{
-    const cx=i?u1+F:u0-F, mid=(i?225:-45)*Math.PI/180, disc=h.value;
+    const cx=i?u1+F:u0-F, mid=(i?225:-45)*Math.PI/180, disc=Math.max(0,Math.min(1,h.value));
     const filter=handleFilters[i], group=liquids[i];
     bands[i].setAttribute('d',partA.getAttribute('d'));
     for(const [key,value] of Object.entries({x:cx-90,y:-60,width:180,height:190}))bandClips[i].setAttribute(key,value);
     necks[i].removeAttribute('d');
     h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
-    const rest=F-SHAPE.arm, buried=rest+stroke*1.4;
+    const rest=14.625*grown, buried=rest+stroke*1.4;
     // Mac GooArc: a buried drop pushes past its resting place on a neck, then unrolls.
     const slide=-buried*(1-out)+rest*(absorbing?1.2:2.1)*Math.sin(Math.PI*Math.min(out/(absorbing?.85:.8),1));
     const unrolled=smooth((out-(absorbing?.6:.52))/(absorbing?.35:.43));
@@ -117,14 +141,14 @@ function drawStraight(){
     const home=absorbing?smooth(1-out):0;
     const baseMid=radius-morphShift-(1-disc)*slide;
     const centre=baseMid+(F+stroke-baseMid)*home*disc;
-    const shift=centre-radius;
     const [a,b,c,e]=edgeMatrix(notchEdge,w,h), dx=centre*Math.cos(mid),dy=centre*Math.sin(mid);
     h.el.style.setProperty('--glyph-x',`${n(a*dx+c*dy)}px`);
     h.el.style.setProperty('--glyph-y',`${n(b*dx+e*dy)}px`);
-    const points=[];
-    for(let j=0;j<=32;j++){
-      const angle=mid-half+2*half*j/32;
-      points.push(`${j?'L':'M'}${n(cx+radius*Math.cos(angle)+shift*Math.cos(mid))} ${n(F+radius*Math.sin(angle)+shift*Math.sin(mid))}`);
+    const points=[],arcMid=flarePoint(.5,F,F-radius,i);
+    for(let j=0;j<=64;j++){
+      const share=.5+(j/64-.5)*(half/(Math.PI/4));
+      const p=flarePoint(share,F,F-radius,i);
+      points.push(`${j?'L':'M'}${n(cx+p[0]-arcMid[0]+centre*Math.cos(mid))} ${n(F+p[1]-arcMid[1]+centre*Math.sin(mid))}`);
     }
     h.ink.setAttribute('d',points.join(''));
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
@@ -133,11 +157,11 @@ function drawStraight(){
     const goo=absorbing
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
       :stroke*.4*smooth(out/.15)*(1-smooth((out-.6)/.35));
-    const blur=Math.max(goo,4*4*disc*(1-disc));
+    const blur=Math.max(goo,5.5*Math.sin(Math.PI*disc));
     h.ink.setAttribute('stroke-width',n(width+blur*.4));
     // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
     const armNeck=absorbing?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
-    const neckWidth=Math.max(armNeck,stroke*1.1*4*disc*(1-disc));
+    const neckWidth=Math.max(armNeck,stroke*1.45*Math.pow(Math.sin(Math.PI*disc),.7));
     if(neckWidth>stroke*.18&&out>.01){
       const ax=cx+(F+stroke)*Math.cos(mid), ay=F+(F+stroke)*Math.sin(mid);
       const reach=absorbing?smooth((.92-out)/.32):1;
@@ -195,7 +219,7 @@ function openShape(){
   cancelAnimationFrame(openFrame); openFrame=0;
   cancelAnimationFrame(armsFrame); armsOut=0;
   absorbing=false;
-  for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;h.value=0;h.target=0;}
+  for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;h.value=0;h.target=0;h.velocity=0;}
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=1; setOpenness(1); return; }
   openVelocity=0; openLast=0; setOpenness(0);
   const omega=2*Math.PI/0.62, zeta=0.72;
@@ -217,7 +241,7 @@ function moveArms(to,seconds,ease=t=>t*t){
   if(absorbing) for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;}
   else morphHandles();
   const finish=()=>{
-    if(absorbing){for(const h of handles){h.value=0;h.target=0;}absorbing=false;}
+    if(absorbing){for(const h of handles){h.value=0;h.target=0;h.velocity=0;}absorbing=false;}
     morphHandles();drawShape();
   };
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=to;finish();return; }

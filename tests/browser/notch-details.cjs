@@ -63,9 +63,20 @@ const answers = {
     await page.waitForTimeout(950);
     const initial=await page.evaluate(()=>({open:detailOpen,account:card.dataset.account,ink:detailPath.getAttribute('d'),opacity:getComputedStyle(card).opacity,
       box:card.getBoundingClientRect().toJSON(),tail:getComputedStyle(tail).clipPath,background:getComputedStyle(card).backgroundColor}));
-    assert.ok(initial.open>.99&&initial.open<1.01);assert.equal(initial.account,'claude');assert.equal(initial.tail,'none');assert.equal(initial.background,'rgba(0, 0, 0, 0)');assert.equal(initial.opacity,'1');assert.ok(initial.ink.includes('C'));
+    assert.ok(initial.open>.99&&initial.open<1.01);assert.equal(initial.account,'claude');assert.equal(initial.tail,'none');assert.equal(initial.background,'rgba(0, 0, 0, 0)');assert.equal(initial.opacity,'1');assert.ok(initial.ink.includes('V0'));assert.ok(initial.ink.includes('A'));
     assert.ok(initial.box.x>=0&&initial.box.y>=0&&initial.box.right<=1280&&initial.box.bottom<=800);
+    assert.ok(await page.evaluate(()=>{
+      const {a0,a1,depth}=detailBox;
+      // Both ends of the original notch continue outward as solid black, without a neck.
+      return [a0+28,a1-28].every(u=>detailPath.isPointInFill(new DOMPoint(u,depth+8)));
+    }),'expansion continues across the original notch width');
     await page.screenshot({path:path.join(OUT,edge+'-details.png')});
+    const shoulder=await page.evaluate(()=>{
+      const matrix=detailPath.getScreenCTM(),u=(detailBox.a0+detailBox.a1)/2,v=12;
+      const p=new DOMPoint(u,v).matrixTransform(matrix);return {x:p.x,y:p.y};
+    });
+    await page.mouse.move(shoulder.x,shoulder.y);await page.waitForTimeout(400);
+    assert.equal(await page.evaluate(()=>card.classList.contains('show')),true,'expanded notch stays open over its black');
     const bridge=await page.locator('#tail').boundingBox();
     await page.mouse.move(bridge.x+bridge.width/2,bridge.y+bridge.height/2);await page.waitForTimeout(400);
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),true,'cross the connected shoulder');

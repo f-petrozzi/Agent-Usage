@@ -100,7 +100,7 @@ const answers = {
     assert.equal(spacing.depth,spacing.horizontal?90:70);assert.equal(spacing.ring,44);assert.equal(spacing.gap,6);assert.equal(spacing.padding,spacing.horizontal?11:13);
     assert.equal(await page.locator('.ctl').count(),0);
     for(const which of ['pin','orb']){
-      await page.evaluate(which=>setHovered(which),which);await page.waitForTimeout(700);
+      await page.evaluate(which=>setHovered(which),which);await page.waitForTimeout(1100);
       const disc=await page.evaluate(which=>{
         const h=handles.find(h=>h.el.id===(which==='pin'?'pin-handle':which)),p=h.ink.getPointAtLength(h.ink.getTotalLength()/2);
         const at=new DOMPoint(p.x,p.y).matrixTransform(h.ink.getScreenCTM());
@@ -116,7 +116,7 @@ const answers = {
         return Math.hypot(at.x-glyph.x-glyph.width/2,at.y-glyph.y-glyph.height/2);
       },which);
       assert.ok(forming<.15,'glyph follows its disc during the morph');
-      await page.evaluate(()=>setHovered(null));await page.waitForTimeout(700);
+      await page.evaluate(()=>setHovered(null));await page.waitForTimeout(1100);
       assert.ok(await page.evaluate(()=>handles.every(h=>h.value===0)));
     }
   }
@@ -130,19 +130,19 @@ const answers = {
   const after=await page.screenshot({clip:opposite});assert.deepEqual(after,before);
   assert.ok(await page.evaluate(()=>necks[1].getAttribute('d').includes('Q')),'hover pulls a curved neck from the flare');
   await page.evaluate(()=>{handles[1].value=0;drawShape();});
-  await page.evaluate(()=>setHovered('pin'));await page.waitForTimeout(700);
+  await page.evaluate(()=>setHovered('pin'));await page.waitForTimeout(1100);
   await page.evaluate(()=>__emit('move_begin'));await page.waitForTimeout(90);
   assert.ok(await page.evaluate(()=>absorbing&&necks.some(n=>n.hasAttribute('d'))));
   await page.screenshot({path:path.join(OUT,'grab-absorb.png')});
   await page.waitForTimeout(200);
   assert.ok(await page.evaluate(()=>armsOut===0&&handles.every(h=>h.value===0)));
   await page.evaluate(()=>__emit('move_end'));await page.waitForTimeout(1000);
-  await page.evaluate(()=>setHovered('orb'));await page.waitForTimeout(700);
+  await page.evaluate(()=>setHovered('orb'));await page.waitForTimeout(1100);
   await page.evaluate(()=>__emit('disappear'));await page.waitForTimeout(90);
   assert.ok(await page.evaluate(()=>absorbing&&necks.some(n=>n.hasAttribute('d'))));
   assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('root')).translate),'0px');
   await page.screenshot({path:path.join(OUT,'close-absorb.png')});
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(1100);
   assert.ok(await page.evaluate(()=>armsOut===0&&handles.every(h=>h.value===0)));
   // Interrupted close/open and reduced motion must settle without stale discs or arms.
   await page.evaluate(()=>__emit('appear'));await page.waitForTimeout(100);

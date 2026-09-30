@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-// Reports only the chosen shortcut, Escape and the left mouse button, never typed text.
+// Reports only the chosen shortcut and the left mouse button, never typed text.
 internal static class InputMonitor
 {
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
@@ -24,7 +24,8 @@ internal static class InputMonitor
                     if (++tick % 50 == 0 && owner.HasExited) return;
                     bool held = Down(key) && ((modifiers & 2) == 0 || Down(0x11))
                         && ((modifiers & 4) == 0 || Down(0x10)) && ((modifiers & 1) == 0 || Down(0x12));
-                    string value = (held ? "1" : "0") + (Down(0x1b) ? "1" : "0") + (Down(1) ? "1" : "0");
+                    // Reserve the middle bit for compatibility with the existing three-bit stream.
+                    string value = (held ? "1" : "0") + "0" + (Down(1) ? "1" : "0");
                     if (value != previous) { Console.WriteLine(value); Console.Out.Flush(); previous = value; }
                     Thread.Sleep(20);
                 }

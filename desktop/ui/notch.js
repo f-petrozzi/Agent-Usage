@@ -946,10 +946,10 @@ function placeCard(){
   const r=pill.getBoundingClientRect(), cell=pill.querySelector(`.cell[data-p="${hoverId}"]`)||pill;
   const cr=cell.getBoundingClientRect(), w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
-  if(notchEdge==='left') x=r.right+14;
-  if(notchEdge==='right') x=r.left-w-14;
-  if(notchEdge==='top') y=r.bottom+14;
-  if(notchEdge==='bottom') y=r.top-h-14;
+  if(notchEdge==='left') x=r.right;
+  if(notchEdge==='right') x=r.left-w;
+  if(notchEdge==='top') y=r.bottom;
+  if(notchEdge==='bottom') y=r.top-h;
   x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
   card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
   // The transparent bridge only supplies hit testing; details.js draws the connected ink.
@@ -1000,6 +1000,7 @@ function flushHot(){
   hotFrame=0;
   const open=card.classList.contains('show');
   const rects=open?[rectOf(pill),rectOf(tail),rectOf(card)]:[rectOf(pill)];
+  if(open&&typeof detailHotRect==='function'){const expanded=detailHotRect();if(expanded)rects.push(expanded);}
   const controls={};
   if(placeHandles()){
     controls.settings=rectOf(orb);rects.push(controls.settings);
@@ -1078,6 +1079,7 @@ function pointerInHot(x,y){
   const p=pill.getBoundingClientRect();
   if(inRect(x,y,p,4))return true;
   if(!card.classList.contains('show'))return false;
+  if(typeof detailContains==='function'&&detailContains(x,y))return true;
   const c=card.getBoundingClientRect();
   if(inRect(x,y,c,4))return true;
   return inRect(x,y,tail.getBoundingClientRect(),4);
