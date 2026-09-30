@@ -6,7 +6,7 @@ const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
-const { Collector, SessionFeed, validHost } = require('./collector.cjs');
+const { Collector, SessionFeed, validHost, enrollAntigravity } = require('./collector.cjs');
 
 app.setName('Agent Usage');
 app.setPath('userData', path.join(app.getPath('appData'), 'Agent Usage'));
@@ -93,7 +93,9 @@ async function start() {
 function restartCollector() {
   collector?.close();
   collector = new Collector(() => config);
-  collector.on('change', value => { broadcast('agent_accounts', value); broadcast('glyphs', glyphs()); broadcast('state', stateSnapshot()); });
+  collector.on('change', value => {
+    if (enrollAntigravity(config, value)) { save(); broadcast('notch_slots', config.slots); }
+    broadcast('agent_accounts', value); broadcast('glyphs', glyphs()); broadcast('state', stateSnapshot()); });
   broadcast('agent_accounts', accounts());
   collector.refresh();
   feed?.close();

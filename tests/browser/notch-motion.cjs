@@ -107,7 +107,7 @@ const answers = {
     assert.equal(spacing.depth,spacing.horizontal?90:70);assert.equal(spacing.ring,44);assert.equal(spacing.gap,6);assert.equal(spacing.padding,spacing.horizontal?11:13);
     assert.equal(await page.locator('.ctl').count(),0);
     for(const which of ['pin','orb']){
-      await page.evaluate(which=>setHovered(which),which);await page.waitForTimeout(1100);
+      await page.evaluate(which=>setHovered(which),which);await page.waitForTimeout(1600);
       const disc=await page.evaluate(which=>{
         const h=handles.find(h=>h.el.id===(which==='pin'?'pin-handle':which)),p=h.ink.getPointAtLength(h.ink.getTotalLength()/2);
         const at=new DOMPoint(p.x,p.y).matrixTransform(h.ink.getScreenCTM());
@@ -123,10 +123,22 @@ const answers = {
         return Math.hypot(at.x-glyph.x-glyph.width/2,at.y-glyph.y-glyph.height/2);
       },which);
       assert.ok(forming<.15,'glyph follows its disc during the morph');
-      await page.evaluate(()=>setHovered(null));await page.waitForTimeout(1100);
+      await page.evaluate(()=>setHovered(null));await page.waitForTimeout(1600);
       assert.ok(await page.evaluate(()=>handles.every(h=>h.value===0)));
     }
   }
+  // A partial button is still an arc while it swells and travels: no intermediate dot.
+  await sample(640);
+  const partial=await page.evaluate(()=>{
+    const h=handles[1],saved=h.value;
+    const lengths=[.2,.4,.6,.8].map(value=>{h.value=value;drawShape();return h.ink.getTotalLength();});
+    h.value=saved;drawShape();return lengths;
+  });
+  assert.ok(partial.every(length=>length>1),'every intermediate phase retains an extended contour');
+  assert.ok(partial.every((length,i)=>!i||length<partial[i-1]),'arm shortens continuously as it becomes the button');
+  const emerging=await page.evaluate(()=>{const saved=armsOut;const lengths=[.2,.4,.6,.8].map(out=>{armsOut=out;drawShape();return handles[0].ink.getTotalLength();});armsOut=saved;drawShape();return lengths;});
+  assert.ok(emerging.every(length=>length>1),'an emerging arm never waits in a dot stage');
+  assert.ok(emerging.every((length,i)=>!i||length>emerging[i-1]),'the emerging contour extends throughout the motion');
   // Compact, tall and long notches scale their arms, discs, glyphs and click targets together.
   for(const t of [640,3760]){
     await sample(t);
@@ -153,19 +165,19 @@ const answers = {
   const after=await page.screenshot({clip:opposite});assert.deepEqual(after,before);
   assert.ok(await page.evaluate(()=>necks[1].getAttribute('d').includes('Q')),'hover pulls a curved neck from the flare');
   await page.evaluate(()=>{handles[1].value=0;drawShape();});
-  await page.evaluate(()=>setHovered('pin'));await page.waitForTimeout(1100);
+  await page.evaluate(()=>setHovered('pin'));await page.waitForTimeout(1600);
   await page.evaluate(()=>__emit('move_begin'));await page.waitForTimeout(90);
   assert.ok(await page.evaluate(()=>absorbing&&necks.some(n=>n.hasAttribute('d'))));
   await page.screenshot({path:path.join(OUT,'grab-absorb.png')});
   await page.waitForTimeout(200);
   assert.ok(await page.evaluate(()=>armsOut===0&&handles.every(h=>h.value===0)));
   await page.evaluate(()=>__emit('move_end'));await page.waitForTimeout(1000);
-  await page.evaluate(()=>setHovered('orb'));await page.waitForTimeout(1100);
+  await page.evaluate(()=>setHovered('orb'));await page.waitForTimeout(1600);
   await page.evaluate(()=>__emit('disappear'));await page.waitForTimeout(90);
   assert.ok(await page.evaluate(()=>absorbing&&necks.some(n=>n.hasAttribute('d'))));
   assert.equal(await page.evaluate(()=>getComputedStyle(document.getElementById('root')).translate),'0px');
   await page.screenshot({path:path.join(OUT,'close-absorb.png')});
-  await page.waitForTimeout(1100);
+  await page.waitForTimeout(1600);
   assert.ok(await page.evaluate(()=>armsOut===0&&handles.every(h=>h.value===0)));
   // Interrupted close/open and reduced motion must settle without stale discs or arms.
   await page.evaluate(()=>__emit('appear'));await page.waitForTimeout(100);

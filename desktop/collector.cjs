@@ -47,6 +47,17 @@ function normalize(raw) {
     }};
   }).filter(Boolean);
 }
+// Enable the newly added provider once, while respecting later user choices.
+function enrollAntigravity(config, accounts) {
+  if (config.antigravityEnrolled) return false;
+  const added = accounts.filter(a => a.base === 'gemini');
+  if (!added.length) return false;
+  if (config.slots.length) for (const a of added) {
+    if (!config.slots.some(s => s.provider === a.id)) config.slots.push({ provider: a.id });
+  }
+  config.antigravityEnrolled = true;
+  return true;
+}
 class Collector extends EventEmitter {
   constructor(config) { super(); this.config = config; this.accounts = []; this.busy = false; this.failures = 0; this.closed = false; }
   refresh() {
@@ -141,4 +152,4 @@ class SessionFeed extends EventEmitter {
   retry(delay) { clearTimeout(this.timer); this.timer = setTimeout(() => this.start(), delay); }
   close() { this.closed = true; clearTimeout(this.timer); clearTimeout(this.quiet); this.child?.kill(); }
 }
-module.exports = { normalize, Collector, SessionFeed, parseSessions, accountId, validHost };
+module.exports = { normalize, enrollAntigravity, Collector, SessionFeed, parseSessions, accountId, validHost };

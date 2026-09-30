@@ -37,6 +37,18 @@ class AntigravityTests(unittest.TestCase):
         with self.assertRaises(usage.UsageError):
             usage.normalize_antigravity({'status': 'SUCCESS', 'command': {'name': 'chat'}})
 
+    def test_ssh_path_finds_local_install(self):
+        with tempfile.TemporaryDirectory() as work:
+            home = pathlib.Path(work)
+            executable = home / '.local/bin/agy'
+            executable.parent.mkdir(parents=True)
+            executable.write_text('#!/bin/sh\nexit 0\n')
+            executable.chmod(0o755)
+            with patch.object(usage.shutil, 'which', return_value=None), patch.object(usage.Path, 'home', return_value=home):
+                self.assertEqual(usage.antigravity_executable(), str(executable))
+                executable.chmod(0o644)
+                self.assertIsNone(usage.antigravity_executable())
+
     def test_timeout_returns_safe_error(self):
         with tempfile.TemporaryDirectory() as work:
             executable = pathlib.Path(work) / 'agy'

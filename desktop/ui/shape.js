@@ -50,7 +50,7 @@ function morphHandles(){
     let last=performance.now();
     const step=now=>{
       const dt=Math.min(.032,(now-last)/1000);last=now;
-      const omega=2*Math.PI/.68,damping=to?.76:.88;
+      const omega=2*Math.PI/.95,damping=to?.76:.88;
       h.velocity+=(-omega*omega*(h.value-to)-2*damping*omega*h.velocity)*dt;
       h.value+=h.velocity*dt;
       const settled=Math.abs(h.value-to)<.002&&Math.abs(h.velocity)<.025;
@@ -134,13 +134,13 @@ function drawStraight(){
     h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
     const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
-    // Mac GooArc: a buried drop pushes past its resting place on a neck, then unrolls.
-    const slide=-buried*(1-out)+rest*(merging?1.2:2.1)*Math.sin(Math.PI*Math.min(out/(merging?.85:.8),1));
-    const unrolled=smooth((out-(merging?.6:.52))/(merging?.35:.43));
-    const onto=smooth((1-disc)/.55), half=Math.PI/4*unrolled*smooth(((1-disc)-.08)/.82);
-    const radius=proportions.arm, morphShift=radius*(1-onto);
+    // The complete arm emerges from the flare as one continuous contour.
+    const slide=-buried*(1-out);
+    // Exposure, shortening, swelling and travel share one progress value. No dot stage.
+    const unrolled=out, blend=smooth(disc), half=Math.PI/4*unrolled*(1-blend);
+    const radius=proportions.arm;
     const home=merging?smooth(1-out):0;
-    const baseMid=radius-morphShift-(1-disc)*slide;
+    const baseMid=(radius-slide)*(1-blend);
     const centre=baseMid+(F+stroke-baseMid)*home*disc;
     const [a,b,c,e]=edgeMatrix(notchEdge,w,h), dx=centre*Math.cos(mid),dy=centre*Math.sin(mid);
     h.el.style.setProperty('--glyph-x',`${n(a*dx+c*dy)}px`);
@@ -153,7 +153,7 @@ function drawStraight(){
     }
     h.ink.setAttribute('d',points.join(''));
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
-    let width=proportions.disc+(arcWidth-proportions.disc)*smooth((1-disc)/.8);
+    let width=arcWidth+(proportions.disc-arcWidth)*blend;
     if(merging)width*=disc?(1-.72*home):smooth(out/.35);
     const goo=merging
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)

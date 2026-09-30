@@ -8,26 +8,10 @@ let detailOpen=0,detailVelocity=0,detailFrame=0,detailLast=0,detailTarget=0;
 let detailBox=null,detailAim=null;
 let detailReading=1;
 let detailArm=0,detailArmVelocity=0;
-let detailSelection=.5,detailSelectionAim=.5,detailSelectionVelocity=0;
-let detailSwell=0,detailSwellVelocity=0,detailSwap=0,detailSwapVelocity=0;
-function selectDetailAccount(){
-  const r=pill.getBoundingClientRect(),cell=pill.querySelector(`.cell[data-p="${hoverId}"]`);
-  if(!cell)return;
-  const c=cell.getBoundingClientRect(),vertical=edgeIsVertical();
-  const aim=vertical?(c.top+c.height/2-r.top)/r.height:(c.left+c.width/2-r.left)/r.width;
-  card.style.setProperty('--account-direction',aim>=detailSelectionAim?1:-1);
-  detailSelectionAim=Math.max(.12,Math.min(.88,aim));
-}
-
-
 function changeDetailAccount(){
   setExtraShown(false,true);
-  selectDetailAccount();
-  if(!reducedDetails()){
-    detailSwellVelocity+=110;
-    detailSwap=1; // New content moves in while the frame keeps its momentum.
-  }
-  detailReading=1;card.style.setProperty('--detail-reading',1);
+  if(!reducedDetails())detailVelocity-=1.1;
+  detailReading=reducedDetails()?1:.65;card.style.setProperty('--detail-reading',detailReading);
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
 
@@ -60,18 +44,7 @@ function drawDetails(){
   // One outline starts at the bezel, grows around the readings, and returns to the bezel.
   // There is no second rectangle or narrow connector beneath the original notch.
   const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
-  let outline=partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare);
-  // A broad liquid swell follows selection along the far contour. Its ends stay flat,
-  // preserving the bezel flares, centered frame and original edge footprint.
-  const room=u1-u0-2*radius,normal=edgeIsVertical()?innerWidth:innerHeight;
-  const amplitude=Math.min(Math.max(0,normal-expandedDepth-8),Math.max(0,9+detailSwell))*Math.min(1,t);
-  const contour=Array.from({length:65},(_,i)=>{
-    const share=i/64,u=u0+radius+room*share;
-    const bell=Math.exp(-Math.pow((share-detailSelection)/.27,2))*Math.pow(Math.sin(Math.PI*share),2);
-    return `L${n(u)} ${n(expandedDepth+amplitude*bell)}`;
-  }).join('');
-  outline=outline.replace(`H${n(u1-radius)}`,contour);
-  detailPath.setAttribute('d',outline);
+  detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
@@ -101,10 +74,6 @@ function detailStep(now){
     settled=false;return [value,velocity];
   };
   [detailArm,detailArmVelocity]=spring(detailArm,detailArmVelocity,detailTarget,8,.86);
-  [detailSelection,detailSelectionVelocity]=spring(detailSelection,detailSelectionVelocity,detailSelectionAim,13,.7);
-  [detailSwell,detailSwellVelocity]=spring(detailSwell,detailSwellVelocity,0,10,.7);
-  [detailSwap,detailSwapVelocity]=spring(detailSwap,detailSwapVelocity,0,13,.82);
-  card.style.setProperty('--account-swap',Math.max(0,detailSwap));
   if(detailAim){
     const mix=1-Math.exp(-dt/.075);
     for(const key of ['u0','u1','v0','v1','a0','a1']){
@@ -114,7 +83,7 @@ function detailStep(now){
   }
   detailReading=Math.min(1,detailReading+dt/.12);card.style.setProperty('--detail-reading',detailReading);
   if(detailReading<1)settled=false;
-  card.style.setProperty('--detail-open',Math.max(0,detailOpen));drawDetails();if(typeof drawGaugeMorphs==='function')drawGaugeMorphs();reportHot();
+  card.style.setProperty('--detail-open',Math.max(0,detailOpen));drawDetails();reportHot();
   if(!settled){detailFrame=requestAnimationFrame(detailStep);return;}
   detailFrame=0;detailLast=0;
   if(!detailTarget)card.classList.remove('closing');
@@ -131,10 +100,10 @@ function syncDetails(){
 function reducedDetails(){return matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function setDetailsShown(on,instant=false){
   detailTarget=on?1:0;
-  if(typeof syncGaugeMorph==='function')syncGaugeMorph(instant||reducedDetails());
-  if(on){selectDetailAccount();syncDetails();}
+  syncAccountFocus(on);
+  if(on)syncDetails();
   if(instant||reducedDetails()){
-    cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;detailArm=detailTarget;detailArmVelocity=0;detailSelection=detailSelectionAim;detailSelectionVelocity=0;detailSwap=detailSwell=detailSwapVelocity=detailSwellVelocity=0;card.style.setProperty('--account-swap',0);
+    cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;detailArm=detailTarget;detailArmVelocity=0;
     card.style.setProperty('--detail-open',detailOpen);drawDetails();
     if(!on)card.classList.remove('closing');return;
   }

@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {normalize}=require('../desktop/collector.cjs');
+const {normalize,enrollAntigravity}=require('../desktop/collector.cjs');
 test('Antigravity retains family, cadence and measured usage instead of becoming Codex',()=>{
   const [a]=normalize({schema:2,generatedAt:1,accounts:[{id:'antigravity',provider:'antigravity',label:'Antigravity',limits:[
     {id:'gemini-weekly',group:'Gemini Models',label:'Weekly',usedPercent:75,windowMins:10080,resetsAt:42},
@@ -16,4 +16,19 @@ test('Unsupported providers are skipped instead of appearing as Codex',()=>{
 test('Unavailable Antigravity has no invented quota',()=>{
   const [a]=normalize({schema:2,accounts:[{provider:'antigravity',error:'Sign in',limits:[]}]});
   assert.equal(a.snap.status,'error');assert.deepEqual(a.snap.windows,[]);
+});
+
+test('First Antigravity discovery extends an existing saved selection once',()=>{
+  const cfg={slots:[{provider:'codex_a'},{provider:'codex_b'},{provider:'claude'}]};
+  const accounts=[{base:'gemini',id:'gemini_agy'}];
+  assert.equal(enrollAntigravity(cfg,[]),false);
+  assert.equal(enrollAntigravity(cfg,accounts),true);
+  assert.equal(cfg.slots.length,4);assert.equal(cfg.slots[3].provider,'gemini_agy');
+  cfg.slots.pop(); // Explicitly disabling it later must stick.
+  assert.equal(enrollAntigravity(cfg,accounts),false);assert.equal(cfg.slots.length,3);
+});
+test('Automatic account selection stays automatic when Antigravity arrives',()=>{
+  const cfg={slots:[]};
+  assert.equal(enrollAntigravity(cfg,[{base:'gemini',id:'gemini_agy'}]),true);
+  assert.deepEqual(cfg.slots,[]);
 });

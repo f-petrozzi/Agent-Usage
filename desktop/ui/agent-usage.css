@@ -76,16 +76,11 @@ body[data-edge="top"] .cell,body[data-edge="bottom"] .cell{gap:6px}
 body[data-edge="bottom"] #pill{flex-direction:row-reverse}
 body[data-edge="left"] #pill{flex-direction:column-reverse}
 
-/* Only the primary reading travels; its logo and secondary ring keep the account anchored. */
-#gauge-morph{position:absolute;inset:0;z-index:3;overflow:visible;pointer-events:none}
-#gauge-morph path{fill:none;stroke-linecap:round;stroke-linejoin:round}
-.ribbon-track{stroke:var(--track)}
-.cell .ring > circle:nth-child(2),.cell .reading{opacity:var(--gauge-source,1)}
-.w-track.morph-track{opacity:0}
-#card .win{transform:translateY(calc((1 - var(--detail-open,0)) * 8px));transform-origin:top}
-@media(prefers-reduced-motion:reduce){#gauge-morph{display:none}#card .win{transform:none}.w-track.morph-track{opacity:1}}
-
-/* Account selection has its own moving surface, independent of opening the notch. */
-.usage-content{translate:calc(var(--account-direction,1) * var(--account-swap,0) * 24px) 0}
-body[data-edge="left"] .usage-content,body[data-edge="right"] .usage-content{translate:0 calc(var(--account-direction,1) * var(--account-swap,0) * 24px)}
-@media(prefers-reduced-motion:reduce){.usage-content{translate:0 0!important}}
+/* Focus keeps each account anchored. Other readings recede to small, live switch targets. */
+.cell .ringwrap > svg,.cell .pct{transition:opacity .4s ease,scale .5s cubic-bezier(.22,1,.36,1)}
+.cell .glyph{transition:scale .5s cubic-bezier(.22,1,.36,1),opacity .3s ease}
+.cell.compact-account .ringwrap > svg,.cell.compact-account .pct{opacity:0!important;scale:.7}
+.cell.compact-account .glyph{scale:.78;opacity:.75}
+.cell:focus-visible{outline:none}
+.cell:focus-visible .glyph{outline:1px solid #888;outline-offset:3px;border-radius:50%}
+@media(prefers-reduced-motion:reduce){.cell .ringwrap > svg,.cell .pct,.cell .glyph{transition:none}}

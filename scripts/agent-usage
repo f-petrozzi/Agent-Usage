@@ -932,9 +932,18 @@ def normalize_antigravity(report: dict[str, Any]) -> dict[str, Any]:
         "sampledAt": int(time.time()), "limits": limits}
 
 
+def antigravity_executable() -> str | None:
+    """SSH commands often omit ~/.local/bin even though the CLI is installed there."""
+    found = shutil.which("agy")
+    if found:
+        return found
+    local = Path.home() / ".local" / "bin" / "agy"
+    return str(local) if local.is_file() and os.access(local, os.X_OK) else None
+
+
 def query_antigravity(timeout: float) -> dict[str, Any]:
     account = {"id": "antigravity", "provider": "antigravity", "label": "Antigravity", "limits": []}
-    executable = shutil.which("agy")
+    executable = antigravity_executable()
     try:
         if not executable:
             raise UsageError("Install and sign into agy on the collector machine.")
@@ -1122,7 +1131,7 @@ def main(argv: list[str] | None = None) -> int:
             raise UsageError("--timeout must be greater than zero")
         profiles = codex_profiles(args.codex_accounts)
         include_claude = not args.no_claude
-        include_antigravity = not args.no_antigravity and bool(shutil.which("agy"))
+        include_antigravity = not args.no_antigravity and bool(antigravity_executable())
         if not profiles and not include_claude and not include_antigravity:
             raise UsageError("Nothing to read: no Codex accounts and Claude is disabled.")
         if args.watch_sessions:

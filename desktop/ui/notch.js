@@ -785,7 +785,7 @@ function renderRing(){
   // Rebuild the DOM only when the structure changes (never swap the element under the cursor)
   const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}`;
   if(pill.dataset.cells!==want){
-    pill.innerHTML=ps.map((p,i)=>`<div class="cell" data-p="${p.id}" style="--i:${i}">
+    pill.innerHTML=ps.map((p,i)=>`<div class="cell" role="button" tabindex="0" aria-label="${esc(p.name)}" data-p="${p.id}" style="--i:${i}">
       <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><svg class="activity" viewBox="0 0 56 56"></svg><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
       <div class="pct">…</div></div>`).join('');
     pill.dataset.cells=want;
@@ -938,7 +938,7 @@ function renderCard(){
   c.scrollTop=scroll;
   if(changedAccount&&typeof changeDetailAccount==='function')changeDetailAccount();
   placeCard();
-  if(typeof syncGaugeMorph==='function')syncGaugeMorph();
+  syncAccountFocus(card.classList.contains('show'));
 }
 // Usage stays centered on the notch when the hovered account changes.
 function placeCard(){
@@ -1074,10 +1074,30 @@ listen('notch_reveal',()=>{ document.documentElement.style.visibility=''; }).cat
    pure geometry: is the cursor (clientX/Y) inside pill rect ∪ card rect ∪ their bounding box?
    Leaving the window: document mouseout (relatedTarget=null) plus the Rust watchdog (system cursor) as a second line. */
 function inRect(x,y,r,pad){return x>=r.left-pad&&y>=r.top-pad&&x<r.right+pad&&y<r.bottom+pad;}
+function syncAccountFocus(on){
+  for(const el of pill.querySelectorAll('.cell')){
+    const selected=on&&el.dataset.p===hoverId;
+    el.classList.toggle('focused-account',selected);
+    el.classList.toggle('compact-account',on&&!selected);
+    el.setAttribute('aria-expanded',String(selected));
+  }
+}
 function cellAt(x,y){
-  for(const el of pill.querySelectorAll('.cell')){ if(inRect(x,y,el.getBoundingClientRect(),6)) return el.dataset.p; }
+  for(const el of pill.querySelectorAll('.cell')){
+    const hit=el.classList.contains('compact-account')?(el.querySelector('.glyph .mark,.glyph img')||el.querySelector('.glyph')):el;
+    if(inRect(x,y,hit.getBoundingClientRect(),6))return el.dataset.p;
+  }
   return null;
 }
+pill.addEventListener('focusin',e=>{
+  const cell=e.target.closest('.cell');if(!cell||!shown||window.agentTracking)return;
+  clearTimeout(showTimer);pendingAccount=null;hoverId=cell.dataset.p;
+  if(card.classList.contains('show'))renderCard();else showCard();
+});
+pill.addEventListener('keydown',e=>{
+  if(!e.target.closest('.cell')||!['Enter',' '].includes(e.key))return;
+  e.preventDefault();hoverId=e.target.closest('.cell').dataset.p;showCard();
+});
 function pointerInHot(x,y){
   const p=pill.getBoundingClientRect();
   if(inRect(x,y,p,4))return true;

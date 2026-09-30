@@ -45,9 +45,12 @@ not cause false timeouts. Regression: `python3 tests/test-codex-stream.py`.
 ## Antigravity
 
 Sign into `agy` with your Google AI Pro account on the collector machine.
-The collector automatically adds Antigravity when `agy` is on PATH, using
+The collector automatically adds Antigravity when `agy` is on PATH or installed in `~/.local/bin`, using
 `agy -p /usage --output-format json` (requires agy 1.1.11 or later).
 It shows the measured weekly and five-hour buckets for Gemini and Claude/GPT
 models, including reset times. It does not infer quota from model availability
 or label CLI reports with account identity or a plan the CLI does not provide.
 Use `--no-antigravity` to skip it. Update the collector alongside the Windows app.
+
+While reading one account, the other gauges become small account glyphs. Hover
+a glyph or focus it with the keyboard to switch; leaving restores all gauges.
