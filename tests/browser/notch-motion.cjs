@@ -204,7 +204,7 @@ const answers = {
   await page.waitForFunction(()=>__calls.some(c=>c[0]==='monitor_placed'));
   assert.deepEqual(await page.evaluate(()=>__calls.filter(c=>c[0]==='monitor_placed')), [['monitor_placed',{placement:11}]],'only the newest destination is acknowledged');
   const destination=await page.evaluate(()=>{const r=pill.getBoundingClientRect(),root=document.getElementById('root').getBoundingClientRect();return {edge:notchEdge,x:r.x-root.x,y:r.y-root.y,w:r.width,h:r.height,pass:passage,shown};});
-  assert.equal(destination.edge,'bottom');assert.equal(destination.shown,false);assert.equal(destination.pass,null);
+  assert.equal(destination.edge,'bottom');assert.equal(destination.shown,true);assert.equal(destination.pass,null);
   assert.ok(Math.abs(destination.x+destination.w/2-1600*.65)<1&&Math.abs(destination.y+destination.h-1000)<1,'snapped to the new edge before acknowledgment');
   await page.evaluate(()=>__emit('appear',{edge:'bottom'}));
   const first=await page.locator('#pill').boundingBox();
@@ -220,11 +220,59 @@ const answers = {
   await page.evaluate(()=>__emit('appear',{edge:'right'}));await page.waitForTimeout(1200);
   await page.evaluate(()=>{__emit('disappear');__emit('layout',{width:2000,height:1250,scale:1.25,edge:'left',along:.3,visible:true,tracking:false,placement:13});});
   await page.waitForFunction(()=>__calls.some(c=>c[0]==='monitor_placed'&&c[1].placement===13));
-  assert.equal(await page.evaluate(()=>shown),false);assert.equal(await page.evaluate(()=>notchEdge),'left');
+  assert.equal(await page.evaluate(()=>shown),true);assert.equal(await page.evaluate(()=>notchEdge),'left');
   await page.evaluate(()=>__emit('appear',{edge:'left'}));
   assert.equal((await page.locator('#pill').boundingBox()).x,0,'first visible frame spawns on the cursor edge');
   await page.waitForTimeout(1200);
   assert.equal((await page.locator('#pill').boundingBox()).x,0,'no intermediate old-side frame or perimeter travel');
+  // Transfer only after the notch and its arms have fully settled, then return to different previous positions.
+  let serial=100;
+  for(const [edge,along] of [['right',.7],['left',.25],['right',.35],['top',.65],['bottom',.4]]){
+    await page.waitForFunction(()=>openness===1&&armsOut===1);
+    await page.evaluate(()=>setHovered('pin'));await page.waitForFunction(()=>handles[0].value===1);
+    await page.evaluate(()=>document.getElementById('root').style.opacity='0');
+    const blank=await page.screenshot();
+    await page.evaluate(()=>document.getElementById('root').style.opacity='');
+    const token=++serial;
+    const cleared=await page.evaluate(token=>{
+      __emit('monitor_stow',{placement:token});
+      return {opacity:getComputedStyle(document.getElementById('root')).opacity,shown,openness,armsOut,
+        frames:[frame,openFrame,armsFrame,...handles.flatMap(h=>[h.frame,h.swapFrame])],values:handles.map(h=>h.value),
+        early:__calls.some(c=>c[0]==='monitor_stowed'&&c[1].placement===token)};
+    },token);
+    assert.equal(cleared.opacity,'0');assert.equal(cleared.shown,false);
+    assert.equal(cleared.openness,0);assert.equal(cleared.armsOut,0);
+    assert.ok(cleared.frames.every(v=>v===0)&&cleared.values.every(v=>v===0),'settled arms, discs and their tweens are discarded');
+    assert.equal(cleared.early,false,'clearing acknowledgment waits for a painted frame');
+    assert.deepEqual(await page.screenshot(),blank,'the entire old notch/arm surface is transparent before a native move');
+    await page.waitForFunction(token=>__calls.some(c=>c[0]==='monitor_stowed'&&c[1].placement===token),token);
+    await page.evaluate(()=>{__emit('appear');__emit('edge_cursor',{edge:'right',perimeter:2400,tracking:true});});
+    assert.equal(await page.evaluate(()=>shown),false,'late old-screen events cannot reopen the cleared surface');
+    await page.evaluate(({edge,along,token})=>{
+      window.__placementFrames=[];window.__sampling=true;
+      const sample=()=>{
+        const root=document.getElementById('root');
+        if(shown&&getComputedStyle(root).opacity==='1'){
+          const r=pill.getBoundingClientRect();__placementFrames.push({edge:notchEdge,x:r.x,y:r.y,w:r.width,h:r.height});
+        }
+        if(__sampling)requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+      __emit('layout',{width:2000,height:1250,scale:1.25,edge,along,visible:true,tracking:false,placement:token});
+    },{edge,along,token});
+    await page.waitForFunction(token=>__calls.some(c=>c[0]==='monitor_placed'&&c[1].placement===token),token);
+    await page.waitForTimeout(120);
+    const paints=await page.evaluate(()=>{__sampling=false;return __placementFrames;});
+    assert.ok(paints.length>=2,'destination has been drawn before native unmasking');
+    for(const p of paints){
+      assert.equal(p.edge,edge,'every new painted frame belongs to the destination edge');
+      if(edge==='left')assert.equal(p.x,0);
+      else if(edge==='right')assert.ok(Math.abs(p.x+p.w-1600)<1);
+      else if(edge==='top')assert.equal(p.y,0);
+      else assert.ok(Math.abs(p.y+p.h-1000)<1);
+      assert.ok(Math.abs((['left','right'].includes(edge)?p.y+p.h/2:p.x+p.w/2)-along*(['left','right'].includes(edge)?1000:1600))<1,'no frame at the previous along-edge position');
+    }
+  }
   assert.deepEqual(errors,[]);
   console.log('Passed: four corners in both directions, visible rings over black, pin/settings morphs on every edge, grab/close absorption, interrupted opening, reduced motion, monitor resize and superseded placement.');
   } finally { await browser.close(); }

@@ -12,6 +12,9 @@
 body{--stow:96px 0}body[data-edge="left"]{--stow:-96px 0}body[data-edge="top"]{--stow:0 -96px}body[data-edge="bottom"]{--stow:0 96px}
 #root{translate:var(--stow);transition:translate .24s cubic-bezier(.55,0,.8,.3) .18s}
 #root.visible{translate:0 0;transition:none}
+/* Clear the whole composited subtree before a native monitor move, including fully opened arms. */
+#root.placing{opacity:0;pointer-events:none}
+#root.placing *{pointer-events:none!important}
 /* The black is shape.js's SVG outline; the pill box only lays out the rings and takes the pointer.
    Arriving, the outline wells out of the edge on a spring (--open, 0 to a little past 1) and the rings ride
    out on it, from about half the notch's depth toward the edge. */

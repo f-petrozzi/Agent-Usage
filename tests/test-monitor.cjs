@@ -12,12 +12,12 @@ function setup(t, initialVisible = true) {
     { id: 1, bounds: { x: 0, y: 0, width: 1280, height: 800 } },
     { id: 2, bounds: { x: -1600, y: 0, width: 1600, height: 1000 } },
   ];
-  let command;
+  let command, point = { x: -1590, y: 300 };
   const electron = {
     app: { setName() {}, setAppUserModelId() {}, setPath() {}, getPath: () => root, commandLine: { appendSwitch() {} },
       requestSingleInstanceLock: () => true, on() {}, whenReady: () => new Promise(() => {}) },
     ipcMain: { handle: (_name, handler) => { command = handler; } },
-    screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => ({ x: -1590, y: 300 }), getDisplayNearestPoint: () => displays[1] },
+    screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => point, getDisplayNearestPoint: p => p.x < 0 ? displays[1] : displays[0] },
   };
   const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
     setIgnoreMouseEvents: v => calls.push(['ignore', v]), setBounds: r => calls.push(['bounds', r]),
@@ -30,64 +30,79 @@ function setup(t, initialVisible = true) {
   const config = { edge: 'right', along: .5, scale: 1 };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
-  return { calls, displays, config, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal,
+  return { calls, displays, config, point: p => { point = p; }, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal,
     command: (name, args, sender = win.webContents) => command(event(sender), name, args), settings };
 }
-test('monitor change masks the native window before moving and reveals only after destination paint', async t => {
+const stow = async s => {
+  const token=s.calls.filter(c=>c[0]==='monitor_stow').at(-1)[1].placement;
+  assert.equal(await s.command('monitor_stowed',{placement:token}),true);
+  return token;
+};
+test('monitor change clears the rendered surface before moving and reveals only after destination paint', async t => {
   const s = setup(t);
   await s.command('set_notch_monitor', { id: '2' });
   assert.deepEqual(s.calls.slice(0, 2), [['opacity', 0], ['ignore', true]]);
+  assert.equal(s.calls.some(c=>c[0]==='bounds'||c[0]==='layout'),false,'old painted surface stays on the old monitor until cleared');
+  const token=s.calls.at(-1)[1].placement;
+  assert.equal(await s.command('monitor_placed',{placement:token}),false,'cannot reveal before the clearing step');
+  await stow(s);
   assert.deepEqual(s.calls.find(c => c[0] === 'bounds')[1], s.displays[1].bounds);
   const layout = s.calls.find(c => c[0] === 'layout')[1];
   assert.equal(layout.edge, 'right'); assert.equal(layout.width, 1600); assert.equal(layout.height, 1000);
   assert.equal(s.calls.some(c => c[0] === 'appear' || c[0] === 'opacity' && c[1] === 1), false);
   await s.command('monitor_placed', { placement: layout.placement });
-  assert.deepEqual(s.calls.slice(-2), [['appear', { edge: 'right' }], ['opacity', 1]]);
+  assert.deepEqual(s.calls.at(-1), ['opacity', 1]);
+  assert.equal(s.calls.some(c=>c[0]==='appear'),false,'destination is already drawn before native unmasking');
 });
-test('stale and settings acknowledgments cannot unmask a newer monitor move', async t => {
+test('stale and settings acknowledgments cannot move or unmask a newer monitor transfer', async t => {
   const s = setup(t);
   await s.command('set_notch_monitor', { id: '2' });
-  const first = s.calls.find(c => c[0] === 'layout')[1].placement;
+  const first=s.calls.at(-1)[1].placement;
   await s.command('set_notch_monitor', { id: '1' });
-  const latest = s.calls.filter(c => c[0] === 'layout').at(-1)[1].placement;
-  const before = s.calls.length;
-  assert.equal(await s.command('monitor_placed', { placement: first }), false);
-  assert.equal(await s.command('monitor_placed', { placement: latest }, s.settings.webContents), false);
-  assert.equal(s.calls.length, before);
-  assert.equal(await s.command('monitor_placed', { placement: latest }), true);
-  assert.equal(await s.command('monitor_placed', { placement: latest }), false);
+  const latest=s.calls.at(-1)[1].placement;
+  const before=s.calls.length;
+  assert.equal(await s.command('monitor_stowed',{placement:first}),false);
+  assert.equal(await s.command('monitor_stowed',{placement:latest},s.settings.webContents),false);
+  assert.equal(await s.command('monitor_placed',{placement:latest}),false);
+  assert.equal(s.calls.length,before);
+  await stow(s);
+  assert.equal(await s.command('monitor_placed',{placement:first}),false);
+  assert.equal(await s.command('monitor_placed',{placement:latest},s.settings.webContents),false);
+  assert.equal(await s.command('monitor_placed',{placement:latest}),true);
+  assert.equal(await s.command('monitor_placed',{placement:latest}),false);
 });
 test('pointer transfers use destination coordinates and hidden relocations stay parked', async t => {
   const s = setup(t);
-  s.move(s.displays[1], { atPointer: true });
+  s.move(s.displays[1], { atPointer: true });await stow(s);
   const layout = s.calls.find(c => c[0] === 'layout')[1];
   assert.equal(layout.edge, 'left'); assert.equal(layout.along, .3);
   await s.command('monitor_placed', { placement: layout.placement });
   s.calls.length = 0;
-  s.move(s.displays[0], { show: false });
+  s.move(s.displays[0], { show: false });await stow(s);
   assert.ok(s.calls.find(c => c[0] === 'bounds')[1].x < -1600 - 1280);
   const hidden = s.calls.find(c => c[0] === 'layout')[1];
   assert.equal(hidden.visible, false);
   await s.command('monitor_placed', { placement: hidden.placement });
   assert.equal(s.calls.some(c => c[0] === 'appear'), false);
 });
-
-test('revealing a hidden notch on another monitor masks it before emitting any old-edge layout', async t => {
+test('revealing a hidden notch clears it before emitting any old-edge layout', async t => {
   const s = setup(t, false);
   s.reveal();
   assert.deepEqual(s.calls.slice(0, 2), [['opacity', 0], ['ignore', true]]);
+  assert.equal(s.calls.some(c=>c[0]==='bounds'||c[0]==='layout'),false);
+  await stow(s);
   const layouts = s.calls.filter(c => c[0] === 'layout');
-  assert.equal(layouts.length, 1, 'one destination layout, without a provisional old-edge layout');
+  assert.equal(layouts.length, 1);
   const layout = layouts[0][1];
   assert.equal(layout.edge, 'left'); assert.equal(layout.along, .3); assert.equal(layout.visible, true);
   assert.deepEqual(s.calls.find(c => c[0] === 'bounds')[1], s.displays[1].bounds);
   assert.equal(s.calls.some(c => c[0] === 'appear' || c[0] === 'opacity' && c[1] === 1), false);
   await s.command('monitor_placed', { placement: layout.placement });
-  assert.deepEqual(s.calls.slice(-2), [['appear', { edge: 'left' }], ['opacity', 1]]);
+  assert.deepEqual(s.calls.at(-1), ['opacity', 1]);
 });
 test('an edge changed during resize is prepared again before unmasking', async t => {
   const s = setup(t, false);
-  s.reveal();
+  s.reveal();await stow(s);
   const first = s.calls.find(c => c[0] === 'layout')[1].placement;
   s.config.edge = 'top';
   const before = s.calls.length;
@@ -97,5 +112,26 @@ test('an edge changed during resize is prepared again before unmasking', async t
   assert.equal(retry[0], 'layout'); assert.equal(retry[1].edge, 'top'); assert.notEqual(retry[1].placement, first);
   assert.equal(await s.command('monitor_placed', { placement: first }), false);
   assert.equal(await s.command('monitor_placed', { placement: retry[1].placement }), true);
-  assert.deepEqual(s.calls.slice(-2), [['appear', { edge: 'top' }], ['opacity', 1]]);
+  assert.deepEqual(s.calls.at(-1), ['opacity', 1]);
+});
+
+test('the clearing acknowledgment selects the latest pointer screen and position', async t => {
+  const s=setup(t,false);s.reveal();
+  s.point({x:1270,y:500});await stow(s);
+  const layout=s.calls.filter(c=>c[0]==='layout').at(-1)[1];
+  assert.deepEqual(s.calls.find(c=>c[0]==='bounds')[1],s.displays[0].bounds);
+  assert.equal(layout.edge,'right');assert.equal(layout.along,.625);
+  assert.equal(await s.command('monitor_placed',{placement:layout.placement}),true);
+});
+test('returning to the other screen during painting keeps the native window masked', async t => {
+  const s=setup(t,false);s.reveal();await stow(s);
+  const previous=s.calls.filter(c=>c[0]==='layout').at(-1)[1].placement;
+  s.point({x:1270,y:400});
+  assert.equal(await s.command('monitor_placed',{placement:previous}),false);
+  assert.equal(s.calls.some(c=>c[0]==='opacity'&&c[1]===1),false);
+  assert.equal(s.calls.at(-1)[0],'monitor_stow');
+  await stow(s);
+  const latest=s.calls.filter(c=>c[0]==='layout').at(-1)[1];
+  assert.notEqual(latest.placement,previous);assert.equal(latest.edge,'right');assert.equal(latest.along,.5);
+  assert.equal(await s.command('monitor_placed',{placement:latest.placement}),true);
 });

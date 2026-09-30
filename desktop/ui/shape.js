@@ -241,6 +241,17 @@ function setShapePassage(p,near,transform){ passage=p; cornerNear=near; pillTran
    effect, the notch swelling a few points past its depth and settling like a body of liquid. The rings
    ride out with it (--open in agent-usage.css), and the arms divide from the flares once it is open. */
 function setOpenness(v){ openness=v; document.getElementById('root').style.setProperty('--open',v.toFixed(4)); drawShape(); }
+// Monitor transfers discard every arm/open/pocket tween while the renderer's whole surface is masked.
+function stowShape(){
+  cancelAnimationFrame(openFrame);cancelAnimationFrame(armsFrame);openFrame=armsFrame=0;
+  openVelocity=openLast=0;armsOut=0;absorbing=false;
+  for(const h of handles){
+    cancelAnimationFrame(h.frame);cancelAnimationFrame(h.swapFrame);h.frame=h.swapFrame=0;
+    h.value=h.target=h.velocity=0;h.swap=1;h.swapping=false;h.snapAt=0;
+    h.el.classList.remove('hover','swapping');
+  }
+  setOpenness(0);
+}
 function openShape(){
   cancelAnimationFrame(openFrame); openFrame=0;
   cancelAnimationFrame(armsFrame); armsOut=0;

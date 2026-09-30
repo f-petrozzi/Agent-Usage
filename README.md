@@ -162,3 +162,9 @@ All notification bodies are simple rounded rectangles using the notch's 20px cor
 Revealing a hidden notch now masks the native window before moving it and chooses the destination cursor edge before sending a layout. This closes the separate hidden-spawn path that could briefly expose the previous edge. If the pointer crosses another edge during resize, that edge is prepared before the window becomes visible.
 
 Validation: 42 desktop checks; notification browser checks cover equal side partitions for one through four accounts on both sides, rectangular top/bottom placement and text scrolling. Motion checks cover a hidden right-edge notch spawning on the next monitor's left edge. The Windows build verifies these desktop checks and packaged helper installation; actual monitor composition still needs a device trial.
+
+## Settled monitor transfers (3.2.10)
+
+A monitor transfer clears the rendered notch before moving the native window, including fully opened arms, hovered discs and pocket animations. Main waits for a transparent renderer frame, moves to the latest cursor monitor/edge, and keeps native opacity at zero until the destination notch has opened and painted. The 170ms visible-transfer delay is removed. Late events from the old position cannot reopen the surface during placement.
+
+Validation: 44 desktop checks cover clearing/move/reveal ordering, stale acknowledgments, pointer changes during clearing, returns during painting and hidden spawns. The browser motion suite waits for fully settled arms, transfers repeatedly across all four edges, compares the cleared surface against a blank screenshot, and checks every new frame for the correct edge and along-edge position. Actual Windows monitor composition remains a device trial.

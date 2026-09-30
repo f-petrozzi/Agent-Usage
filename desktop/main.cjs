@@ -28,8 +28,8 @@ let visible = false, held = false, mouseDown = false, carrying = false, dismisse
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
-let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
-let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null;
+let phase = 'hidden', frameReady = false, hotkeyProblem = '', lastRaise = 0;
+let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null, pendingPlacementStage = null, pendingPlacementAtPointer = false;
 const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
@@ -141,17 +141,18 @@ function useMonitor(display) {
   sendLayout();
 }
 function switchMonitor(display, { show = visible, atPointer = false } = {}) {
-  clearTimeout(transferTimer); transferTimer = null; pendingMonitor = null;
-  // Keep the already-shown native window invisible until Chromium paints the destination layout.
+  // Clear Chromium's last painted surface before moving a settled notch to another screen.
   win.setOpacity(0); win.setIgnoreMouseEvents(true, { forward: true });
+  hot = []; controls = {}; lastCursor = ''; inside = false;
   pendingPlacement = ++placementSerial; visible = show; phase = 'transfer';
-  monitor = display;
+  pendingPlacementStage = 'stow'; pendingPlacementAtPointer = atPointer;
+  monitor = display; config.display = String(display.id);
   if (atPointer) {
     const at = cursorPlacement(screen.getCursorScreenPoint()); config.edge = at.edge; config.along = at.along;
   }
   pendingPlacementEdge = config.edge;
-  useMonitor(display);
-  if (show) { raise(); visibleUntil = Math.max(visibleUntil, Date.now() + 1800); }
+  send('monitor_stow', { placement: pendingPlacement });
+  if (show) visibleUntil = Math.max(visibleUntil, Date.now() + 1800);
 }
 // Closed, the window is parked just past the leftmost screen, still shown: nothing of it is composited over
 // other apps, and opening moves it back, as moving it between screens always has, with no show animation.
@@ -163,7 +164,7 @@ function place() { if (win && !win.isDestroyed()) win.setBounds(visible ? monito
 // Above the taskbar, which is also topmost and wins whenever it was raised more recently
 function raise() { win.setAlwaysOnTop(true, 'screen-saver'); win.moveTop(); }
 function sendLayout() {
-  if (!config || !monitor) return;
+  if (!config || !monitor || pendingPlacementStage === 'stow') return;
   send('layout', { width: monitor.bounds.width, height: monitor.bounds.height, scale: config.scale,
     edge: config.edge, along: config.along, visible, tracking: held || carrying, pinned, placement: pendingPlacement });
 }
@@ -183,7 +184,7 @@ function hide() {
   if (!win || !visible) return;
   visible = false; phase = 'hiding'; pinned = false; hot = []; alerting = false; expanded = false;
   win.setIgnoreMouseEvents(true, { forward: true });
-  send('disappear'); broadcast('ui_flags', flags());
+  send('disappear'); if (pendingPlacement) sendLayout(); broadcast('ui_flags', flags());
   // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
   setTimeout(() => { if (!visible) { place(); phase = 'hidden'; } }, 460);
 }
@@ -205,13 +206,7 @@ function tick() {
   if ((held || carrying) && !dismissed && !menuOpen) {
     reveal();
     const display = screen.getDisplayNearestPoint(cursor);
-    if (display.id !== monitor.id && !transferTimer) {
-      pendingMonitor = display; phase = 'transfer'; send('disappear');
-      transferTimer = setTimeout(() => {
-        const point=screen.getCursorScreenPoint();
-        switchMonitor(screen.getDisplayNearestPoint(point), { atPointer: true });
-      }, 170);
-    }
+    if (display.id !== monitor.id && pendingPlacement === null) switchMonitor(display, { atPointer: true });
     const b = monitor.bounds;
     const at=cursorPlacement(cursor),edge=at.edge;
     config.edge = edge;config.along=at.along;
@@ -354,14 +349,28 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   if (typeof command !== 'string' || !args || typeof args !== 'object') throw new Error('Invalid command');
   switch (command) {
     case 'ready': frameReady = true; sendLayout(); return null;
+    case 'monitor_stowed': {
+      if (event.sender !== win?.webContents || args.placement !== pendingPlacement || pendingPlacementStage !== 'stow') return false;
+      // The pointer may have moved while the previous screen's surface was being cleared.
+      if (pendingPlacementAtPointer) {
+        const point = screen.getCursorScreenPoint(); monitor = screen.getDisplayNearestPoint(point);
+        const at = cursorPlacement(point); config.edge = at.edge; config.along = at.along;
+      }
+      pendingPlacementEdge = config.edge; pendingPlacementStage = 'paint';
+      useMonitor(monitor); if (visible) raise(); return true;
+    }
     case 'monitor_placed': {
-      if (event.sender !== win?.webContents || !Number.isInteger(args.placement) || args.placement !== pendingPlacement) return false;
+      if (event.sender !== win?.webContents || !Number.isInteger(args.placement) || args.placement !== pendingPlacement || pendingPlacementStage !== 'paint') return false;
+      if (pendingPlacementAtPointer && visible) {
+        const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+        if (display.id !== monitor.id) { switchMonitor(display, { atPointer: true }); return false; }
+      }
       // The shortcut may have crossed to another edge while the masked renderer was resizing.
       if (visible && pendingPlacementEdge !== config.edge) {
         pendingPlacement = ++placementSerial; pendingPlacementEdge = config.edge; sendLayout(); return false;
       }
-      pendingPlacement = null; pendingPlacementEdge = null; phase = visible ? 'shown' : 'hidden';
-      if (visible) send('appear', { edge: config.edge });
+      pendingPlacement = null; pendingPlacementEdge = null; pendingPlacementStage = null; pendingPlacementAtPointer = false;
+      phase = visible ? 'shown' : 'hidden';
       win.setOpacity(1); return true;
     }
     case 'stage_bounds': stage = { x: Number(args.x) || 0, y: Number(args.y) || 0 }; return null;
@@ -506,4 +515,4 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   }
 });
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });
+app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });

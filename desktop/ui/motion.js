@@ -107,22 +107,39 @@ function animate(now){
 function loadAccounts(value){agentAccounts=value||[];renderRing();if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
 window.agentUsage.on('agent_accounts',loadAccounts);
 invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
-let placementRevision=0;
+let placementRevision=0, placing=false;
+function stowPlacement(){
+  placing=true;document.getElementById('root').classList.add('placing');
+  cancelAnimationFrame(frame);frame=0;position=null;last=0;
+  document.body.classList.add('no-motion');setShown(false);hideCard();setHovered(null);
+  setDetailsShown(false,true);setExtraShown(false,true);stowShape();
+  void pill.offsetWidth;document.body.classList.remove('no-motion');
+}
+window.agentUsage.on('monitor_stow',value=>{
+  const revision=++placementRevision;stowPlacement();
+  // Two frame boundaries ensure the previous fully opened surface has been replaced by transparent pixels.
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(revision===placementRevision)invoke('monitor_stowed',{placement:value.placement}).catch(e=>notice(String(e)));
+  }));
+});
 window.agentUsage.on('layout',value=>{
   const revision=++placementRevision;
   layout=value;window.agentTracking=value.tracking;
   if(Number.isInteger(value.placement)){
-    // Main masks the native window during a monitor move. Reset and paint its destination before acknowledging.
-    document.body.classList.add('no-motion');hideCard();setShown(false);
-    aim(value.edge,value.along,true);void pill.offsetWidth;document.body.classList.remove('no-motion');
+    // Main has moved a cleared surface. Open and paint the new position while native opacity is still zero.
+    stowPlacement();aim(value.edge,value.along,true);
     let paints=0;
     const ready=()=>{
       if(revision!==placementRevision)return;
       const resized=Math.abs(innerWidth-value.width/value.scale)<=2&&Math.abs(innerHeight-value.height/value.scale)<=2;
       if(!resized){paints=0;requestAnimationFrame(ready);return;}
+      if(!paints){
+        setShown(!!value.visible,value.edge);document.getElementById('root').classList.remove('placing');
+        if(value.visible)requestAnimationFrame(()=>{if(revision===placementRevision)for(const p of providers())turnReading(p.id,true);});
+      }
       aim(value.edge,value.along,true);
-      if(++paints<2){requestAnimationFrame(ready);return;}
-      invoke('monitor_placed',{placement:value.placement}).catch(e=>notice(String(e)));
+      if(++paints<3){requestAnimationFrame(ready);return;}
+      invoke('monitor_placed',{placement:value.placement}).then(accepted=>{if(accepted!==false&&revision===placementRevision)placing=false;}).catch(e=>notice(String(e)));
     };
     requestAnimationFrame(ready);return;
   }
@@ -130,6 +147,7 @@ window.agentUsage.on('layout',value=>{
   aim(value.edge,value.along,position===null||appearing);setShown(!!value.visible,value.edge);
 });
 window.agentUsage.on('edge_cursor',value=>{
+  if(placing)return;
   window.agentTracking=true;layout.edge=value.edge;
   if(Number.isFinite(value.perimeter)){
     target=value.perimeter/layout.scale;
@@ -143,7 +161,7 @@ window.agentUsage.on('edge_cursor',value=>{
   }
   hideCard();
 });
-window.agentUsage.on('appear',()=>{position=null;setShown(true,layout.edge);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
+window.agentUsage.on('appear',()=>{if(placing)return;position=null;setShown(true,layout.edge);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
 window.agentUsage.on('disappear',()=>{hideCard();setShown(false);});
 window.agentUsage.on('release',()=>{window.agentTracking=false;aim(layout.edge,layout.along);});
 window.addEventListener('resize',()=>aim(layout.edge,layout.along,true));
