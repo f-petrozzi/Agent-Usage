@@ -83,13 +83,33 @@ function sessionTarget(raw) {
   const target = raw?.target || raw;
   return target && ['claude', 'codex'].includes(target.provider) && typeof target.sessionId === 'string'
     && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.sessionId)
-    ? { provider: target.provider, sessionId: target.sessionId } : null;
+    ? { provider: target.provider, sessionId: target.sessionId,
+      ...(Array.isArray(target.terminalPids) && target.terminalPids.some(n => Number.isInteger(n) && n > 1 && n <= 2147483647)
+        ? { terminalPids: [...new Set(target.terminalPids.filter(n => Number.isInteger(n) && n > 1 && n <= 2147483647))].slice(0, 16),
+          ...(typeof target.cwd === 'string' && target.cwd.startsWith('/') && target.cwd.length <= 1024 && !/[\x00-\x1f\x7f]/.test(target.cwd) ? { cwd: target.cwd } : {}) } : {}) } : null;
 }
 function sessionUrl(raw) {
   const target = sessionTarget(raw);
   if (!target) return null;
+  if (target.terminalPids?.length) {
+    const query = new URLSearchParams({ provider: target.provider, session: target.sessionId, pids: target.terminalPids.join(',') });
+    if (target.cwd) query.set('cwd', target.cwd);
+    return `vscode://f-petrozzi.agent-usage-link/open?${query}`;
+  }
   return target.provider === 'claude' ? `vscode://anthropic.claude-code/open?session=${target.sessionId}`
     : `vscode://openai.chatgpt/local/${target.sessionId}`;
+}
+// Legacy completion rows have no UUID. Restore only an unambiguous recorded end at their alert time.
+function historicalTarget(entry, sessions) {
+  if (entry?.kind !== 'completion' || !entry.session || !Number.isFinite(entry.at)) return null;
+  const targets = new Map();
+  for (const session of sessions) {
+    const target = sessionTarget(session);
+    if (target && session.account === entry.account && session.name === entry.session && session.state === 'idle'
+      && session.since > 0 && Math.abs(entry.at - session.since) <= 15000)
+      targets.set(target.provider + ':' + target.sessionId, target);
+  }
+  return targets.size === 1 ? [...targets.values()][0] : null;
 }
 const LOG_MAX = 40, LOG_DAYS = 7;
 const text = (v, n) => typeof v === 'string' ? v.slice(0, n) : null;
@@ -104,4 +124,4 @@ function alertLog(raw, now = Date.now()) {
 function logAlerts(log, events, now = Date.now()) {
   return alertLog([...log, ...events.map((e, i) => ({ ...e, id: `${now.toString(36)}-${i}`, at: now, read: false }))], now);
 }
-module.exports = { COMPLETION_MIN_MS, DEFAULT_ALERTS, alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionTarget, sessionUrl };
+module.exports = { COMPLETION_MIN_MS, DEFAULT_ALERTS, alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionTarget, sessionUrl, historicalTarget };

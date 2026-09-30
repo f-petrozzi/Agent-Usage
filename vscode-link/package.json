@@ -1,0 +1,14 @@
+{
+  "name": "agent-usage-link",
+  "publisher": "f-petrozzi",
+  "displayName": "Agent Usage Link",
+  "description": "Focus the existing terminal running a session from Agent Usage.",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "license": "MIT",
+  "main": "./extension.js",
+  "activationEvents": ["onUri"],
+  "extensionKind": ["ui"],
+  "capabilities": { "untrustedWorkspaces": { "supported": true } }
+}

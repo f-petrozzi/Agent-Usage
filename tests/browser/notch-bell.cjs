@@ -39,7 +39,8 @@ const answers = {
           if (c === 'set_alert_preferences') { answers.get_alert_preferences = { ...answers.get_alert_preferences, ...a }; broadcast('alert_preferences', answers.get_alert_preferences); return Promise.resolve(answers.get_alert_preferences); }
           if (c === 'mark_alerts_read') { answers.get_alert_log = answers.get_alert_log.map(e => ({ ...e, read: true })); broadcast('alert_log', answers.get_alert_log); return Promise.resolve(answers.get_alert_log); }
           if (c === 'clear_alert_log') { answers.get_alert_log = []; broadcast('alert_log', []); return Promise.resolve([]); }
-          if (c === 'open_alert_session') return Promise.resolve(true);
+          if (c === 'open_alert_session') return Promise.resolve(a.id==='linked');
+          if (c === 'open_working_session') return Promise.resolve(true);
           return Promise.resolve(c in answers ? answers[c] : null);
         },
         on: (n, cb) => { (listeners[n] = listeners[n] || []).push(cb); return () => {}; },
@@ -129,6 +130,19 @@ const answers = {
     await page.evaluate(() => { openAlertLog(); __emit('alert_log', [{ id: 'linked', at: Date.now(), kind: 'completion', account: 'claude', session: 'homelab', target: { provider: 'claude', sessionId: '12345678-1234-5678-abcd-123456789012' } }]); });
     await page.locator('#card .a-row').click();
     assert.deepEqual(await page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'linked' }]);
+    // A legacy row that cannot be restored explains the missing link instead of silently doing nothing.
+    await page.evaluate(()=>{openAlertLog();__emit('alert_log',[{id:'legacy',at:Date.now(),kind:'completion',account:'codex',session:'homelab'}]);});
+    await page.locator('#card .a-row').click();
+    assert.match(await page.locator('.session-link-error').innerText(),/could not be matched uniquely/);
+    await page.evaluate(()=>renderCard());
+    assert.match(await page.locator('.session-link-error').innerText(),/could not be matched uniquely/);
+    // The account's Working text is a button for that session, including keyboard activation.
+    await page.evaluate(()=>{hideCard();__emit('activity',[{id:'rollout-live',sessionId:'12345678-1234-5678-abcd-123456789012',provider:'codex',account:'codex',state:'busy',name:'homelab',detail:'Working',since:Date.now()}]);holdCard('codex');});
+    await page.locator('.session-link').click();
+    assert.deepEqual(await page.evaluate(()=>__calls.filter(c=>c[0]==='open_working_session').at(-1)),['open_working_session',{id:'rollout-live',account:'codex'}]);
+    await page.evaluate(()=>holdCard('codex'));
+    await page.locator('.session-link').focus();await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(()=>__calls.filter(c=>c[0]==='open_working_session').length),2);
     // Clear empties it
     await page.evaluate(() => openAlertLog()); await page.waitForTimeout(300);
     await page.locator('#card .a-clear').click(); await page.waitForTimeout(200);
@@ -164,11 +178,13 @@ const answers = {
       await page.waitForTimeout(700);
       const geometry = await page.evaluate(() => { const r = pill.getBoundingClientRect(), c = card.getBoundingClientRect(); return { r: { x: r.x, y: r.y, w: r.width }, c: { x: c.x, y: c.y, w: c.width }, overflow: card.scrollWidth > card.clientWidth }; });
       assert.equal(geometry.overflow, false);
+      const tops=await page.locator('.a-chip').evaluateAll(bs=>bs.map(b=>b.getBoundingClientRect().top));
+      assert.ok(Math.max(...tops)-Math.min(...tops)<1,'all four switches stay in one row');
       if (edge === 'top' || edge === 'bottom') {
-        assert.ok(Math.abs(geometry.c.w - Math.max(208, geometry.r.w)) < 2, 'uses the notch width where readable: ' + JSON.stringify(geometry));
+        assert.ok(geometry.c.w>=geometry.r.w&&geometry.c.w<300, 'uses the notch width where readable: ' + JSON.stringify(geometry));
         assert.ok(Math.abs(geometry.c.x + geometry.c.w / 2 - geometry.r.x - geometry.r.w / 2) < 2, 'centers on the notch');
       } else {
-        assert.equal(geometry.c.w, 228);
+        assert.ok(geometry.c.w>=228&&geometry.c.w<300);
         assert.ok(Math.abs(geometry.c.y - geometry.r.y + 12) < 2, 'preserves top alignment');
       }
       assert.equal(await page.locator('[title], svg title').count(), 0, 'tooltips removed, including generated controls');

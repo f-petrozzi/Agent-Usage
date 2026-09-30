@@ -102,14 +102,14 @@ class Collector extends EventEmitter {
   close() { this.closed = true; clearTimeout(this.timer); this.child?.kill(); }
 }
 // One line of `agent-usage --watch-sessions`: the sessions working or waiting right now, as notch activity
-function parseSessions(line, includeTerminal = false) {
+function parseSessions(line, includeTerminal = false, limit = 40) {
   const raw = JSON.parse(line);
   if (raw.schema !== 1 || !Array.isArray(raw.sessions)) throw new Error('Unsupported session feed');
-  return raw.sessions.slice(0, 40)
+  return raw.sessions.slice(0, limit)
     .filter(s => s && ['claude', 'codex', 'antigravity'].includes(s.provider) && (includeTerminal ? ['busy', 'waiting', 'idle', 'canceled'] : ['busy', 'waiting']).includes(s.state) && typeof s.account === 'string')
     .map(s => {
       const reason = s.state === 'waiting' && typeof s.waitingFor === 'string' ? clean(s.waitingFor, 60) : '';
-      return { ...(includeTerminal ? { id: clean(s.id || '', 100), sessionId: clean(s.sessionId || '', 100) } : {}), provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
+      return { ...(includeTerminal ? { id: clean(s.id || '', 100), sessionId: clean(s.sessionId || '', 100), ...(Array.isArray(s.terminalPids)&&s.terminalPids.length?{terminalPids:s.terminalPids.filter(n=>Number.isInteger(n)&&n>1&&n<=2147483647).slice(0,16),cwd:clean(s.cwd||'',1024)}:{}) } : {}), provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
         name: clean(s.name || ({claude:'Claude',codex:'Codex',antigravity:'Antigravity'}[s.provider]), 80),
         detail: s.state === 'idle' ? 'Turn ended' : s.state === 'canceled' ? 'Canceled' : s.state === 'busy' ? 'Working' : reason ? reason[0].toUpperCase() + reason.slice(1) : 'Waiting',
         since: finite(s.since) ? s.since * 1000 : 0 };
@@ -144,7 +144,7 @@ class SessionFeed extends EventEmitter {
     try { sessions = parseSessions(text, true); } catch { this.emit('disconnected'); return; }
     this.failures = 0; this.watchdog();
     this.emit('snapshot', sessions);
-    this.set(sessions.filter(s => ['busy', 'waiting'].includes(s.state)).map(({id, sessionId, ...activity}) => activity));
+    this.set(sessions.filter(s => ['busy', 'waiting'].includes(s.state)));
   }
   set(sessions) {
     if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return;
@@ -163,4 +163,12 @@ class SessionFeed extends EventEmitter {
   retry(delay) { clearTimeout(this.timer); this.timer = setTimeout(() => this.start(), delay); }
   close() { this.closed = true; clearTimeout(this.timer); clearTimeout(this.quiet); this.child?.kill(); }
 }
-module.exports = { normalize, enrollAntigravity, Collector, SessionFeed, parseSessions, accountId, validHost };
+function readSessionLinks(config) {
+  const command = collectorCommand(config, '--session-links --compact');
+  if (!command) return Promise.reject(new Error('Set a collector host first.'));
+  return new Promise((resolve, reject) => execFile(command[0], command[1], { windowsHide: true, timeout: 20000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+    if (error) return reject(new Error('The collector could not restore this link. Update the collector and try again.'));
+    try { resolve(parseSessions(stdout, true, 2048)); } catch { reject(new Error('The collector returned no session links.')); }
+  }));
+}
+module.exports = { normalize, enrollAntigravity, Collector, SessionFeed, parseSessions, accountId, validHost, readSessionLinks };

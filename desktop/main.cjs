@@ -4,10 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
+const { openSession } = require('./session-open.cjs');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
-const { Collector, SessionFeed, validHost, enrollAntigravity } = require('./collector.cjs');
-const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionUrl } = require('./alerts.cjs');
+const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks } = require('./collector.cjs');
+const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionUrl, historicalTarget, sessionTarget } = require('./alerts.cjs');
 
 app.setName('Agent Usage');
 app.setAppUserModelId('ink.petro.agent-usage');
@@ -366,9 +367,28 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'open_alert_session': {
       // Resolve a stored alert, never accept a URL or command from the renderer.
       const entry = alertLog(config.alertLog).find(e => e.id === args.id);
+      if (entry?.target && !entry.target.terminalPids?.length) {
+        const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === entry.account && s.sessionId === entry.target.sessionId);
+        const target = sessionTarget(current);
+        if (target?.terminalPids?.length) entry.target = target;
+      }
+      if (entry && !entry.target && entry.kind === 'completion') {
+        entry.target = historicalTarget(entry, await readSessionLinks(config));
+        if (entry.target) {
+          config.alertLog = alertLog(config.alertLog).map(e => e.id === entry.id ? { ...e, target: entry.target } : e);
+          save(); broadcast('alert_log', config.alertLog);
+        }
+      }
       const url = sessionUrl(entry?.target);
       if (!url) return false;
-      await shell.openExternal(url); return true;
+      return openSession(entry.target, shell, { protocolName: url => app.getApplicationNameForProtocol(url) });
+    }
+    case 'open_working_session': {
+      const active = feed?.sessions.find(s => s.account === args.account && s.id === args.id)
+        || sessionAlerts.previous?.get(args.account + ':' + args.id);
+      const url = sessionUrl(active);
+      if (!url) return false;
+      return openSession(active, shell, { protocolName: url => app.getApplicationNameForProtocol(url) });
     }
     case 'get_alert_log': return config.alertLog = alertLog(config.alertLog);
     case 'mark_alerts_read': { // all of them (the log was opened), or just the ones an alert showed and was pointed at

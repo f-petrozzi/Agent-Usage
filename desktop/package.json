@@ -1,6 +1,6 @@
 {
   "name": "agent-usage-desktop",
-  "version": "3.2.4",
+  "version": "3.2.5",
   "private": true,
   "description": "Agent Usage with the CodeNotch Windows frontend",
   "author": "Agent Usage contributors",
@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "pack:windows": "electron-builder --win nsis --x64 --publish never",
-    "prepack:windows": "node -e \"require('fs').accessSync('resources/InputMonitor.exe')\""
+    "prepack:windows": "python ../scripts/package-vscode-link.py && node -e \"require('fs').accessSync('resources/InputMonitor.exe')\""
   },
   "build": {
     "appId": "ink.petro.agent-usage",
@@ -30,6 +30,10 @@
       {
         "from": "resources/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "resources/agent-usage-link.vsix",
+        "to": "agent-usage-link.vsix"
       }
     ],
     "directories": {

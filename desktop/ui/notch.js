@@ -950,7 +950,7 @@ function renderCard(){
   if(hoverId===ALERTS_ID){ // the bell: the alert log in the same lobe
     const changed=!!c.dataset.account&&c.dataset.account!==ALERTS_ID;
     if(typeof setExtraContent==='function')setExtraContent([],[]);
-    renderAlertLog();c.dataset.account=ALERTS_ID;placeCard();syncAccountFocus(card.classList.contains('show'));
+    renderAlertLog();c.dataset.account=ALERTS_ID;if(typeof restoreSessionLinkError==='function')restoreSessionLinkError();placeCard();syncAccountFocus(card.classList.contains('show'));
     if(changed&&typeof changeDetailAccount==='function')changeDetailAccount();
     return;
   }
@@ -984,7 +984,9 @@ function renderCard(){
       html+=`<div class="c-sessions">`;
       for(const a of acts.slice(0,SESSION_ROWS)){
         const col=a.state==='waiting'?WATCH:INK;
-        html+=`<div class="s-row"><span class="s-dot" style="background:${col}"></span>${esc(a.name)}<span style="color:#808080;margin-left:auto">${esc(textCopy(a.detail))}</span></div>`;
+        const linked=a.id&&a.sessionId&&['claude','codex'].includes(a.provider);
+        const tag=linked?'button':'div', attrs=linked?` type="button" data-session="${esc(a.id)}" data-account="${esc(a.account)}"`:"";
+        html+=`<${tag}${attrs} class="s-row${linked?' session-link':''}"><span class="s-dot" style="background:${col}"></span>${esc(a.name)}<span style="color:#808080;margin-left:auto">${esc(textCopy(a.detail))}</span></${tag}>`;
       }
       html+=moreRow(acts.length-SESSION_ROWS)+`</div>`;
     }
@@ -1008,6 +1010,7 @@ function renderCard(){
   }
   c.scrollTop=scroll;
   if(changedAccount&&typeof changeDetailAccount==='function')changeDetailAccount();
+  if(typeof restoreSessionLinkError==='function')restoreSessionLinkError();
   placeCard();
   syncAccountFocus(card.classList.contains('show'));
 }
@@ -1019,7 +1022,12 @@ function placeCard(){
   // Fit the alert log to the flat notch; side edges retain a compact readable column.
   const log=hoverId===ALERTS_ID;
   card.classList.toggle('alert-card',log);
-  if(log)card.style.setProperty('--card-width',Math.min(innerWidth-16,edgeIsVertical()?228:Math.max(208,r.width))+'px');
+  if(log){
+    const chips=card.querySelector('.a-chips'), style=getComputedStyle(card);
+    const controls=chips?[...chips.children].reduce((sum,b)=>sum+b.offsetWidth,0)+3*parseFloat(getComputedStyle(chips).gap):0;
+    const minimum=controls+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+2;
+    card.style.setProperty('--card-width',Math.min(innerWidth-16,Math.max(minimum,edgeIsVertical()?228:r.width))+'px');
+  }
   else card.style.removeProperty('--card-width');
   const cr=r, w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
@@ -1102,7 +1110,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1265,7 +1273,14 @@ document.addEventListener('mousemove',e=>{
 document.addEventListener('mouseout',e=>{if(!e.relatedTarget)leaveCard();}); // relatedTarget null = the cursor left the page
 // A press anywhere outside the notch puts a held card away (main sees it through its input helper)
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
-card.addEventListener('click',e=>{const b=e.target.closest('.c-refresh');if(b&&card.dataset.account){refreshRing(card.dataset.account);b.classList.add('spinning');}});
+card.addEventListener('click',async e=>{
+  const session=e.target.closest('.session-link');
+  if(session){
+    clearSessionLinkError();
+    try{if(await invoke('open_working_session',{id:session.dataset.session,account:session.dataset.account})){hideCard();return;}}catch(error){showSessionLinkError(error.message||'VS Code could not be opened.');return;}
+    showSessionLinkError('VS Code could not open this session. Check that the matching workspace and extension are open.');return;
+  }
+  const b=e.target.closest('.c-refresh');if(b&&card.dataset.account){refreshRing(card.dataset.account);b.classList.add('spinning');}});
 // Clicking a card being peeked at holds it
 card.addEventListener('click',()=>{if(!cardHeld&&card.classList.contains('show'))holdCard(hoverId);});
 // Card content changes change its height -> report the hot rectangles again

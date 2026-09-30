@@ -28,13 +28,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
       - run: npm ci
         working-directory: desktop
-      - run: node --test tests/test-updates.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs
+      - run: node --test tests/test-updates.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs tests/test-session-open.cjs
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
           $version = (Get-Content desktop/package.json | ConvertFrom-Json).version
           if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match package version' }
+      - run: python scripts/package-vscode-link.py
       - run: npm run pack:windows
         working-directory: desktop
       - run: python scripts/package-release.py

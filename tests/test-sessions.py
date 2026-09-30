@@ -62,6 +62,22 @@ class ClaudeSessionTests(unittest.TestCase):
         self.assertEqual(len(usage.claude_sessions(self.dir)), 1)
 
 
+class TerminalIdentityTests(unittest.TestCase):
+    def test_parent_chain_and_rollout_writer_use_only_process_metadata(self):
+        root = Path(tempfile.mkdtemp())
+        for pid, parent in [(101, 90), (90, 80), (80, 1)]:
+            (root / str(pid)).mkdir()
+            (root / str(pid) / 'stat').write_text(f'{pid} (name with spaces) S {parent} 0 0 0')
+        self.assertEqual(usage.process_ancestry(101, root), [101, 90, 80])
+        executable = root / 'codex'; executable.write_text('')
+        (root / '101' / 'exe').symlink_to(executable)
+        (root / '101' / 'fd').mkdir()
+        rollout = root / 'rollout-example.jsonl'; rollout.write_text('private message body')
+        (root / '101' / 'fd' / '3').symlink_to(rollout)
+        self.assertEqual(usage.rollout_processes(root), {str(rollout): [101, 90, 80]})
+
+
+
 class CodexSessionTests(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
@@ -90,6 +106,20 @@ class CodexSessionTests(unittest.TestCase):
         self.rollout('2026-09-30T12-00-00-' + identity, 'task_started')
         got = usage.codex_sessions([('a', self.home)], self.now)
         self.assertEqual(got[0]['sessionId'], identity)
+
+    def test_historical_links_export_completion_metadata_without_messages(self):
+        identity = '12345678-1234-5678-abcd-123456789012'
+        path = self.day / ('rollout-' + identity + '.jsonl')
+        stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(self.now))
+        path.write_text('\n'.join(json.dumps(event) for event in [
+            {'type': 'session_meta', 'payload': {'id': identity, 'cwd': '/srv/project'}},
+            {'type': 'response_item', 'payload': {'message': 'never export private chat text'}},
+            {'type': 'event_msg', 'timestamp': stamp, 'payload': {'type': 'task_complete'}}]) + '\n')
+        sessions = usage.session_links([('a', self.home)], self.home, self.now)
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(sessions[0]['sessionId'], identity)
+        self.assertEqual(sessions[0]['name'], 'project')
+        self.assertNotIn('private chat text', json.dumps(sessions))
 
     def test_completion_and_cancellation_are_distinct_terminal_states(self):
         self.rollout('done', 'task_started', 'task_complete')

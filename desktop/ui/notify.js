@@ -4,7 +4,7 @@
    and settles, liquid while it moves, and its words arrive once there is black under them. Pointing at it holds
    it and counts it as seen; a click opens its linked session or account usage. Alerts for several accounts come out of their own
    rings together on side edges; flat-edge lifts take turns to keep text readable. An open card comes first: alerts wait. */
-const SLIVER={thick:54,flat:54,flare:12,pad:14,max:300,grace:1600};
+const SLIVER={thick:54,flat:54,flare:12,pad:14,max:228,grace:1600};
 const alertQueue=[], slivers=new Map();
 let pumpTimer=0, slivHeld=false, sliverSerial=0;
 const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
@@ -54,7 +54,7 @@ function sliverLine(events){
   else{word=kick.finished;colour=INK;text=[e.session,e.took!=null?tookText(e.took):''].filter(Boolean).join(' · ');}
   if(!acct)text=[e.session||'',text].filter(Boolean).join(' · ')||text;
   const more=events.length>1?`<span class="s-more">+${events.length-1}</span>`:'';
-  return `<span class="s-word" style="color:${colour}">${esc(word)}</span>${text?`<span class="s-text">${esc(text)}</span>`:''}${more}`;
+  return `<span class="s-word" style="color:${colour}">${esc(word)}</span>${text?`<span class="s-text"><span class="s-scroll">${esc(text)}</span></span>`:''}${more}`;
 }
 function showSliver(account,events,hold){
   let s=slivers.get(account);
@@ -71,9 +71,10 @@ function showSliver(account,events,hold){
     el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
   }
   s.events=[...events,...s.events].slice(0,6);s.to=1;s.seen=false;
+  s.scroll?.cancel();s.scroll=null;s.scrollDistance=null;
   s.el.innerHTML=sliverLine(s.events);
   // Only as long as the line: measured laid out on one line, then the sliver is cut to it
-  s.el.style.height='auto';s.el.style.width='auto';
+  s.el.style.height='auto';s.el.style.width='max-content';
   const natural=s.el.scrollWidth;
   s.length=Math.min(SLIVER.max,natural+2*SLIVER.pad);
   clearTimeout(s.timer);s.hold=hold;if(!slivHeld)s.timer=setTimeout(()=>retract(s),hold);
@@ -110,13 +111,16 @@ function drawSliver(s){
     u0=uc-thick/2;u1=uc+thick/2;d=s.length*t;
   }else{
     // A text-sized lift rooted at its gauge, contained by the notch even for an end account.
-    const notch=pill.getBoundingClientRect(), start=notch.left-origin.left, end=notch.right-origin.left;
-    const full=Math.min(s.length,end-start), span=Math.min(full,SLIVER.flat+(full-SLIVER.flat)*smooth((grown-.18)/.82));
-    u0=Math.max(start,Math.min(end-span,uc-span/2));u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
+    const notch=pill.getBoundingClientRect(), start=notch.left-origin.left+SHAPE.corner, end=notch.right-origin.left-SHAPE.corner;
+    // Reserve a shoulder on both sides even at an end gauge. The path's bleed tucks into the notch.
+    const shoulder=Math.min(SLIVER.flare,Math.max(0,(end-start-SLIVER.flat)/2));
+    const bodyStart=start+shoulder, bodyEnd=end-shoulder;
+    const full=Math.min(s.length,bodyEnd-bodyStart), span=Math.min(full,SLIVER.flat+(full-SLIVER.flat)*smooth((grown-.18)/.82));
+    u0=Math.max(bodyStart,Math.min(bodyEnd-span,uc-span/2));u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
     f0=Math.min(SLIVER.flare,Math.max(0,u0-start));f1=Math.min(SLIVER.flare,Math.max(0,end-u1));
   }
   if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;return;}
-  const rad=Math.min((u1-u0)/2,d), flare=Math.min(SLIVER.flare,d*.5);
+  const rad=Math.min(SHAPE.corner,(u1-u0)/2,d), flare=Math.min(SLIVER.flare,d*.5);
   s.path.setAttribute('d',partPath(u0,u1,d,rad,f0??flare,rad,f1??flare));
   s.path.setAttribute('transform',`matrix(${matrix.join(' ')}) translate(0 ${n(depth)})`);
   // Liquid while it moves, sharp at rest
@@ -130,8 +134,23 @@ function drawSliver(s){
   const a=screen(u0,depth+SLIVER.pad*.4),b=screen(u1,depth+d-SLIVER.pad*.4);
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
+  if(s.to&&s.t===s.to)scrollSliver(s);
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);reportHot();if(!slivers.size)ringBell();}
+function scrollSliver(s){
+  const clip=s.el.querySelector('.s-text'), text=clip?.querySelector('.s-scroll');
+  const distance=text?Math.max(0,text.scrollWidth-clip.clientWidth):0;
+  if(s.scrollDistance===distance)return;
+  s.scroll?.cancel();s.scroll=null;s.scrollDistance=distance;
+  if(distance<2||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  // Keep the status still. Read the beginning, pan to the end, pause, then return without a jump.
+  const pause=1400, travel=Math.max(2000,distance/24*1000), duration=2*(pause+travel);
+  s.scroll=text.animate([{transform:'translateX(0)',offset:0},{transform:'translateX(0)',offset:pause/duration},
+    {transform:`translateX(-${distance}px)`,offset:(pause+travel)/duration},
+    {transform:`translateX(-${distance}px)`,offset:(2*pause+travel)/duration},{transform:'translateX(0)',offset:1}],
+    {duration,iterations:Infinity,easing:'linear'});
+  if(!slivHeld){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
+}
+function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);reportHot();if(!slivers.size)ringBell();}
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -270,8 +289,24 @@ card.addEventListener('click',e=>{
 });
 
 async function openNotifiedAlert(entry,account){
-  if(entry?.target&&entry.id){
-    try{if(await invoke('open_alert_session',{id:entry.id})){hideCard();return;}}catch(_){ /* retain access to usage if VS Code cannot be opened */ }
+  clearSessionLinkError();
+  if(entry?.id&&['waiting','completion'].includes(entry.kind)&&providers().find(p=>p.id===account)?.base!=='gemini'){
+    try{if(await invoke('open_alert_session',{id:entry.id})){hideCard();return;}}catch(error){if(!logShowing())holdCard(account);showSessionLinkError(error.message||'VS Code could not be opened.');return;}
+    if(!logShowing())holdCard(account);
+    showSessionLinkError('This older alert has no session link and could not be matched uniquely.');return;
   }
   if(providers().some(p=>p.id===account)){if(logShowing()){hoverId=account;renderCard();}else holdCard(account);}
+}
+
+let sessionLinkError=null;
+function clearSessionLinkError(){sessionLinkError=null;card.querySelector('.session-link-error')?.remove();}
+function restoreSessionLinkError(){
+  if(sessionLinkError?.account===card.dataset.account)showSessionLinkError(sessionLinkError.message);
+}
+function showSessionLinkError(message){
+  message=message.replace(/^Error invoking remote method 'command': Error: /,'');
+  sessionLinkError={account:card.dataset.account,message};
+  let note=card.querySelector('.session-link-error');
+  if(!note){note=document.createElement('div');note.className='session-link-error';note.setAttribute('role','status');card.append(note);}
+  note.textContent=message;placeCard();
 }

@@ -46,3 +46,5 @@ preview/downloads/
 # Electron development dependencies and package output
 desktop/node_modules/
 desktop/dist/
+
+desktop/resources/*.vsix

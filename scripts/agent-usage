@@ -852,6 +852,50 @@ def _process_matches(pid: Any, proc_start: Any) -> bool:
     return len(fields) > 19 and fields[19] == str(proc_start)
 
 
+def process_ancestry(pid: Any, proc_root: Path = Path("/proc")) -> list[int]:
+    """Only process ids/parent ids, to locate an existing VS Code terminal; never read its environment."""
+    chain: list[int] = []
+    while isinstance(pid, int) and pid > 1 and pid not in chain and len(chain) < 16:
+        try:
+            stat = (proc_root / str(pid) / "stat").read_text()
+            fields = stat[stat.rfind(")") + 2:].split()
+            parent = int(fields[1])
+        except (OSError, ValueError, IndexError):
+            break
+        chain.append(pid)
+        pid = parent
+    return chain
+
+
+_rollout_process_cache: tuple[float, dict[str, list[int]]] = (0, {})
+
+
+def rollout_processes(proc_root: Path = Path("/proc")) -> dict[str, list[int]]:
+    global _rollout_process_cache
+    now = time.monotonic()
+    if proc_root == Path("/proc") and now - _rollout_process_cache[0] < 5:
+        return _rollout_process_cache[1]
+    found: dict[str, list[int]] = {}
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if not (process / "exe").resolve().name.startswith("codex"):
+                continue
+            for fd in (process / "fd").iterdir():
+                try:
+                    target = fd.resolve()
+                    if target.name.startswith("rollout-") and target.suffix == ".jsonl":
+                        found[str(target)] = process_ancestry(int(process.name), proc_root)
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    if proc_root == Path("/proc"):
+        _rollout_process_cache = (now, found)
+    return found
+
+
 def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     for path in sorted((config_dir / "sessions").glob("*.json"))[:64]:
@@ -873,6 +917,8 @@ def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[di
             "account": "claude",
             "id": _short(record.get("sessionId") or path.stem),
             "sessionId": _short(record.get("sessionId") or ""),
+            "terminalPids": process_ancestry(record.get("pid")),
+            "cwd": record.get("cwd") if isinstance(record.get("cwd"), str) else None,
             "name": _short(record.get("name") or Path(str(record.get("cwd") or "Claude")).name),
             "state": state,
             "waitingFor": _short(waiting_for) if state == "waiting" and isinstance(waiting_for, str) else None,
@@ -950,6 +996,7 @@ def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
 def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_terminal: bool = False) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     seen: set[Path] = set()
+    processes = rollout_processes()
     days = {dt.datetime.fromtimestamp(now - offset).strftime("%Y/%m/%d") for offset in (0, 86400)}
     for name, home in profiles:
         for day in sorted(days):
@@ -969,6 +1016,8 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_termina
                     "account": f"codex:{name}",
                     "id": _short(path.stem),
                     "sessionId": path.stem[-36:] if re.fullmatch(r"[0-9a-fA-F-]{36}", path.stem[-36:]) else None,
+                    "terminalPids": processes.get(str(real), []),
+                    "cwd": cwd,
                     "name": _short(Path(cwd).name if cwd else "Codex"),
                     "state": state,
                     "waitingFor": None,
@@ -1028,6 +1077,49 @@ def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list
     except (OSError, sqlite3.Error):
         return []
     return sessions
+
+
+def session_links(profiles: list[tuple[str, Path]], config_dir: Path, now: float) -> list[dict[str, Any]]:
+    """Bounded, read-only completion metadata for restoring pre-link alerts; never send message bodies."""
+    sessions = claude_sessions(config_dir, include_terminal=True)
+    processes = rollout_processes()
+    days = {dt.datetime.fromtimestamp(now - offset * 86400).strftime("%Y/%m/%d") for offset in range(8)}
+    seen: set[Path] = set()
+    for name, home in profiles:
+        paths = sorted((p for day in days for p in (home / "sessions" / day).glob("rollout-*.jsonl")), reverse=True)[:512]
+        for path in paths:
+            try:
+                real = path.resolve()
+                if real in seen:
+                    continue
+                seen.add(real)
+                with path.open("rb") as handle:
+                    meta = json.loads(handle.readline(64 * 1024))
+                    payload = meta.get("payload") or {}
+                    source = payload.get("source")
+                    if meta.get("type") != "session_meta" or (isinstance(source, dict) and "subagent" in source) or payload.get("parent_thread_id"):
+                        continue
+                    identity = payload.get("id") or path.stem[-36:]
+                    if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}", identity):
+                        continue
+                    handle.seek(max(handle.tell(), path.stat().st_size - SESSION_TAIL_BYTES))
+                    lines = handle.read(SESSION_TAIL_BYTES).splitlines()
+                for line in lines:
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if event.get("type") != "event_msg" or (event.get("payload") or {}).get("type") != "task_complete":
+                        continue
+                    ended = _parse_iso(event.get("timestamp"))
+                    if ended is None or ended < now - 7 * 86400:
+                        continue
+                    sessions.append({"provider": "codex", "account": f"codex:{name}", "id": identity, "sessionId": identity,
+                                     "name": _short(Path(payload.get("cwd") or "Codex").name), "state": "idle", "since": ended,
+                                     **({"terminalPids": processes[str(real)], "cwd": payload.get("cwd")} if processes.get(str(real)) else {})})
+            except (OSError, ValueError, AttributeError, TypeError):
+                continue
+    return sessions[-2048:]
 
 
 def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool, include_antigravity: bool = True) -> int:
@@ -1283,6 +1375,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="stream live session state as JSON lines instead of reading usage",
     )
+    parser.add_argument("--session-links", action="store_true", help="read recent completion metadata for historical alert links")
     return parser.parse_args(argv)
 
 
@@ -1294,6 +1387,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.timeout <= 0:
             raise UsageError("--timeout must be greater than zero")
         profiles = codex_profiles(args.codex_accounts)
+        if args.session_links:
+            document = {"schema": 1, "sessions": session_links(profiles, claude_config_dir(), time.time())}
+            json.dump(document, sys.stdout, separators=(",", ":")); sys.stdout.write("\n")
+            return 0
         include_claude = not args.no_claude
         include_antigravity = not args.no_antigravity and bool(antigravity_executable())
         if not profiles and not include_claude and not include_antigravity:

@@ -26,7 +26,7 @@ async function open(browser, edge = 'right', reducedMotion = 'no-preference') {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.addInitScript(({ answers, edge }) => {
     const listeners = {}; window.__calls = [];
-    window.agentUsage = { invoke: (c, a = {}) => { window.__calls.push([c, a]); return Promise.resolve(c === 'open_alert_session' ? true : c === 'get_notch_edge' ? edge : c in answers ? answers[c] : null); },
+    window.agentUsage = { invoke: (c, a = {}) => { window.__calls.push([c, a]); if(c==='open_alert_session'&&a.id==='failed')return Promise.reject(new Error('VS Code was not found.')); return Promise.resolve(c === 'open_alert_session' ? !!a.id && ['linked','keyboard'].includes(a.id) : c === 'get_notch_edge' ? edge : c in answers ? answers[c] : null); },
       on: (n, cb) => { (listeners[n] = listeners[n] || []).push(cb); return () => {}; } };
     window.__emit = (n, p) => (listeners[n] || []).forEach(cb => cb(p));
     window.__chimes = 0;
@@ -127,6 +127,9 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     await linked.page.waitForTimeout(900);
     await linked.page.locator('.sliver').focus(); await linked.page.keyboard.press('Enter');
     assert.deepEqual(await linked.page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'keyboard' }]);
+    await linked.page.evaluate(() => openNotifiedAlert({id:'failed',kind:'completion'},'claude'));
+    assert.equal(await linked.page.evaluate(() => card.classList.contains('show')),true,'notification launch failures show a visible card');
+    assert.equal(await linked.page.locator('.session-link-error').textContent(),'VS Code was not found.');
     await linked.page.close();
 
     // On a flat edge it hangs below its ring, spreading to its length
@@ -143,6 +146,13 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
         assert.ok(es.h>=42&&es.h<60, 'a text-sized lift');
         const notch=await ep.locator('#pill').boundingBox();
         assert.ok(es.outline.x>=notch.x-1&&es.outline.x+es.outline.w<=notch.x+notch.width+1, 'end-gauge outline stays inside the notch width');
+        const join=await ep.evaluate(() => {
+          const path=slivers.get('claude').path.getAttribute('d');
+          return {corner:SHAPE.corner,rounded:path.includes(`A${SHAPE.corner} ${SHAPE.corner}`),shoulders:(path.match(/A12 12/g)||[]).length};
+        });
+        assert.equal(join.rounded,true,'notification corners use the notch radius');
+        assert.equal(join.shoulders,2,'end accounts retain both fluid shoulders');
+        assert.ok(es.outline.x>=notch.x+join.corner-1&&es.outline.x+es.outline.w<=notch.x+notch.width-join.corner+1,'join avoids the rounded notch ends');
         assert.ok(er.x+er.width/2>=es.x&&er.x+er.width/2<=es.x+es.w);
         assert.ok(edge==='top'?es.y>=er.y+er.height-4:es.y+es.h<=er.y+4, 'outside the ring');
       }
@@ -158,10 +168,32 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
       assert.deepEqual(ee, []); await ep.close();
     }
 
+    // Long details pan within a bounded notification; the status and outer shape stay still.
+    const longEvent={id:'long',kind:'waiting',account:'claude',session:'a very long project name with enough detail to exceed the default notch length'};
+    for(const edge of ['right','top']){
+      const long=await open(browser,edge);
+      await arrive(long.page,{events:[longEvent],hold:4000},edge);
+      await long.page.waitForFunction(() => !!slivers.get('claude')?.scroll,null,{timeout:4000});
+      const ticker=await long.page.evaluate(() => {
+        const s=slivers.get('claude'),word=s.el.querySelector('.s-word'),text=s.el.querySelector('.s-scroll');
+        const width=s.el.getBoundingClientRect().width,first=word.getBoundingClientRect().x;
+        s.scroll.currentTime=s.scroll.effect.getTiming().duration/4;
+        return {width,distance:s.scrollDistance,translation:new DOMMatrix(getComputedStyle(text).transform).m41,
+          statusShift:word.getBoundingClientRect().x-first,rows:s.el.querySelector('.s-text').getBoundingClientRect().height};
+      });
+      assert.ok(ticker.width<=228,'long notifications stop at the default notch length');
+      assert.ok(ticker.distance>0&&ticker.translation<0,'overflowing details scroll');
+      assert.equal(ticker.statusShift,0,'status stays still');
+      assert.ok(ticker.rows<20,'long details do not wrap into extra rows');
+      assert.deepEqual(long.errors,[]);await long.page.close();
+    }
+
     const reduced = await open(browser, 'right', 'reduce');
     await arrive(reduced.page, { events: [quota], sound: false, hold: 2000 });
     await reduced.page.waitForTimeout(600);
     assert.equal(await reduced.page.evaluate(() => slivers.get('claude')?.t), 1, 'reduced motion: out at once');
+    await reduced.page.evaluate(e => showSliver('claude',[e],4000),longEvent);
+    assert.equal(await reduced.page.evaluate(() => slivers.get('claude').el.querySelector('.s-scroll').getAnimations().length),0,'reduced motion disables text panning');
     assert.deepEqual(reduced.errors, []);
     console.log('Passed: waits for arrival, a thin sliver from its ring sized to its line, chime, pointer elsewhere, time out, hold and seen, click to held usage, one per account with the urgent one leading, waits for a card, goes with the notch, flat edge, reduced motion.');
   } finally { await browser.close(); }

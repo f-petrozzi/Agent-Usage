@@ -57,8 +57,11 @@ test('terminal snapshots preserve identity for alerts and leave activity arcs of
   const feed = new SessionFeed(() => ({}));
   const snapshots=[];
   feed.on('snapshot',value=>snapshots.push(value));
-  feed.line(line([{provider:'codex',account:'codex:b',id:'r1',state:'busy'}]));
+  feed.line(line([{provider:'codex',account:'codex:b',id:'r1',sessionId:'12345678-1234-5678-abcd-123456789012',terminalPids:[90,80],cwd:'/srv/project',state:'busy'}]));
   assert.equal(feed.sessions.length,1);
+  assert.equal(feed.sessions[0].id,'r1');
+  assert.equal(feed.sessions[0].sessionId,'12345678-1234-5678-abcd-123456789012');
+  assert.deepEqual(feed.sessions[0].terminalPids,[90,80]);
   feed.line(line([{provider:'codex',account:'codex:b',id:'r1',sessionId:'12345678-1234-5678-abcd-123456789012',state:'idle'}]));
   assert.equal(feed.sessions.length,0);
   assert.equal(snapshots[1][0].id,'r1');
