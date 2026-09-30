@@ -152,3 +152,13 @@ The bell history and overflowing account panels use a 6px dark scrollbar with a 
 Monitor changes mask the native window before moving it. The renderer snaps to the destination edge, waits for the new viewport size and two animation frames, then acknowledges the placement before the window is revealed. Superseded acknowledgments cannot expose an earlier destination. Ordinary perimeter travel stays animated.
 
 Validation: 40 desktop checks; browser checks cover full-account side bands, all four physical top/bottom account positions, themed history scrolling on every edge, asynchronous monitor resizing, successive switches and same-sized monitors. Actual Windows monitor/DPI transitions still need a device trial.
+
+## Even notification sections and hidden spawns (3.2.9)
+
+Side-edge notifications divide the entire visible notch height equally among its displayed accounts, including end padding. Each fills that account's physical section; the outside top/bottom notification edges match the notch ends.
+
+All notification bodies are simple rounded rectangles using the notch's 20px corner radius. On top/bottom edges, end accounts align with the same outside notch edge. Middle accounts sit closer to the notch center with a slight offset toward their account's side. Spring growth and the temporary goo filter remain, and long details still scroll.
+
+Revealing a hidden notch now masks the native window before moving it and chooses the destination cursor edge before sending a layout. This closes the separate hidden-spawn path that could briefly expose the previous edge. If the pointer crosses another edge during resize, that edge is prepared before the window becomes visible.
+
+Validation: 42 desktop checks; notification browser checks cover equal side partitions for one through four accounts on both sides, rectangular top/bottom placement and text scrolling. Motion checks cover a hidden right-edge notch spawning on the next monitor's left edge. The Windows build verifies these desktop checks and packaged helper installation; actual monitor composition still needs a device trial.

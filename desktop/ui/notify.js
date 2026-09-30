@@ -1,10 +1,10 @@
 'use strict';
-/* Alerts grow out of the account they are about, as a sliver of the notch: a tab spanning its gauge and reading, joined
-   to the notch by flares of its own, sized to its text. It springs out a little past its length
+/* Alerts grow out of the account they are about, as a sliver of the notch: a rounded rectangle spanning its share of the notch,
+   sized to its text. It springs out a little past its length
    and settles, liquid while it moves, and its words arrive once there is black under them. Pointing at it holds
    it and counts it as seen; a click opens its linked session or account usage. Alerts for several accounts come out of their own
    rings together on side edges; flat-edge lifts take turns to keep text readable. An open card comes first: alerts wait. */
-const SLIVER={thick:76,flat:54,flatMin:128,flatMax:160,flare:12,pad:14,max:228,grace:1600};
+const SLIVER={flat:54,flatMin:128,flatMax:160,pad:14,max:228,grace:1600};
 const alertQueue=[], slivers=new Map();
 let pumpTimer=0, slivHeld=false, sliverSerial=0;
 const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
@@ -113,56 +113,45 @@ function springSliver(s){
   };
   s.frame=requestAnimationFrame(step);
 }
-// Drawn in edge space like the notch itself: u along the edge, v in from it. A side edge sends it across the
-// screen beside its ring, a flat edge hangs it below (or above) its ring, spreading to its length as it drops.
-function notificationLiftPath(root0,root1,u0,u1,d,join){
-  const rad=Math.min(SHAPE.corner,(u1-u0)/2,d/2), side=d-rad;
-  // Meet the notch's front on a horizontal tangent, then inflate into the rounded text body.
-  const shoulder=Math.min(14,(root1-root0)/4), bend=Math.max(join,side-16);
-  return `M${n(root0)} ${-SHAPE.bleed}V${n(join)}C${n(root0+shoulder)} ${n(join)} ${n(u0)} ${n(bend)} ${n(u0)} ${n(side)}`
-    +`A${n(rad)} ${n(rad)} 0 0 0 ${n(u0+rad)} ${n(d)}H${n(u1-rad)}`
-    +`A${n(rad)} ${n(rad)} 0 0 0 ${n(u1)} ${n(side)}`
-    +`C${n(u1)} ${n(bend)} ${n(root1-shoulder)} ${n(join)} ${n(root1)} ${n(join)}V${-SHAPE.bleed}Z`;
+// Rounded rectangles share the notch's 20px corners and overlap its front so their roots stay seamless.
+function notificationRectPath(u0,u1,d){
+  const rad=Math.min(SHAPE.corner,(u1-u0)/2,d);
+  return `M${n(u0)} ${-SHAPE.bleed}V${n(d-rad)}A${n(rad)} ${n(rad)} 0 0 0 ${n(u0+rad)} ${n(d)}`
+    +`H${n(u1-rad)}A${n(rad)} ${n(rad)} 0 0 0 ${n(u1)} ${n(d-rad)}V${-SHAPE.bleed}Z`;
 }
 function drawSliver(s){
   const origin=document.getElementById('root').getBoundingClientRect(), W=innerWidth, H=innerHeight;
   const matrix=edgeMatrix(notchEdge,W,H), local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
   const screen=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
-  const cell=s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`);
-  const vertical=edgeIsVertical(), anchor=(vertical?cell:cell?.querySelector('.ringwrap'))||pill;
-  const r=anchor.getBoundingClientRect(), [uc]=local(r.left+r.width/2-origin.left,r.top+r.height/2-origin.top);
-  const depth=edgeDepth(notchEdge)-2, t=Math.max(0,s.t), grown=Math.min(1,t);
-  let u0,u1,d,root0,root1,rootDepth=depth;
+  const cell=s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
+  const notch=pill.getBoundingClientRect(), [start]=local(notch.left-origin.left,notch.top-origin.top);
+  const length=vertical?notch.height:notch.width, end=start+length;
+  const cells=[...pill.querySelectorAll('.cell')].map(el=>{
+    const box=el.getBoundingClientRect();return {el,u:local(box.left+box.width/2-origin.left,box.top+box.height/2-origin.top)[0]};
+  }).sort((a,b)=>a.u-b.u);
+  const index=cells.findIndex(a=>a.el===cell);
+  const depth=edgeDepth(notchEdge), rootDepth=depth-SHAPE.corner, t=Math.max(0,s.t), grown=Math.min(1,t);
+  let u0,u1,d;
   if(vertical){
-    const thick=Math.max(SLIVER.thick,cell?r.height+8:0)*(.62+.38*smooth(grown));
-    u0=uc-thick/2;u1=uc+thick/2;d=s.length*t;
+    // Divide the entire notch, including its end padding, into equal physical account sections.
+    const count=index<0?1:cells.length, section=length/count;
+    u0=start+Math.max(0,index)*section;u1=u0+section;d=s.length*t;
   }else{
-    const notch=pill.getBoundingClientRect(), start=notch.left-origin.left, end=notch.right-origin.left;
-    // Root at this account's section, using physical order so the bottom edge mirrors correctly.
-    const centers=[...pill.querySelectorAll('.cell')].map(el=>{
-      const box=el.getBoundingClientRect();return {el,u:box.left+box.width/2-origin.left};
-    }).sort((a,b)=>a.u-b.u);
-    const index=centers.findIndex(a=>a.el===cell);
-    const left=index>0?(centers[index-1].u+uc)/2:start;
-    const right=index>=0&&index<centers.length-1?(centers[index+1].u+uc)/2:end;
-    root0=uc+(left-uc)*smooth(grown);root1=uc+(right-uc)*smooth(grown);
-    // A small readable body; the outer accounts flow from their full outside flank into it.
-    const inset=Math.min(8,Math.max(0,(end-start-SLIVER.flatMin)/2)), bodyStart=start+inset, bodyEnd=end-inset;
-    const full=Math.min(bodyEnd-bodyStart,SLIVER.flatMax,Math.max(SLIVER.flatMin,s.length-2*SLIVER.pad));
-    const span=Math.min(full,SLIVER.flat+(full-SLIVER.flat)*smooth((grown-.18)/.82));
-    u0=Math.max(bodyStart,Math.min(bodyEnd-span,uc-span/2));u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
-    rootDepth=depth-SHAPE.corner;
+    const span=Math.min(length,SLIVER.flatMax,Math.max(SLIVER.flatMin,s.length-2*SLIVER.pad));
+    // End accounts extend their outside edge. Middle accounts sit nearer the notch's center, on their own side.
+    const middle=(start+end)/2, center=middle+((cells[index]?.u??middle)-middle)*.65;
+    u0=index===0?start:index===cells.length-1?end-span:Math.max(start,Math.min(end-span,center-span/2));
+    u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
   }
   if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;return;}
-  const rad=Math.min(SHAPE.corner,(u1-u0)/2,d), flare=Math.min(SLIVER.flare,d*.5);
   const inkDepth=d+depth-rootDepth;
-  s.path.setAttribute('d',vertical?partPath(u0,u1,d,rad,flare,rad,flare):notificationLiftPath(root0,root1,u0,u1,inkDepth,depth-rootDepth+2));
+  s.path.setAttribute('d',notificationRectPath(u0,u1,inkDepth));
   s.path.setAttribute('transform',`matrix(${matrix.join(' ')}) translate(0 ${n(rootDepth)})`);
   // Liquid while it moves, sharp at rest
   const goo=matchMedia('(prefers-reduced-motion: reduce)').matches?0:4.4*Math.sin(Math.PI*grown)*(s.t===s.to?0:1);
   if(goo>.25){
     s.filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(goo));
-    const ink0=Math.min(u0,root0??u0), ink1=Math.max(u1,root1??u1);
+    const ink0=u0, ink1=u1;
     for(const [key,value] of Object.entries({x:ink0-40,y:-SHAPE.bleed-40,width:ink1-ink0+80,height:inkDepth+SHAPE.bleed+80}))s.filter.setAttribute(key,n(value));
     s.path.setAttribute('filter',`url(#${s.filter.id})`);
   }else s.path.removeAttribute('filter');

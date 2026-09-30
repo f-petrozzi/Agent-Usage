@@ -5,7 +5,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
 const main = path.resolve(__dirname, '../desktop/main.cjs');
-function setup(t) {
+function setup(t, initialVisible = true) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-usage-monitor-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const calls = [], displays = [
@@ -17,20 +17,20 @@ function setup(t) {
     app: { setName() {}, setAppUserModelId() {}, setPath() {}, getPath: () => root, commandLine: { appendSwitch() {} },
       requestSingleInstanceLock: () => true, on() {}, whenReady: () => new Promise(() => {}) },
     ipcMain: { handle: (_name, handler) => { command = handler; } },
-    screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => ({ x: -1590, y: 300 }) },
+    screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => ({ x: -1590, y: 300 }), getDisplayNearestPoint: () => displays[1] },
   };
-  const win = { isDestroyed: () => false, setOpacity: v => calls.push(['opacity', v]),
+  const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
     setIgnoreMouseEvents: v => calls.push(['ignore', v]), setBounds: r => calls.push(['bounds', r]),
     setAlwaysOnTop() {}, moveTop() {}, webContents: { send: (_name, event, payload) => calls.push([event, structuredClone(payload)]) } };
-  const settings = { webContents: {} };
+  const settings = { isDestroyed: () => false, webContents: { send() {} } };
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : localRequire(id),
     __dirname: path.dirname(main), process, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d){win=w;settings=s;config=c;configPath=file;monitor=d;visible=true;}, switchMonitor };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;}, switchMonitor, reveal };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1 };
-  context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0]);
+  context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
-  return { calls, displays, config, move: context.monitorTest.switchMonitor,
+  return { calls, displays, config, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal,
     command: (name, args, sender = win.webContents) => command(event(sender), name, args), settings };
 }
 test('monitor change masks the native window before moving and reveals only after destination paint', async t => {
@@ -70,4 +70,32 @@ test('pointer transfers use destination coordinates and hidden relocations stay 
   assert.equal(hidden.visible, false);
   await s.command('monitor_placed', { placement: hidden.placement });
   assert.equal(s.calls.some(c => c[0] === 'appear'), false);
+});
+
+test('revealing a hidden notch on another monitor masks it before emitting any old-edge layout', async t => {
+  const s = setup(t, false);
+  s.reveal();
+  assert.deepEqual(s.calls.slice(0, 2), [['opacity', 0], ['ignore', true]]);
+  const layouts = s.calls.filter(c => c[0] === 'layout');
+  assert.equal(layouts.length, 1, 'one destination layout, without a provisional old-edge layout');
+  const layout = layouts[0][1];
+  assert.equal(layout.edge, 'left'); assert.equal(layout.along, .3); assert.equal(layout.visible, true);
+  assert.deepEqual(s.calls.find(c => c[0] === 'bounds')[1], s.displays[1].bounds);
+  assert.equal(s.calls.some(c => c[0] === 'appear' || c[0] === 'opacity' && c[1] === 1), false);
+  await s.command('monitor_placed', { placement: layout.placement });
+  assert.deepEqual(s.calls.slice(-2), [['appear', { edge: 'left' }], ['opacity', 1]]);
+});
+test('an edge changed during resize is prepared again before unmasking', async t => {
+  const s = setup(t, false);
+  s.reveal();
+  const first = s.calls.find(c => c[0] === 'layout')[1].placement;
+  s.config.edge = 'top';
+  const before = s.calls.length;
+  assert.equal(await s.command('monitor_placed', { placement: first }), false);
+  assert.equal(s.calls.length, before + 1);
+  const retry = s.calls.at(-1);
+  assert.equal(retry[0], 'layout'); assert.equal(retry[1].edge, 'top'); assert.notEqual(retry[1].placement, first);
+  assert.equal(await s.command('monitor_placed', { placement: first }), false);
+  assert.equal(await s.command('monitor_placed', { placement: retry[1].placement }), true);
+  assert.deepEqual(s.calls.slice(-2), [['appear', { edge: 'top' }], ['opacity', 1]]);
 });

@@ -29,7 +29,7 @@ let expanded = false, alerting = false, pinned = false, menuOpen = false, visibl
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
-let placementSerial = 0, pendingPlacement = null;
+let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null;
 const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
@@ -149,6 +149,7 @@ function switchMonitor(display, { show = visible, atPointer = false } = {}) {
   if (atPointer) {
     const at = cursorPlacement(screen.getCursorScreenPoint()); config.edge = at.edge; config.along = at.along;
   }
+  pendingPlacementEdge = config.edge;
   useMonitor(display);
   if (show) { raise(); visibleUntil = Math.max(visibleUntil, Date.now() + 1800); }
 }
@@ -171,13 +172,11 @@ function reveal(atPointer = true) {
   if (!win || !config) return;
   dismissed = false; visibleUntil = Math.max(visibleUntil, Date.now() + 1800);
   if (!visible) {
-    if (atPointer) {
-      cursor = screen.getCursorScreenPoint(); useMonitor(screen.getDisplayNearestPoint(cursor));
-      const at=cursorPlacement(cursor);config.edge=at.edge;config.along=at.along;
-    }
-    visible = true; phase = 'shown'; hot = [];
-    place(); raise(); if (!win.isVisible()) win.showInactive();
-    sendLayout(); send('appear', { edge: config.edge }); broadcast('ui_flags', flags());
+    const display = atPointer ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint()) : monitor;
+    // A hidden spawn also crosses monitors: select its pointer edge before any bounds/layout become visible.
+    switchMonitor(display, { show: true, atPointer });
+    if (!win.isVisible()) win.showInactive();
+    broadcast('ui_flags', flags());
   }
 }
 function hide() {
@@ -357,7 +356,11 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'ready': frameReady = true; sendLayout(); return null;
     case 'monitor_placed': {
       if (event.sender !== win?.webContents || !Number.isInteger(args.placement) || args.placement !== pendingPlacement) return false;
-      pendingPlacement = null; phase = visible ? 'shown' : 'hidden';
+      // The shortcut may have crossed to another edge while the masked renderer was resizing.
+      if (visible && pendingPlacementEdge !== config.edge) {
+        pendingPlacement = ++placementSerial; pendingPlacementEdge = config.edge; sendLayout(); return false;
+      }
+      pendingPlacement = null; pendingPlacementEdge = null; phase = visible ? 'shown' : 'hidden';
       if (visible) send('appear', { edge: config.edge });
       win.setOpacity(1); return true;
     }

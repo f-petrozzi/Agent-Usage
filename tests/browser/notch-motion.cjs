@@ -216,6 +216,15 @@ const answers = {
   await page.waitForFunction(()=>__calls.some(c=>c[0]==='monitor_placed'&&c[1].placement===12));
   assert.equal(await page.evaluate(()=>notchEdge),'right');
   assert.equal(await page.evaluate(()=>frame),0,'no old perimeter motion remains');
+  // A hidden right-edge notch spawned under the pointer on the left never opens on the old edge.
+  await page.evaluate(()=>__emit('appear',{edge:'right'}));await page.waitForTimeout(1200);
+  await page.evaluate(()=>{__emit('disappear');__emit('layout',{width:2000,height:1250,scale:1.25,edge:'left',along:.3,visible:true,tracking:false,placement:13});});
+  await page.waitForFunction(()=>__calls.some(c=>c[0]==='monitor_placed'&&c[1].placement===13));
+  assert.equal(await page.evaluate(()=>shown),false);assert.equal(await page.evaluate(()=>notchEdge),'left');
+  await page.evaluate(()=>__emit('appear',{edge:'left'}));
+  assert.equal((await page.locator('#pill').boundingBox()).x,0,'first visible frame spawns on the cursor edge');
+  await page.waitForTimeout(1200);
+  assert.equal((await page.locator('#pill').boundingBox()).x,0,'no intermediate old-side frame or perimeter travel');
   assert.deepEqual(errors,[]);
   console.log('Passed: four corners in both directions, visible rings over black, pin/settings morphs on every edge, grab/close absorption, interrupted opening, reduced motion, monitor resize and superseded placement.');
   } finally { await browser.close(); }

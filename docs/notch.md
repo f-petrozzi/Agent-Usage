@@ -209,3 +209,13 @@ The bell history, main card and extras card use custom 6px scrollbars: transpare
 `switchMonitor` makes the native window transparent and disables hit testing before changing bounds. Layout events carry a placement serial. The renderer hides the old layout, snaps synchronously, waits for its CSS viewport to match display dimensions divided by app scale and two animation frames, then sends `monitor_placed`. Main accepts only the latest serial from the notch renderer and reveals it at the destination. Settings, hotkey transfers and display removal/metrics changes use this path. The ordinary edge motion remains animated.
 
 Regression checks: `tests/test-monitor.cjs` covers native mask/move/reveal ordering, stale and Settings acknowledgments, pointer placement and hidden relocations. Browser notification, bell and motion suites cover physical account roots, theme/scroll behavior, resized and same-sized destination viewports and superseded placement. Multi-monitor Windows composition and mixed DPI need an on-device trial.
+
+## Equal account sections and rectangular popouts (3.2.9)
+
+Notifications use one rounded-rectangle SVG path with the notch's 20px corner radius and a 20px overlap into its front. Side-edge geometry divides the full notch height by the number of displayed cells, assigns each rectangle its physical top-to-bottom section, and keeps that height throughout growth. No root flares extend beyond the partition. Left-edge reversed account order is handled by sorting physical coordinates.
+
+Top/bottom bodies are 128–160px wide, bounded by the notch width. The physical first/last accounts align exactly to the left/right notch edges. Interior centers interpolate 65% of the distance from the notch center to their account center, so they stay on the appropriate side while sitting closer to the middle. Text retains two lines and overflow panning.
+
+Hidden `reveal` now uses `switchMonitor`, selecting the monitor and pointer edge before a single destination layout is sent. Opacity is zero before changing native bounds and remains zero until the placement acknowledgment. A changed edge during resize gets a fresh placement serial/layout before unmasking. This covers hidden hotkey spawns as well as visible monitor transfers.
+
+Regression checks: 42 desktop checks including hidden-spawn mask/layout ordering and edge changes during resize. Notification browser checks exercise one through four side accounts, flush end boundaries, both account orders, all four top/bottom positions and long-detail scrolling. Motion browser checks include right-to-left hidden respawning. Actual Windows multi-monitor/DPI composition remains an on-device check.
