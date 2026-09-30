@@ -869,13 +869,14 @@ let hoverId='claude';
 let claudeAuth={busy:false,message:''};
 let claudeActionMessage='';
 // Authentication stays on the collector machine.
-function renderUsageWindows(windows){
+function renderUsageWindows(windows,boxed=true,headings=true){
   let html='',group=null;
   for(const w of windows){
     if((w.group||null)!==group){
-      if(group) html+=`</div>`;
+      if(group&&boxed) html+=`</div>`;
       group=w.group||null;
-      if(group) html+=`<div class="g-head">${esc(textCopy(group))}</div><div class="g-box">`;
+      if(group&&headings)html+=`<div class="g-head">${esc(textCopy(group))}</div>`;
+      if(group&&boxed)html+=`<div class="g-box">`;
     }
     if(w.count!=null){
       html+=`<div class="win"><div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span></div>
@@ -888,7 +889,7 @@ function renderUsageWindows(windows){
       <div class="w-used">${esc(usedCopy(w))}</div>
     </div>`;
   }
-  if(group) html+=`</div>`;
+  if(group&&boxed) html+=`</div>`;
   return html;
 }
 
@@ -912,7 +913,7 @@ function renderCard(){
   }else if(!snap.windows.length){
     html+=`<div class="c-note">${esc(textCopy(snap.note||'Waiting for first reading…'))}</div>`;
   }else{
-    html+=renderUsageWindows(mainWindows);
+    html+=renderUsageWindows(mainWindows,p.base!=='gemini',p.base!=='gemini');
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
@@ -1226,8 +1227,8 @@ function handleMetrics(edge=notchEdge,length){
   const horizontal=edge==='top'||edge==='bottom';
   const depth=horizontal?90:70;
   length??=horizontal?pill.offsetWidth:pill.offsetHeight;
-  const scale=Math.max(.72,Math.min(1.25,Math.sqrt(depth/70)*(.72+.28*Math.min(1,length/228))));
-  return {scale,flare:38.7*scale,arm:28.5*scale,stroke:8.8*scale,disc:38*scale,reach:28.5*scale,glyph:18*scale};
+  const scale=Math.max(.86,Math.min(1.25,Math.sqrt(depth/70)*(.72+.28*Math.min(1,length/228))));
+  return {scale,flare:38.7*scale,arm:32*scale,stroke:10.2*scale,disc:48*scale,reach:35*scale,glyph:23*scale};
 }
 let orbAt=null,pinAt=null,hovered=null,orbSpins=0,showPin=true,carrying=false;
 // x and y are on screen; the handles live in #root, which is offset while it slides
@@ -1279,7 +1280,7 @@ listen('notch_buttons',e=>renderNotchButtons(e.payload)).catch(()=>{});
 invoke('get_notch_buttons').then(renderNotchButtons).catch(()=>{});
 // Legacy Alt-drag still retracts the handles while carrying; the shortcut moves the notch directly.
 listen('move_begin',()=>{carrying=true;window.agentTracking=true;document.getElementById('root').classList.add('carrying');moveArms(0,.2);setHovered(null);clearTimeout(hideTimer);hideCard();});
-listen('move_end',()=>{carrying=false;window.agentTracking=false;document.getElementById('root').classList.remove('carrying');setHovered(null);reportHot();moveArms(1,.8,smooth);});
+listen('move_end',()=>{carrying=false;window.agentTracking=false;document.getElementById('root').classList.remove('carrying');setHovered(null);reportHot();moveArms(1,.56,smooth);});
 document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_move').catch(()=>{});});
 /* Appearing grows the notch out of the screen edge; disappearing slides it away past the edge
    (agent-usage.css). The Mac's resting-pill fold is not used: with nothing on screen at rest it read as a

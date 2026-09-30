@@ -153,7 +153,7 @@ const answers = {
       pill.style.setProperty('--length',saved);handles[1].value=0;handles[1].el.classList.remove('hover');drawShape();placeHandles();return results;
     });
     assert.ok(sizes[0].disc<sizes[1].disc&&sizes[1].disc<sizes[2].disc,'longer notches have proportionally larger buttons');
-    for(const size of sizes){assert.ok(size.centering<.1);assert.ok(size.target>size.disc);assert.ok(Math.abs(size.glyph/size.disc-18/38)<.002);}
+    for(const size of sizes){assert.ok(size.centering<.1);assert.ok(size.target>size.disc);assert.ok(size.disc>=40,'buttons remain substantial in compact notches');assert.ok(Math.abs(size.glyph/size.disc-23/48)<.002);}
   }
   // Hovering the bottom-right button must leave the opposite arm's rendered pixels untouched.
   await sample(2720);

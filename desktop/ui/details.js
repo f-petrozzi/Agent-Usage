@@ -118,7 +118,7 @@ detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}</
 const extraFilter=detailSvg.querySelector('#extra-goo');
 let extraOpen=0,extraTarget=0,extraVelocity=0,extraFrame=0,extraLast=0;
 function setExtraContent(rows,windows=[]){
-  extraCard.innerHTML=rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('')+renderUsageWindows(windows);
+  extraCard.innerHTML=rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('')+renderUsageWindows(windows,false);
   if(!rows.length&&!windows.length)setExtraShown(false,true);
   placeExtraCard();
 }

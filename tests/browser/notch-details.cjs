@@ -132,8 +132,8 @@ const answers = {
   assert.equal(await page.locator('.cell').count(),4);
   await page.locator('.cell[data-p="antigravity"]').hover();await page.waitForTimeout(2000);
   assert.equal(await page.evaluate(()=>card.dataset.account),'antigravity');
-  assert.equal(await page.locator('#card .g-box').count(),1);assert.equal(await page.locator('#card .w-track').count(),2);
-  assert.equal(await page.locator('#card .g-head').innerText(),'Gemini Models');
+  assert.equal(await page.locator('#card .g-box').count(),0);assert.equal(await page.locator('#card .w-track').count(),2);
+  assert.equal(await page.locator('#card .g-head').count(),0,'Gemini uses the same plain usage rows as other accounts');
   assert.equal(await page.locator('.c-title').innerText(),'Antigravity Usage');
   assert.equal(await page.locator('.compact-account').count(),3);
   await page.screenshot({path:path.join(OUT,'four-accounts-antigravity.png')});
@@ -142,6 +142,7 @@ const answers = {
   assert.equal(await page.evaluate(()=>extraOpen),1);
   assert.equal(await page.locator('#extra-card .g-head').innerText(),'Claude and GPT models');
   assert.equal(await page.locator('#extra-card .w-track').count(),2);
+  assert.equal(await page.locator('#extra-card .g-box').count(),0,'extra model quotas also use plain rows');
   assert.equal(await page.locator('#card .w-track').count(),2);
   assert.equal(await page.evaluate(()=>detailPath.getAttribute('d')),agyOutline,'extra models do not enlarge main usage');
   const agyExtras=await page.locator('#extra-card').boundingBox();

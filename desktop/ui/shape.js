@@ -50,7 +50,7 @@ function morphHandles(){
     let last=performance.now();
     const step=now=>{
       const dt=Math.min(.032,(now-last)/1000);last=now;
-      const omega=2*Math.PI/.95,damping=to?.76:.88;
+      const omega=2*Math.PI/.74,damping=to?.73:.86;
       h.velocity+=(-omega*omega*(h.value-to)-2*damping*omega*h.velocity)*dt;
       h.value+=h.velocity*dt;
       const settled=Math.abs(h.value-to)<.002&&Math.abs(h.velocity)<.025;
@@ -157,12 +157,12 @@ function drawStraight(){
     if(merging)width*=disc?(1-.72*home):smooth(out/.35);
     const goo=merging
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
-      :stroke*.4*smooth(out/.15)*(1-smooth((out-.6)/.35));
-    const blur=Math.max(goo,5.5*proportions.scale*Math.sin(Math.PI*disc));
+      :stroke*.55*smooth(out/.12)*(1-smooth((out-.7)/.3));
+    const blur=Math.max(goo,7.8*proportions.scale*Math.sin(Math.PI*disc));
     h.ink.setAttribute('stroke-width',n(width+blur*.4));
     // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
     const armNeck=merging?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
-    const neckWidth=Math.max(armNeck,stroke*1.45*Math.pow(Math.sin(Math.PI*disc),.7));
+    const neckWidth=Math.max(armNeck,stroke*1.75*Math.pow(Math.sin(Math.PI*disc),.55));
     if(neckWidth>stroke*.18&&out>.01){
       const ax=cx+(F+stroke)*Math.cos(mid), ay=F+(F+stroke)*Math.sin(mid);
       const reach=merging?smooth((.92-out)/.32):1;
@@ -231,7 +231,7 @@ function openShape(){
     const dt=Math.min(.032,(now-(openLast||now-16))/1000); openLast=now;
     openVelocity+=(-omega*omega*(openness-1)-2*zeta*omega*openVelocity)*dt;
     const next=openness+openVelocity*dt;
-    if(!armsStarted&&next>.9){ armsStarted=true; moveArms(1,.8,smooth); }
+    if(!armsStarted&&next>.78){ armsStarted=true; moveArms(1,.56,smooth); }
     if(Math.abs(next-1)<.0015&&Math.abs(openVelocity)<.02){ openFrame=0; setOpenness(1); reportHot(); return; }
     setOpenness(next); openFrame=requestAnimationFrame(step);
   };
