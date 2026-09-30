@@ -63,8 +63,12 @@ const answers = {
 
     // Scrolling swaps what the pocket holds: the pin flows home, the bell buds out; a second scroll mid-swap is ignored
     await page.mouse.wheel(0, 100); await page.waitForTimeout(60); await page.mouse.wheel(0, 100);
-    assert.ok(await page.evaluate(() => handles[0].swapping && handles[0].swap < 1), 'flowing back into the notch');
-    await page.waitForTimeout(1100);
+    assert.ok(await page.evaluate(() => handles[0].swapping && handles[0].swap < 1 && pinHandle.classList.contains('swapping')), 'flowing back into the notch');
+    await page.waitForTimeout(500);
+    assert.ok(await page.evaluate(() => +handles[0].el.style.getPropertyValue('--glyph-blur') > 1), 'the icon softens as it melts in');
+    assert.ok(await page.evaluate(() => +document.querySelector('#goo-start feGaussianBlur').getAttribute('stdDeviation') > 6), 'enough goo to run the drop into the notch');
+    await page.waitForTimeout(1500);
+    assert.ok(await page.evaluate(() => pinHandle.querySelector('.h-glyph.bell').getAnimations().length > 0), 'the bell swings once it has settled');
     assert.deepEqual(await page.evaluate(() => [leadFace(), handles[0].swap, handles[0].swapping, pinHandle.classList.contains('face-alerts')]), ['alerts', 1, false, true]);
     assert.deepEqual(Object.keys(await page.evaluate(() => JSON.parse(lastHot).controls)).sort(), ['alerts', 'settings'], 'main is told the pocket now holds the log');
     await page.screenshot({ path: path.join(OUT, 'pocket-bell.png') });
@@ -115,7 +119,7 @@ const answers = {
 
     // Scrolling the other way brings the pin back, and a press is a pin press again
     await page.mouse.move(pocket.x, pocket.y); await page.waitForTimeout(700);
-    await page.mouse.wheel(0, -100); await page.waitForTimeout(1100);
+    await page.mouse.wheel(0, -100); await page.waitForTimeout(2000);
     assert.equal(await page.evaluate(() => leadFace()), 'pin');
     await page.mouse.down(); await page.mouse.up();
     assert.deepEqual(await page.evaluate(() => window.__calls.filter(c => c[0] === 'activate_control').at(-1)[1]), { control: 'pin' });

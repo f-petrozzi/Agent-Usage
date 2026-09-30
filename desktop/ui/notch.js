@@ -1390,7 +1390,8 @@ document.addEventListener('wheel',e=>{
   e.preventDefault();
   if(Math.abs(e.deltaY)<4)return;
   const step=e.deltaY>0?1:-1;
-  swapHandle(0,()=>{leadIndex=(leadIndex+step+leadFaces.length)%leadFaces.length;renderLead();if(leadFace()==='alerts'&&typeof ringBell==='function')setTimeout(()=>ringBell(true),260);});
+  // The bell swings once it has settled in the pocket, not while it is still a drop
+  swapHandle(0,()=>{leadIndex=(leadIndex+step+leadFaces.length)%leadFaces.length;renderLead();},()=>{if(leadFace()==='alerts'&&typeof ringBell==='function')ringBell(true);});
 },{passive:false});
 listen('notch_buttons',e=>renderNotchButtons(e.payload)).catch(()=>{});
 invoke('get_notch_buttons').then(renderNotchButtons).catch(()=>{});

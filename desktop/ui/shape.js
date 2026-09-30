@@ -134,9 +134,12 @@ function drawStraight(){
     bands[i].setAttribute('d',partA.getAttribute('d'));
     for(const [key,value] of Object.entries({x:cx-90,y:-60,width:180,height:190}))bandClips[i].setAttribute(key,value);
     necks[i].removeAttribute('d');
-    h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35)*smooth((h.swap-.45)/.55)*smooth((detailRetreat-.5)/.5));
-    // A disc budding out of a swap overshoots and settles, the glyph with it
-    const swell=Math.max(1,h.swap);h.el.style.setProperty('--swell',n(swell));
+    // Swapping, p runs 0 (out in the pocket) to 1 (melted into the notch) and back; the glyph rides it in and out,
+    // shrinking and softening with its disc rather than fading on the spot
+    const p=h.swapping?Math.max(0,Math.min(1,1-h.swap)):0;
+    h.el.style.setProperty('--disc-glyph',smooth((disc-.65)/.35)*smooth((h.swap-.18)/.6)*smooth((detailRetreat-.5)/.5));
+    const swell=Math.max(1,h.swap);
+    h.el.style.setProperty('--swell',n(swell*(1-.6*smooth(p))));h.el.style.setProperty('--glyph-blur',n(2.6*smooth(p/.8)));
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
     const rest=14.625*proportions.scale*grown, buried=rest+stroke*1.4;
     // The complete arm emerges from the flare as one continuous contour.
@@ -157,13 +160,20 @@ function drawStraight(){
       points.push(`${j?'L':'M'}${n(cx+p[0]-arcMid[0]+centre*Math.cos(mid))} ${n(F+p[1]-arcMid[1]+centre*Math.sin(mid))}`);
     }
     h.ink.setAttribute('d',points.join(''));
+    // In motion the drop pulls long toward the notch, most at mid-travel, as liquid does between two bodies
+    if(p>0&&blend>.5){
+      const x0=cx+centre*Math.cos(mid),y0=F+centre*Math.sin(mid),tail=proportions.disc*.5*Math.sin(Math.PI*p);
+      h.ink.setAttribute('d',`M${n(x0)} ${n(y0)}L${n(x0+tail*Math.cos(mid))} ${n(y0+tail*Math.sin(mid))}`);
+    }
     const arcWidth=stroke*2.3+(stroke-stroke*2.3)*unrolled;
     let width=(arcWidth+(proportions.disc-arcWidth)*blend)*swell;
     if(merging)width*=disc?(1-.72*home):smooth(out/.35);
     const goo=merging
       ?stroke*.45*(1+.8*(1-smooth((out-.04)/.32)))*smooth((.93-out)/.15)*smooth(out/.05)
       :stroke*.55*smooth(out/.12)*(1-smooth((out-.7)/.3));
-    const blur=Math.max(goo,7.8*proportions.scale*Math.sin(Math.PI*disc));
+    // Swapping, the blur is what melts the drop into the notch: nothing at rest, enough at the middle of the way to
+    // bridge the gap to the flare, so the drop, its strand and the notch run together as one body
+    const blur=Math.max(goo,7.8*proportions.scale*Math.sin(Math.PI*disc),11*proportions.scale*smooth(p/.55));
     h.ink.setAttribute('stroke-width',n(width+blur*.4));
     // A curved strand is wide at the flare and drop, pinched in the middle, then parts.
     const armNeck=merging?stroke*1.1*smooth((.94-out)/.1):stroke*1.1*(1-smooth((out-.2)/.5));
@@ -264,10 +274,10 @@ function moveArms(to,seconds,ease=t=>t*t){
 /* Scrolling over a handle changes what it holds: the disc flows back into the notch along the arm's own way
    home, accelerating, then the next one buds out of the flare and settles. `onHome` swaps the glyph while it
    is inside the black. A second scroll mid-swap is ignored rather than queued. */
-function swapHandle(i,onHome){
+function swapHandle(i,onHome,onSettled){
   const h=handles[i];
   if(h.swapping)return false;
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches){onHome();drawShape();return true;}
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){onHome();drawShape();onSettled?.();return true;}
   h.swapping=true;cancelAnimationFrame(h.swapFrame);
   const leg=(to,seconds,ease,done)=>{
     const from=h.swap,t0=performance.now();
@@ -275,19 +285,26 @@ function swapHandle(i,onHome){
       if(t<1)h.swapFrame=requestAnimationFrame(step);else{h.swapFrame=0;done();}};
     h.swapFrame=requestAnimationFrame(step);
   };
-  // Home on an accelerating ease; back out on a spring that swells a little past full and settles, like a drop
-  leg(0,.26,t=>t*t,()=>{
+  // The liquid middle is where the time goes. Home eases in and out, so the drop is seen running into the notch;
+  // out, it is drawn slowly from the flare while its strand stretches, then lets go and springs into its place,
+  // swelling past full and wobbling once, as a drop does when the strand holding it snaps.
+  // It never quite stops inside the black: the new drop starts to swell as the old one is still arriving
+  const inOut=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2, drip=t=>-(Math.cos(Math.PI*t)-1)/2;
+  h.el.classList.add('swapping');
+  leg(.05,.46,inOut,()=>{
     onHome();
-    let last=performance.now(),velocity=0;
-    const omega=2*Math.PI/.46,zeta=.55;
-    const step=now=>{
-      const dt=Math.min(.032,(now-last)/1000);last=now;
-      velocity+=(-omega*omega*(h.swap-1)-2*zeta*omega*velocity)*dt;h.swap+=velocity*dt;
-      const settled=Math.abs(h.swap-1)<.002&&Math.abs(velocity)<.02;
-      if(settled){h.swap=1;h.swapping=false;h.swapFrame=0;}else h.swapFrame=requestAnimationFrame(step);
-      drawShape();
-    };
-    h.swapFrame=requestAnimationFrame(step);
+    leg(.6,.44,drip,()=>{
+      let last=performance.now(),velocity=2.4;
+      const omega=2*Math.PI/.55,zeta=.42;
+      const step=now=>{
+        const dt=Math.min(.032,(now-last)/1000);last=now;
+        velocity+=(-omega*omega*(h.swap-1)-2*zeta*omega*velocity)*dt;h.swap+=velocity*dt;
+        const settled=Math.abs(h.swap-1)<.002&&Math.abs(velocity)<.02;
+        if(settled){h.swap=1;h.swapping=false;h.swapFrame=0;h.el.classList.remove('swapping');onSettled?.();}else h.swapFrame=requestAnimationFrame(step);
+        drawShape();
+      };
+      h.swapFrame=requestAnimationFrame(step);
+    });
   });
   return true;
 }

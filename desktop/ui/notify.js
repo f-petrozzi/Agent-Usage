@@ -116,7 +116,7 @@ function ringBell(always=false){
   if(leadFace()==='alerts'){
     pinHandle.querySelector('.h-glyph.bell')?.animate([{rotate:'0deg'},{rotate:'20deg'},{rotate:'-15deg'},{rotate:'10deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)'});
   }
-  if(unreadCount())pinHandle.querySelector('.lead-dot')?.animate([{scale:0},{scale:1.5},{scale:1}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
+  if(unreadCount()&&!pinHandle.classList.contains('swapping'))pinHandle.querySelector('.lead-dot')?.animate([{scale:0},{scale:1.5},{scale:1}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
 }
 // Pressing the bell: the log grows out of the notch where the bell was
 function openAlertLog(){
