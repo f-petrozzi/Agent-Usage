@@ -1,5 +1,7 @@
 # Agent Usage
 
+<p><img src="docs/agent-usage.png" width="80" alt="Agent Usage purple ribbon logo"></p>
+
 A hidden-at-startup Windows edge notch for Codex, Claude, and Antigravity usage, reset times,
 and banked resets. Hold **Scroll Lock** to reveal it and follow your cursor
 around either monitor's edges. Release, then hover an agent for scrollable details.
