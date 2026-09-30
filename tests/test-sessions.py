@@ -2,6 +2,8 @@
 import importlib.machinery
 import importlib.util
 import json
+import sqlite3
+import fcntl
 import os
 from pathlib import Path
 import tempfile
@@ -83,6 +85,52 @@ class CodexSessionTests(unittest.TestCase):
     def test_a_rollout_shared_by_two_profiles_counts_once(self):
         self.rollout('open', 'task_started')
         self.assertEqual(len(usage.codex_sessions([('a', self.home), ('b', self.home)], self.now)), 1)
+
+
+class AntigravitySessionTests(unittest.TestCase):
+    def test_live_status_waiting_idle_background_and_crashes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'presence').mkdir()
+            conn = sqlite3.connect(root / 'conversation_summaries.db')
+            conn.execute('CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, status TEXT, not_fully_idle INTEGER, killed INTEGER, last_modified_time TEXT)')
+            locks = []
+            try:
+                for identity, status, background, killed, held in [
+                    ('running', 'RUNNING', 0, 0, True), ('waiting', 'BUSY', 0, 0, True),
+                    ('idle', 'IDLE', 0, 0, True), ('background', 'IDLE', 1, 0, True),
+                    ('crashed', 'RUNNING', 0, 0, False), ('killed', 'RUNNING', 0, 1, True)]:
+                    conn.execute('INSERT INTO conversation_summaries VALUES (?,?,?,?,?,?)',
+                                 (identity, identity, 'CASCADE_RUN_STATUS_' + status, background, killed, '2026-09-29T19:00:00Z'))
+                    lock = (root / 'presence' / (identity + '.lock')).open('wb')
+                    locks.append(lock)
+                    if held:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                conn.commit()
+                transcript = root / 'brain/waiting/.system_generated/logs/transcript.jsonl'
+                transcript.parent.mkdir(parents=True)
+                transcript.write_text(json.dumps({'type': 'TOOL', 'status': 'WAITING'}) + '\n{"partial":')
+                got = {s['id']: s for s in usage.antigravity_sessions(root)}
+                self.assertEqual(set(got), {'running', 'waiting', 'background'})
+                self.assertEqual(got['running']['state'], 'busy')
+                self.assertEqual(got['waiting']['state'], 'waiting')
+                self.assertEqual(got['waiting']['account'], 'antigravity')
+                transcript.write_text(json.dumps({'status':'DONE','type':'PLANNER_RESPONSE','tool_calls':[{'name':'ask_question'}]}) + '\n')
+                self.assertEqual({s['id']: s for s in usage.antigravity_sessions(root)}['waiting']['state'], 'waiting')
+                transcript.write_text(json.dumps({'status': 'DONE'}) + '\n')
+                self.assertEqual({s['id']: s for s in usage.antigravity_sessions(root)}['waiting']['state'], 'busy')
+            finally:
+                conn.close()
+                for lock in locks:
+                    lock.close()
+            self.assertEqual(usage.antigravity_sessions(root), [])
+
+    def test_missing_or_incompatible_database_is_quiet(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.assertEqual(usage.antigravity_sessions(root), [])
+            (root / 'conversation_summaries.db').write_text('not a database')
+            self.assertEqual(usage.antigravity_sessions(root), [])
 
 
 if __name__ == '__main__':

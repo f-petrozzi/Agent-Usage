@@ -100,7 +100,7 @@ function applyEdge(e){
   // The window changes shape with the edge, and so does the width the zoom correction measures against
   reportDpr();
   // The pill changes shape, so both the hot rectangles and the card's anchor have to be measured again
-  if(card&&card.classList.contains('show')) placeCard();
+  if(card&&card.classList.contains('show')) renderCard();
   reportHot();
 }
 let uiLang='en';
@@ -901,11 +901,12 @@ function renderCard(){
   const extraWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)==='3p'):[];
   const mainWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)!=='3p'):snap.windows;
   const hasExtras=!!snap.details?.length||extraWindows.length>0;
+  const inlineExtras=edgeIsVertical()&&hasExtras;
   const headIcon=glyphHtml(p,true);
   // p.name is no longer a constant: for a second account it is built from the home
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
-  let html=`<div class="c-head">${headIcon}${hasExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}</div>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -927,10 +928,11 @@ function renderCard(){
       html+=moreRow(acts.length-SESSION_ROWS)+`</div>`;
     }
   }
+  if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;
-  if(typeof setExtraContent==='function')setExtraContent(snap.details||[],extraWindows);
+  if(typeof setExtraContent==='function')setExtraContent(inlineExtras?[]:snap.details||[],inlineExtras?[]:extraWindows);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){
     let closeTimer;

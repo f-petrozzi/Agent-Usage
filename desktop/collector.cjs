@@ -96,11 +96,11 @@ function parseSessions(line) {
   const raw = JSON.parse(line);
   if (raw.schema !== 1 || !Array.isArray(raw.sessions)) throw new Error('Unsupported session feed');
   return raw.sessions.slice(0, 40)
-    .filter(s => s && ['claude', 'codex'].includes(s.provider) && ['busy', 'waiting'].includes(s.state) && typeof s.account === 'string')
+    .filter(s => s && ['claude', 'codex', 'antigravity'].includes(s.provider) && ['busy', 'waiting'].includes(s.state) && typeof s.account === 'string')
     .map(s => {
       const reason = s.state === 'waiting' && typeof s.waitingFor === 'string' ? clean(s.waitingFor, 60) : '';
-      return { provider: s.provider, account: accountId(s.provider, s.account), state: s.state,
-        name: clean(s.name || (s.provider === 'claude' ? 'Claude' : 'Codex'), 80),
+      return { provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
+        name: clean(s.name || ({claude:'Claude',codex:'Codex',antigravity:'Antigravity'}[s.provider]), 80),
         detail: s.state === 'busy' ? 'Working' : reason ? reason[0].toUpperCase() + reason.slice(1) : 'Waiting',
         since: finite(s.since) ? s.since * 1000 : 0 };
     });

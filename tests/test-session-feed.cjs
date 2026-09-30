@@ -44,3 +44,11 @@ test('a collector without --watch-sessions is retried rarely', async () => {
   assert.equal(delay, 600000);
   feed.close();
 });
+
+test('Antigravity activity maps to its Gemini usage account', () => {
+  const activity = parseSessions(line([{provider:'antigravity',account:'antigravity',state:'busy',name:'AGY',since:1},
+    {provider:'antigravity',account:'antigravity',state:'waiting',waitingFor:'input needed'}]));
+  assert.equal(activity[0].account,accountId('gemini','antigravity'));
+  assert.equal(activity[0].detail,'Working');
+  assert.equal(activity[1].detail,'Input needed');
+});

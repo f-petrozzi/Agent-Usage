@@ -117,8 +117,11 @@ const extraPath=document.createElementNS(SVG_NS,'path');detailSvg.append(extraPa
 detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}</defs>`);
 const extraFilter=detailSvg.querySelector('#extra-goo');
 let extraOpen=0,extraTarget=0,extraVelocity=0,extraFrame=0,extraLast=0;
+function renderExtraContent(rows,windows=[]){
+  return rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('')+renderUsageWindows(windows,false);
+}
 function setExtraContent(rows,windows=[]){
-  extraCard.innerHTML=rows.map(row=>`<div class="extra-row">${esc(row)}</div>`).join('')+renderUsageWindows(windows,false);
+  extraCard.innerHTML=renderExtraContent(rows,windows);
   if(!rows.length&&!windows.length)setExtraShown(false,true);
   placeExtraCard();
 }

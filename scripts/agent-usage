@@ -28,11 +28,13 @@ import fcntl
 import hashlib
 import math
 import concurrent.futures
+from contextlib import closing
 import datetime as dt
 import json
 import os
 import re
 import selectors
+import sqlite3
 import shutil
 import subprocess
 import sys
@@ -758,6 +760,8 @@ def latest_activity(codex_homes: list[Path], include_claude: bool) -> int | None
 # * Codex  - each turn appends task_started, then task_complete or
 #            turn_aborted, to the session's rollout. Codex does not record
 #            approval waits there, so Codex only ever reports busy.
+# * AGY    - locked CLI presence plus its read-only summary database. Pending
+#            transcript steps distinguish explicit questions/permission waits.
 
 SESSION_POLL_SECONDS = 1.5
 SESSION_HEARTBEAT_SECONDS = 15.0
@@ -868,12 +872,67 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float) -> list[dict[st
     return sessions
 
 
-def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool) -> int:
+def antigravity_sessions(data_dir: Path) -> list[dict[str, Any]]:
+    """Read live CLI presence and status metadata; never open Google credentials."""
+    database = data_dir / "conversation_summaries.db"
+    if not database.is_file():
+        return []
+    sessions: list[dict[str, Any]] = []
+    try:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.1)) as conn:
+            records = conn.execute("SELECT conversation_id, title, status, not_fully_idle, killed, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 64").fetchall()
+        for identity, title, status, background, killed, modified in records:
+            if killed or not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", identity or ""):
+                continue
+            try:
+                with (data_dir / "presence" / (identity + ".lock")).open("rb") as lock:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        pass  # The CLI still owns this conversation.
+                    else:
+                        continue
+            except OSError:
+                continue
+            active = status in {"CASCADE_RUN_STATUS_RUNNING", "CASCADE_RUN_STATUS_BUSY"} or (status == "CASCADE_RUN_STATUS_IDLE" and background)
+            if not active:
+                continue
+            state, reason = "busy", None
+            transcript = data_dir / "brain" / identity / ".system_generated" / "logs" / "transcript.jsonl"
+            try:
+                with transcript.open("rb") as handle:
+                    handle.seek(max(0, transcript.stat().st_size - SESSION_TAIL_BYTES))
+                    lines = handle.read().splitlines()
+                for line in reversed(lines):
+                    try:
+                        step = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(step, dict):
+                        continue
+                    calls = step.get("tool_calls")
+                    question = isinstance(calls, list) and any(isinstance(call, dict) and call.get("name") in {"ask_question", "ask_permission"} for call in calls)
+                    if step.get("status") == "WAITING" or question:
+                        state, reason = "waiting", "input needed"
+                    break
+            except OSError:
+                pass
+            sessions.append({"provider": "antigravity", "account": "antigravity", "id": identity,
+                             "name": _short(title or "Antigravity"), "state": state,
+                             "waitingFor": reason, "since": _parse_iso(modified) if isinstance(modified, str) else None})
+    except (OSError, sqlite3.Error):
+        return []
+    return sessions
+
+
+def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool, include_antigravity: bool = True) -> int:
     """Print one JSON line per change, and at least every heartbeat, until the reader goes away."""
     last_sent, last_line = 0.0, ""
     while True:
         now = time.time()
         sessions = (claude_sessions(claude_config_dir()) if include_claude else []) + codex_sessions(profiles, now)
+        if include_antigravity:
+            sessions += antigravity_sessions(Path.home() / ".gemini" / "antigravity-cli")
         sessions.sort(key=lambda s: (s["provider"], s["account"], s["id"]))
         line = json.dumps({"schema": 1, "sessions": sessions[:40]}, separators=(",", ":"))
         if line != last_line or now - last_sent >= SESSION_HEARTBEAT_SECONDS:
@@ -1136,7 +1195,7 @@ def main(argv: list[str] | None = None) -> int:
             raise UsageError("Nothing to read: no Codex accounts and Claude is disabled.")
         if args.watch_sessions:
             try:
-                return watch_sessions(profiles, include_claude)
+                return watch_sessions(profiles, include_claude, include_antigravity)
             except KeyboardInterrupt:
                 return 0
         document = collect(profiles, include_claude, args.timeout, include_antigravity)

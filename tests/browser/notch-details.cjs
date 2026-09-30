@@ -94,6 +94,12 @@ const answers = {
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),true,'read within the expansion');
     assert.equal(await page.locator('.account-extra,.extra-toggle').count(),0,'no separate Account details row');
     const geometry=await page.evaluate(()=>({ink:detailPath.getAttribute('d'),pill:pill.getBoundingClientRect().toJSON()}));
+    const vertical=edge==='left'||edge==='right';
+    if(vertical){
+      assert.equal(await page.locator('#card .inline-extras').innerText(),'Plan: Max','side metadata opens inside the usage frame by default');
+      assert.equal(await page.locator('.metadata-trigger').count(),0);
+    }else{
+    assert.equal(await page.evaluate(()=>extraTarget),0,'top/bottom extras start hidden');
     await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
     assert.equal(await page.evaluate(()=>extraOpen),1);
     assert.equal(await page.evaluate(()=>detailPath.getAttribute('d')),geometry.ink,'metadata never enlarges the main notch');
@@ -102,6 +108,7 @@ const answers = {
     await page.mouse.move(metadata.x+metadata.width/2,metadata.y+metadata.height/2);await page.waitForTimeout(350);
     assert.equal(await page.evaluate(()=>extraTarget),1,'metadata remains readable on hover');
     await page.screenshot({path:path.join(OUT,edge+'-metadata.png')});
+    }
     const next=await page.locator('.cell .ringwrap').nth(1).boundingBox();
     await page.mouse.move(next.x+next.width/2,next.y+next.height/2);await page.waitForTimeout(110);
     assert.ok(await page.evaluate(()=>card.dataset.account==='codex'&&detailTarget===1&&pill.querySelector('.focused-account').dataset.p==='codex'),'small glyph switches without closing the notch');
@@ -116,8 +123,12 @@ const answers = {
     assert.equal(await page.evaluate(()=>extraTarget),0,'switching accounts closes metadata');
     const switched=await page.locator('#card').boundingBox();
     assert.ok(edge==='top'||edge==='bottom'?Math.abs(switched.x+switched.width/2-(initial.box.x+initial.box.width/2))<1:Math.abs(switched.y+switched.height/2-(initial.box.y+initial.box.height/2))<1,'usage frame stays centered when accounts switch');
-    await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
-    assert.equal(await page.locator('#extra-card').innerText(),'Plan: Plus','name hover shows the newly selected account metadata');
+    if(vertical){
+      assert.equal(await page.locator('#card .inline-extras').innerText(),'Plan: Plus','side metadata follows the selected account');
+    }else{
+      await page.locator('.metadata-trigger').hover();await page.waitForTimeout(950);
+      assert.equal(await page.locator('#extra-card').innerText(),'Plan: Plus','name hover shows the newly selected account metadata');
+    }
     await page.mouse.move(640,400);await page.waitForTimeout(1100);
     assert.equal(await page.evaluate(()=>detailOpen),0);assert.equal(await page.evaluate(()=>detailPath.getAttribute('d')),null);
     assert.equal(await page.evaluate(()=>card.classList.contains('closing')),false);
@@ -129,6 +140,7 @@ const answers = {
     {...win('3p-5h',.05,3),group:'Claude and GPT models'}, {...win('3p-weekly',.1,100),group:'Claude and GPT models'}
   ]}};
   await page.evaluate(value=>__emit('agent_accounts',value),[...accounts,{...accounts[1],id:'codex-b',name:'Codex b'},agy]);
+  await page.waitForTimeout(500);await sample(640);await page.evaluate(()=>{window.agentTracking=false;});
   assert.equal(await page.locator('.cell').count(),4);
   await page.locator('.cell[data-p="antigravity"]').hover();await page.waitForTimeout(2000);
   assert.equal(await page.evaluate(()=>card.dataset.account),'antigravity');
@@ -156,6 +168,25 @@ const answers = {
   await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(()=>detailTarget),1);
   await page.evaluate(()=>hideCard());await page.waitForTimeout(1600);
+  await sample(1680);await page.evaluate(()=>{window.agentTracking=false;hoverId='antigravity';showCard();});await page.waitForTimeout(1800);
+  assert.equal(await page.locator('#card .inline-extras .w-track').count(),2,'side extra model quotas open by default');
+  assert.equal(await page.locator('#extra-card').innerText(),'','side extras stay within the main frame');
+  await page.screenshot({path:path.join(OUT,'side-antigravity-extras.png')});
+  for(const [state,selector] of [['busy','.arc-spin'],['waiting','.arc-pulse']]){
+    await page.evaluate(state=>__emit('activity',[{provider:'antigravity',account:'antigravity',state,name:'AGY',detail:state==='busy'?'Working':'Input needed',since:Date.now()}]),state);
+    assert.equal(await page.locator('.cell[data-p="antigravity"] svg.activity '+selector).count(),1,'AGY shares the existing live activity indicator');
+    await page.screenshot({path:path.join(OUT,'antigravity-'+state+'.png')});
+  }
+  await page.evaluate(()=>__emit('activity',[]));
+  assert.equal(await page.locator('.cell[data-p="antigravity"] svg.activity > *').count(),0,'idle AGY clears activity');
+  await page.evaluate(()=>hideCard());await page.waitForTimeout(1200);
+  const tallAccounts=accounts.map(a=>({...a,snap:{...a.snap,details:Array.from({length:12},(_,i)=>`Account detail ${i+1}`)}}));
+  await page.evaluate(value=>__emit('agent_accounts',value),tallAccounts);
+  await page.evaluate(()=>{hoverId='claude';showCard();});await page.waitForTimeout(1800);
+  assert.ok(await page.evaluate(()=>card.offsetHeight>pill.offsetHeight&&detailBox.u1-detailBox.u0>=card.offsetHeight-.1),'side frame extends along the edge when metadata exceeds notch length');
+  assert.ok(await page.evaluate(()=>{const r=card.querySelector('.inline-extras').getBoundingClientRect();return detailContains(r.left+12,r.bottom-4);}), 'extended metadata has black beneath it');
+  await page.screenshot({path:path.join(OUT,'side-extended-metadata.png')});
+  await page.evaluate(()=>hideCard());await page.waitForTimeout(1200);
   await page.evaluate(value=>__emit('agent_accounts',value),accounts);
   // Interrupted close/reopen continues from the live shape; shortcut tracking dismisses instantly.
   await sample(1680);await page.evaluate(()=>{window.agentTracking=false;hoverId='claude';showCard();});await page.waitForTimeout(250);

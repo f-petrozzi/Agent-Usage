@@ -48,9 +48,11 @@ Sign into `agy` with your Google AI Pro account on the collector machine.
 The collector automatically adds Antigravity when `agy` is on PATH or installed in `~/.local/bin`, using
 `agy -p /usage --output-format json` (requires agy 1.1.11 or later).
 It shows measured weekly and five-hour Gemini usage with reset times. Hover the
-Antigravity usage title to reveal Claude/GPT quotas in the separate extras frame. It does not infer quota from model availability
+Antigravity usage title on top/bottom edges to reveal Claude/GPT quotas in the separate extras frame. Side edges show extras and account metadata inside the usage view by default and extend the frame when needed. It does not infer quota from model availability
 or label CLI reports with account identity or a plan the CLI does not provide.
 Use `--no-antigravity` to skip it. Update the collector alongside the Windows app.
 
 While reading one account, the other gauges become small account glyphs. Hover
 a glyph or focus it with the keyboard to switch; leaving restores all gauges.
+
+AGY CLI activity uses its live presence lock and local conversation status database. Active work spins the inner arc; explicit pending questions and reported waiting steps pulse yellow. Idle, canceled, killed, and disconnected conversations clear the indicator. Approval waits that AGY does not expose in its transcript cannot be distinguished from active work.
