@@ -138,7 +138,8 @@ not the source repository. The version starts at 3.0.0 to supersede the existing
 
 ## 3.1 alerts and tray
 
-General contains global usage, waiting, completion, notch peek, and sound switches.
+General contains global usage, waiting, completion and sound switches. Alerts open
+out of the notch itself, from the account's ring, instead of as Windows toasts.
 Accounts contains per-account usage-warning bells and drag (or Alt+↑/↓) ordering.
 The tray menu follows the visible account order and includes all quota windows,
 reset countdowns, and stale/error labels.

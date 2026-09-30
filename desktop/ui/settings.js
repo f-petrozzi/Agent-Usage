@@ -338,8 +338,8 @@ const initialTab=new URLSearchParams(location.search).get('tab');
 $('tab-'+(TABS.includes(initialTab)?initialTab:'accounts')).click();
 api.on('settings_tab',tab=>{if(TABS.includes(tab))$('tab-'+tab).click();});
 
-function renderAlerts(prefs){alertPrefs=prefs;for(const key of ['quota','waiting','completion','peek','sound'])toggle('sw-alert-'+key,!!prefs[key]);renderAccounts();}
-for(const key of ['quota','waiting','completion','peek','sound'])$('sw-alert-'+key).onclick=action(async()=>renderAlerts(await call('set_alert_preferences',{[key]:!alertPrefs[key]})));
+function renderAlerts(prefs){alertPrefs=prefs;for(const key of ['quota','waiting','completion','sound'])toggle('sw-alert-'+key,!!prefs[key]);renderAccounts();}
+for(const key of ['quota','waiting','completion','sound'])$('sw-alert-'+key).onclick=action(async()=>renderAlerts(await call('set_alert_preferences',{[key]:!alertPrefs[key]})));
 api.on('alert_preferences',renderAlerts);
 api.on('notch_slots',v=>{slots=v;renderAccounts();});
 $('close').onclick=action(()=>call('close_settings'));

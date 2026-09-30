@@ -51,9 +51,16 @@ collector updates, and stays still when Windows reduced motion is enabled.
 ## Alerts and account order (3.1)
 
 Settings → General now offers usage warnings at 80% and 100%, optional alerts when
-an agent waits for input or finishes working, a five-second notch reveal for agent
-alerts, and notification sound. Usage warnings are enabled by default; waiting,
-completion and sound are off. Windows notification settings control toast delivery.
+an agent waits for input or finishes working, and a notification sound. Usage warnings
+are enabled by default; waiting, completion and sound are off.
+
+Since 3.1.4 alerts open out of the notch rather than as Windows toasts. The notch comes
+out where it last rested, keeps the account's ring whole while the others recede, and
+grows the alert beside it: whose it is, one word for what happened (in the colour of
+the usage level, or yellow for an agent waiting on you) and the reading or session.
+It stays about six seconds, for as long as the pointer rests on it, and a click or a
+ring under the pointer turns it into that account's usage. The sound is a short chime
+made by the app.
 
 Warnings track each reported quota window, retain their threshold across app
 restarts, and rearm when a later reset boundary confirms a new window. The initial
@@ -88,4 +95,4 @@ a glyph or focus it with the keyboard to switch; leaving restores all gauges.
 
 AGY CLI activity uses its live presence lock and local conversation status database. Active work spins the inner arc; explicit pending questions and reported waiting steps pulse yellow. Idle, canceled, killed, and disconnected conversations clear the indicator. Approval waits that AGY does not expose in its transcript cannot be distinguished from active work.
 
-Claude extras show available free limit resets and their expiry instead of the subscription name. The collector requests the `cedar_ember` grant block with the installed Claude CLI version, counts usable unpaused grants, and never forwards redemption handles. Unsupported or ineligible responses leave the count unknown. Redeem resets in Claude itself.
+Claude shows available free limit resets and the soonest expiry instead of the subscription name, as a row of the usage card on every edge (Codex banked resets use the same row). The collector requests the `cedar_ember` grant block with the newest Claude CLI on the host as its version, since the endpoint only returns resets to a current CLI: over non-interactive SSH, PATH alone found an old npm global in `/usr/bin` and the resets never arrived. It counts usable unpaused grants and never forwards redemption handles. Unsupported or ineligible responses leave the count unknown. Redeem resets in Claude itself.

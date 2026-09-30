@@ -1,5 +1,5 @@
 'use strict';
-const DEFAULT_ALERTS = Object.freeze({ quota: true, waiting: false, completion: false, peek: true, sound: false, muted: [] });
+const DEFAULT_ALERTS = Object.freeze({ quota: true, waiting: false, completion: false, sound: false, muted: [] });
 function alertPreferences(raw = {}) {
   return { ...Object.fromEntries(Object.entries(DEFAULT_ALERTS).filter(([, v]) => typeof v === 'boolean').map(([k, v]) => [k, typeof raw[k] === 'boolean' ? raw[k] : v])),
     muted: Array.isArray(raw.muted) ? [...new Set(raw.muted.filter(id => typeof id === 'string' && id.length <= 100))].slice(0, 40) : [] };
@@ -23,7 +23,7 @@ class QuotaAlerts {
         const rolled = previous && reset !== null && previous.reset !== null && reset > previous.reset && now >= previous.reset;
         const oldLevel = rolled ? 0 : previous?.level ?? level;
         if (level > oldLevel && preferences.quota && !preferences.muted.includes(account.id)) {
-          events.push({ kind: 'quota', account: account.id, title: account.name + (level === 100 ? ' limit reached' : ' usage warning'),
+          events.push({ kind: 'quota', account: account.id, window: window.id, level, title: account.name + (level === 100 ? ' limit reached' : ' usage warning'),
             body: `${window.label}: ${Math.round(window.used * 100)}% used${reset && reset > now ? `. Resets ${new Date(reset).toLocaleString()}` : ''}.` });
         }
         this.saved[key] = { reset, level: Math.max(oldLevel, level) };
@@ -44,9 +44,9 @@ class SessionAlerts {
       const old = this.previous.get(key);
       if (!old) continue; // A first sighting is not a transition.
       if (session.state === 'waiting' && old.state === 'busy' && preferences.waiting)
-        events.push({ kind: 'waiting', title: `${session.name} needs attention`, body: session.detail || 'Waiting for input.' });
+        events.push({ kind: 'waiting', account: session.account, session: session.name, title: `${session.name} needs attention`, body: session.detail || 'Waiting for input.' });
       if (session.state === 'idle' && old.state === 'busy' && preferences.completion)
-        events.push({ kind: 'completion', title: `${session.name} finished working`, body: 'The agent reported that its turn ended.' });
+        events.push({ kind: 'completion', account: session.account, session: session.name, title: `${session.name} finished working`, body: 'The agent reported that its turn ended.' });
     }
     this.previous = current;
     return events;

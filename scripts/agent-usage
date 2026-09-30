@@ -382,18 +382,45 @@ def _claude_token() -> tuple[str | None, str | None, bool]:
     return token, subscription, expired
 
 
+def _cli_version(binary: str) -> tuple[int, ...] | None:
+    try:
+        result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", result.stdout)
+    return tuple(int(part) for part in found.groups()) if found else None
+
+
 @lru_cache(maxsize=1)
+def _claude_cli() -> tuple[str | None, tuple[int, ...] | None]:
+    """The newest Claude Code on this host, and its version.
+
+    PATH alone is not enough: over non-interactive SSH it lacks ~/.local/bin, where the native
+    installer keeps the current build, and finds an old npm global in /usr/bin instead. The usage
+    endpoint only returns resets to a current CLI, so the old one hid them. CLAUDE_BIN overrides.
+    """
+    if os.environ.get("CLAUDE_BIN"):
+        binary = os.environ["CLAUDE_BIN"]
+        return binary, _cli_version(binary)
+    home = Path.home()
+    candidates = [shutil.which("claude"), str(home / ".local" / "bin" / "claude"), str(home / ".claude" / "local" / "claude")]
+    best: tuple[str | None, tuple[int, ...] | None] = (None, None)
+    seen: set[str] = set()
+    for binary in candidates:
+        if not binary or not os.access(binary, os.X_OK) or os.path.realpath(binary) in seen:
+            continue
+        seen.add(os.path.realpath(binary))
+        version = _cli_version(binary)
+        if best[0] is None or (version is not None and (best[1] is None or version > best[1])):
+            best = (binary, version)
+    return best
+
+
 def _claude_usage_user_agent() -> str:
     """Use the installed CLI version for the usage endpoint's surface check."""
-    binary = shutil.which("claude")
-    if binary:
-        try:
-            result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3, check=True)
-            version = re.search(r"\b(\d+\.\d+\.\d+)\b", result.stdout)
-            if version:
-                return f"claude-cli/{version.group(1)} (external, cli)"
-        except (OSError, subprocess.SubprocessError):
-            pass
+    _, version = _claude_cli()
+    if version:
+        return f"claude-cli/{'.'.join(map(str, version))} (external, cli)"
     return f"agent-usage/{APP_VERSION}"
 
 
@@ -419,7 +446,7 @@ def _claude_fetch(token: str, timeout: float) -> dict[str, Any]:
 
 def _claude_cli_usage(timeout: float) -> str:
     """Run Claude Code's own /usage command, which also refreshes the token."""
-    binary = os.environ.get("CLAUDE_BIN") or shutil.which("claude")
+    binary, _ = _claude_cli()
     if not binary:
         raise UsageError("claude is not installed or not on PATH")
     completed = subprocess.run(

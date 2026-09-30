@@ -147,6 +147,24 @@
   .s-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-4);padding:2px 0}
   .s-dot{width:6px;height:6px;border-radius:3px;flex:0 0 auto}
   .s-more{font-size:11px;color:var(--ink-dim);padding:2px 0}
+  /* A window reads as its share used beside its name, the bar, then when it resets and what is left */
+  .w-pct{margin-left:auto;font-size:13px;font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .w-foot{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;column-gap:8px;font-size:11px;color:var(--ink-dim)}
+  .w-foot .w-reset{margin-left:0}
+  .w-left{white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* Resets: a quiet filled row of their own, since one is worth noticing */
+  .c-resets{display:flex;align-items:center;gap:8px;margin-top:12px;padding:7px 10px;border-radius:10px;background:#151515;font-size:12px;color:var(--ink-2)}
+  .r-ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .r-count{font-weight:600}
+  .r-until{margin-left:auto;padding-left:8px;color:var(--ink-dim);white-space:nowrap}
+  /* Alerts: whose, one word for what happened (in the colour of what it reports), then the reading */
+  .a-kick{margin-left:auto;padding-left:10px;font-size:11.5px;font-weight:650;white-space:nowrap}
+  .alert-content .c-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .alert-content .win{margin-top:8px}
+  .a-line{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:12.5px;color:var(--ink-2);min-width:0}
+  .a-sub{margin-top:4px;font-size:11.5px;color:var(--ink-dim)}
+  .alert-content.stacked .a-block + .a-block{margin-top:10px;padding-top:10px;border-top:1px solid var(--card-rule)}
+  #card.alerting{cursor:pointer}
 
   /* ---- The other three edges -------------------------------------------------
      The rules above draw the right-hand edge, the original layout and still the default. Each block
@@ -290,6 +308,7 @@
 <script src="notch.js"></script>
 <script src="shape.js"></script>
 <script src="details.js"></script>
+<script src="notify.js"></script>
 <script src="motion.js"></script>
 </body>
 </html>

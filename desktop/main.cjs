@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -20,10 +20,10 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
   });
 }
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
-const notifications = new Set();
 let trayTimer;
 let visible = false, held = false, mouseDown = false, carrying = false, dismissed = false;
-let pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
+// alerting: the page is showing an alert, which decides for itself how long it stays (notify.js)
+let alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let phase = 'hidden', transferTimer, pendingMonitor, frameReady = false, hotkeyProblem = '', lastRaise = 0;
 const uiRoot = path.join(__dirname, 'ui');
@@ -79,7 +79,9 @@ async function start() {
   win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, resizable: false,
     icon: resource('icon.ico'), focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true,
-      nodeIntegration: false, backgroundThrottling: false, spellcheck: false } });
+      nodeIntegration: false, backgroundThrottling: false, spellcheck: false,
+      // The alert chime is synthesised in the page, and an overlay nobody clicks never has a gesture to start audio
+      autoplayPolicy: 'no-user-gesture-required' } });
   secure(win); win.setIgnoreMouseEvents(true, { forward: true });
   win.setAlwaysOnTop(true, 'screen-saver');
   win.webContents.setZoomFactor(config.scale);
@@ -144,12 +146,15 @@ function sendLayout() {
   send('layout', { width: monitor.bounds.width, height: monitor.bounds.height, scale: config.scale,
     edge: config.edge, along: config.along, visible, tracking: held || carrying, pinned });
 }
-function reveal() {
+// The shortcut brings the notch to the pointer; an alert brings it out where it last rested
+function reveal(atPointer = true) {
   if (!win || !config) return;
-  dismissed = false; visibleUntil = Date.now() + 1800;
+  dismissed = false; visibleUntil = Math.max(visibleUntil, Date.now() + 1800);
   if (!visible) {
-    cursor = screen.getCursorScreenPoint(); useMonitor(screen.getDisplayNearestPoint(cursor));
-    const at=cursorPlacement(cursor);config.edge=at.edge;config.along=at.along;
+    if (atPointer) {
+      cursor = screen.getCursorScreenPoint(); useMonitor(screen.getDisplayNearestPoint(cursor));
+      const at=cursorPlacement(cursor);config.edge=at.edge;config.along=at.along;
+    }
     visible = true; phase = 'shown'; hot = [];
     place(); raise(); if (!win.isVisible()) win.showInactive();
     sendLayout(); send('appear', { edge: config.edge }); broadcast('ui_flags', flags());
@@ -157,7 +162,7 @@ function reveal() {
 }
 function hide() {
   if (!win || !visible) return;
-  visible = false; phase = 'hiding'; pinned = false; hot = [];
+  visible = false; phase = 'hiding'; pinned = false; hot = []; alerting = false;
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); broadcast('ui_flags', flags());
   // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
@@ -203,13 +208,13 @@ function tick() {
   const x = cursor.x - monitor.bounds.x - stage.x, y = cursor.y - monitor.bounds.y - stage.y;
   const hit = visible && phase !== 'transfer' && hot.some(r => x >= r[0]*config.scale && x <= (r[0]+r[2])*config.scale && y >= r[1]*config.scale && y <= (r[1]+r[3])*config.scale);
   if (hit !== inside) { inside = hit; send('notch_pointer', hit); win.setIgnoreMouseEvents(!hit, { forward: true }); }
-  if (hit || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
+  if (hit || alerting || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
   if (visible && !pinned && !held && !carrying && !menuOpen && Date.now() > visibleUntil) hide();
 }
 function registerShortcut(value) {
   if (!shortcuts[value]) throw new Error('Unsupported shortcut');
   if (config.shortcut !== value || !globalShortcut.isRegistered(value)) {
-    if (!globalShortcut.register(value, reveal)) throw new Error(`${value} is already in use. Choose another shortcut.`);
+    if (!globalShortcut.register(value, () => reveal())) throw new Error(`${value} is already in use. Choose another shortcut.`);
     if (config.shortcut !== value) globalShortcut.unregister(config.shortcut);
   }
   config.shortcut = value;
@@ -296,21 +301,16 @@ function updateTray() {
     { label: 'Refresh usage', click: requestRefresh }, { label: 'Show Agent Usage', click: reveal },
     { label: 'Settings', click: () => openSettings() }, { label: 'Quit', click: () => app.quit() }]));
 }
+// Alerts open out of the notch rather than as Windows toasts. It comes out where it last rested, opens the
+// alert from the account's own ring, and goes back once it has been read (longer while under the pointer).
+// The page says while one is showing (set_hot), so the notch stays exactly as long as the alert does.
+const ALERT_MS = 6500;
 function showAlerts(events) {
-  if (!events.length) return;
-  // Consolidate simultaneous crossings/turns into one toast instead of a burst.
-  const title = events.length === 1 ? events[0].title : `${events.length} Agent Usage alerts`;
-  const body = events.length === 1 ? events[0].body : events.map(e => `${e.title}: ${e.body}`).join('\n');
-  if (Notification.isSupported()) {
-    const notification = new Notification({ title, body, icon: resource('icon.ico'), silent: !config.alerts.sound });
-    notifications.add(notification);
-    if (notifications.size > 20) { const oldest = notifications.values().next().value; notifications.delete(oldest); oldest.close(); }
-    notification.on('close', () => notifications.delete(notification));
-    notification.on('failed', () => notifications.delete(notification));
-    notification.on('click', () => { notifications.delete(notification); if (events.some(e => e.kind === 'quota')) openSettings('accounts'); else reveal(); });
-    notification.show();
-  }
-  if (config.alerts.peek && events.some(e => e.kind !== 'quota')) { reveal(); visibleUntil = Date.now() + 5000; }
+  if (!events.length || !win || win.isDestroyed()) return;
+  reveal(false);
+  visibleUntil = Math.max(visibleUntil, Date.now() + 2500); // until the page has it open and says so
+  send('alert', { events: events.slice(0, 8).map(e => ({ kind: e.kind, account: e.account || null, window: e.window || null,
+    level: e.level || null, session: e.session || null, title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
 function contextMenu() {
   menuOpen = true;
@@ -334,6 +334,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       const validRect=r=>Array.isArray(r)&&r.length===4&&r.every(Number.isFinite)&&r[2]>=0&&r[3]>=0;
       hot=Array.isArray(args.rects)?args.rects.filter(validRect).slice(0,12):[];
       controls={};for(const name of CONTROLS)if(validRect(args.controls?.[name]))controls[name]=args.controls[name];
+      alerting=args.alerting===true;
       return null;
     }
     case 'activate_control': activateControl(args.control); return null;
@@ -429,4 +430,4 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   }
 });
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer); for (const notification of notifications) notification.close(); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });
+app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer); clearTimeout(transferTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });

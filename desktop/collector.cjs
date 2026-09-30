@@ -25,10 +25,13 @@ function normalize(raw) {
     const name = clean(base === 'gemini' ? 'Antigravity' : base === 'codex' ? `Codex ${a.label || ''}`.trim() : a.label || 'Claude', 100);
     const details = [];
     if (a.plan && base !== 'claude') details.push(clean(a.plan, 100));
-    if (Number.isInteger(a.resetCredits)) details.push(base === 'claude' ? `${a.resetCredits} ${a.resetCredits === 1 ? 'reset' : 'resets'} available` : `${a.resetCredits} banked resets`);
-    if (Array.isArray(a.resetCreditDetails)) for (const credit of a.resetCreditDetails.slice(0, 30)) {
-      details.push(!credit.expirationKnown ? 'Reset expiration unknown' : finite(credit.expiresAt)
-        ? `Reset expires ${new Date(credit.expiresAt * 1000).toLocaleString()}` : 'Reset does not expire');
+    // Resets are a row of their own in the card rather than a line of metadata: how many, and when the
+    // soonest runs out. None at all is no row, and an unknown count is never made up.
+    let resets = null;
+    if (Number.isInteger(a.resetCredits) && a.resetCredits > 0) {
+      const known = (Array.isArray(a.resetCreditDetails) ? a.resetCreditDetails : []).slice(0, 30)
+        .filter(c => c && c.expirationKnown && finite(c.expiresAt)).map(c => c.expiresAt * 1000);
+      resets = { count: Math.min(a.resetCredits, 999), expires: known.length ? Math.min(...known) : null };
     }
     if (finite(a.creditBalance)) details.push(a.creditBalance < 0 ? 'Unlimited credits' : `${a.creditBalance.toFixed(2)} credits available`);
     if (a.extraUsage?.enabled) details.push(finite(a.extraUsage.usedDollars) ? `$${a.extraUsage.usedDollars.toFixed(2)} extra usage` : 'Extra usage enabled');
@@ -43,7 +46,7 @@ function normalize(raw) {
     return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
       status: a.error || a.warning ? (windows.length ? 'stale' : 'error') : 'ok', windows,
       fetched_at: finite(a.sampledAt) ? a.sampledAt * 1000 : timestamp,
-      note: clean([a.error, a.warning].filter(Boolean).join(' · '), 1500), details
+      note: clean([a.error, a.warning].filter(Boolean).join(' · '), 1500), details, resets
     }};
   }).filter(Boolean);
 }

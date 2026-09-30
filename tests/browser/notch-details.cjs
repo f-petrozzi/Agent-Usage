@@ -10,7 +10,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const now = Date.now();
 const win = (id, used, h) => ({ id, label: id, used, resets_at: now + h * 3600e3, count: null, derived: false });
 const accounts = [
-  { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['1 reset available', 'Reset expires Oct 22, 2026, 12:00 PM'] } },
+  { id: 'claude', base: 'claude', name: 'Claude', glyph: 'C', snap: { status: 'ok', windows: [win('session', .42, 3), win('seven_day', .71, 90)], fetched_at: now, note: '', details: ['$83.85 extra usage'], resets: { count: 1, expires: now + 22 * 86400e3 } } },
   { id: 'codex', base: 'codex', name: 'Codex', glyph: 'Cx', snap: { status: 'ok', windows: [win('primary', .18, 2), win('secondary', .33, 100)], fetched_at: now, note: '', details: ['Plan: Plus'] } },
 ];
 const glyphs = {};
@@ -94,9 +94,11 @@ const answers = {
     assert.equal(await page.evaluate(()=>card.classList.contains('show')),true,'read within the expansion');
     assert.equal(await page.locator('.account-extra,.extra-toggle').count(),0,'no separate Account details row');
     const geometry=await page.evaluate(()=>({ink:detailPath.getAttribute('d'),pill:pill.getBoundingClientRect().toJSON()}));
+    // Resets are in the card itself on every edge, not behind the name
+    assert.match(await page.locator('#card .c-resets').innerText(),/^1 reset available\s+until \w{3} \d{1,2}$/);
     const vertical=edge==='left'||edge==='right';
     if(vertical){
-      assert.equal(await page.locator('#card .inline-extras').innerText(),'1 reset available\nReset expires Oct 22, 2026, 12:00 PM','side metadata opens inside the usage frame by default');
+      assert.equal(await page.locator('#card .inline-extras').innerText(),'$83.85 extra usage','side metadata opens inside the usage frame by default');
       assert.equal(await page.locator('.metadata-trigger').count(),0);
     }else{
     assert.equal(await page.evaluate(()=>extraTarget),0,'top/bottom extras start hidden');
@@ -146,7 +148,7 @@ const answers = {
   assert.equal(await page.evaluate(()=>card.dataset.account),'antigravity');
   assert.equal(await page.locator('#card .g-box').count(),0);assert.equal(await page.locator('#card .w-track').count(),2);
   assert.equal(await page.locator('#card .g-head').count(),0,'Gemini uses the same plain usage rows as other accounts');
-  assert.equal(await page.locator('.c-title').innerText(),'Antigravity Usage');
+  assert.equal(await page.locator('.c-title').innerText(),'Antigravity');
   assert.equal(await page.locator('.compact-account').count(),3);
   await page.screenshot({path:path.join(OUT,'four-accounts-antigravity.png')});
   const agyOutline=await page.evaluate(()=>detailPath.getAttribute('d'));

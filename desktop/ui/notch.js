@@ -54,13 +54,13 @@ function smallPct(v){
 }
 function pctText(f){ const v=f*100; return v>0&&v<1?smallPct(v):String(Math.round(v)); }
 // Both ends, since vendors disagree on which they print; the left half comes from the rounded used half, as their dashboards do
-function usedCopy(w){
+function usedParts(w){
   const v=w.used*100;
   let used, left;
   if((v>0&&v<1)||(v>99&&v<100)){ used=smallPct(v); left=100-v>99.9?'>99.9':smallPct(Math.max(0,100-v)); }
   else { const u=Math.round(v); used=String(u); left=String(Math.max(0,100-u)); }
   if(w.derived) used='~'+used;
-  return ui().usedLeft(used,left);
+  return [used,left];
 }
 
 let usage={status:'',windows:[],fetched_at:0,note:''};
@@ -620,34 +620,48 @@ const PATTERNS={
 // Grammar differs enough that a format string would not carry it. Russian puts the verb last,
 // Chinese puts it after the time. so each language writes its own short functions.
 const UI={
-  ko:{locale:'ko-KR',title:n=>n+' 사용량',resetting:'재설정 중…',resetsIn:m=>`${m}분 후 재설정`,
+  ko:{locale:'ko-KR',title:n=>n,resetting:'재설정 중…',resetsIn:m=>`${m}분 후 재설정`,
       resetsAt:t=>`${t}에 재설정`,resetsOn:(d,t)=>`${d} ${t}에 재설정`,resetsDate:d=>`${d}에 재설정`,
       ago:m=>m<60?`${m}분 전`:`${Math.round(m/60)}시간 전`,
-      usedLeft:(used,left)=>`${used}% 사용 · ${left}% 남음`,andMore:n=>`외 ${n}개`,updated:a=>`${a}에 마지막 업데이트됨`},
-  'pt-BR':{locale:'pt-BR',title:n=>'Uso do '+n,resetting:'Renovando…',resetsIn:m=>`Renova em ${m} min`,
+      usedLeft:(used,left)=>`${used}% 사용 · ${left}% 남음`,
+      left:v=>`${v}% 남음`,resets:n=>`재설정 ${n}회 사용 가능`,until:d=>`${d}까지`,
+      kick:{warning:'사용량 경고',limit:'한도 도달',waiting:'확인 필요',finished:'완료'},andMore:n=>`외 ${n}개`,updated:a=>`${a}에 마지막 업데이트됨`},
+  'pt-BR':{locale:'pt-BR',title:n=>n,resetting:'Renovando…',resetsIn:m=>`Renova em ${m} min`,
       resetsAt:t=>`Renova às ${t}`,resetsOn:(d,t)=>`Renova ${d} às ${t}`,resetsDate:d=>`Renova ${d}`,
       ago:m=>m<60?`há ${m} min`:`há ${Math.round(m/60)} h`,
-      usedLeft:(used,left)=>`${used}% usado · ${left}% restante`,andMore:n=>`e mais ${n}`},
-  en:{locale:'en-US',title:n=>n+' Usage',resetting:'Resetting…',resetsIn:m=>`Resets in ${m} min`,
+      usedLeft:(used,left)=>`${used}% usado · ${left}% restante`,
+      left:v=>`${v}% restante`,resets:n=>n===1?'1 renovação disponível':`${n} renovações disponíveis`,until:d=>`até ${d}`,
+      kick:{warning:'Aviso de uso',limit:'Limite atingido',waiting:'Precisa de você',finished:'Concluído'},andMore:n=>`e mais ${n}`},
+  en:{locale:'en-US',title:n=>n,resetting:'Resetting…',resetsIn:m=>`Resets in ${m} min`,
       resetsAt:t=>`Resets at ${t}`,resetsOn:(d,t)=>`Resets ${d} ${t}`,resetsDate:d=>`Resets ${d}`,
       ago:m=>m<60?`${m}m ago`:`${Math.round(m/60)}h ago`,
-      usedLeft:(used,left)=>`${used}% Used · ${left}% left`,andMore:n=>`and ${n} more`,updated:a=>`Updated ${a}`},
-  uk:{locale:'uk-UA',title:n=>'Використання '+n,resetting:'Скидання…',resetsIn:m=>`Скидання через ${m} хв`,
+      usedLeft:(used,left)=>`${used}% used · ${left}% left`,
+      left:v=>`${v}% left`,resets:n=>`${n} ${n===1?'reset':'resets'} available`,until:d=>`until ${d}`,
+      kick:{warning:'Usage warning',limit:'Limit reached',waiting:'Needs you',finished:'Finished'},andMore:n=>`and ${n} more`,updated:a=>`Updated ${a}`},
+  uk:{locale:'uk-UA',title:n=>n,resetting:'Скидання…',resetsIn:m=>`Скидання через ${m} хв`,
       resetsAt:t=>`Скидання о ${t}`,resetsOn:(d,t)=>`Скидання: ${d} ${t}`,resetsDate:d=>`Скидання: ${d}`,
       ago:m=>m<60?`${m} хв тому`:`${Math.round(m/60)} год тому`,
-      usedLeft:(used,left)=>`Використано ${used}% · лишилось ${left}%`,andMore:n=>`і ще ${n}`,updated:a=>`Оновлено ${a}`},
-  ru:{locale:'ru-RU',title:n=>'Использование '+n,resetting:'Сброс…',resetsIn:m=>`Сброс через ${m} мин`,
+      usedLeft:(used,left)=>`Використано ${used}% · лишилось ${left}%`,
+      left:v=>`лишилось ${v}%`,resets:n=>`Доступно скидань: ${n}`,until:d=>`до ${d}`,
+      kick:{warning:'Попередження',limit:'Ліміт вичерпано',waiting:'Потрібна увага',finished:'Готово'},andMore:n=>`і ще ${n}`,updated:a=>`Оновлено ${a}`},
+  ru:{locale:'ru-RU',title:n=>n,resetting:'Сброс…',resetsIn:m=>`Сброс через ${m} мин`,
       resetsAt:t=>`Сброс в ${t}`,resetsOn:(d,t)=>`Сброс: ${d} ${t}`,resetsDate:d=>`Сброс: ${d}`,
       ago:m=>m<60?`${m} мин назад`:`${Math.round(m/60)} ч назад`,
-      usedLeft:(used,left)=>`Использовано ${used}% · осталось ${left}%`,andMore:n=>`и ещё ${n}`,updated:a=>`Обновлено ${a}`},
-  zh:{locale:'zh-CN',title:n=>n+' 用量',resetting:'正在重置…',resetsIn:m=>`${m} 分钟后重置`,
+      usedLeft:(used,left)=>`Использовано ${used}% · осталось ${left}%`,
+      left:v=>`осталось ${v}%`,resets:n=>`Доступно сбросов: ${n}`,until:d=>`до ${d}`,
+      kick:{warning:'Предупреждение',limit:'Лимит исчерпан',waiting:'Нужно внимание',finished:'Готово'},andMore:n=>`и ещё ${n}`,updated:a=>`Обновлено ${a}`},
+  zh:{locale:'zh-CN',title:n=>n,resetting:'正在重置…',resetsIn:m=>`${m} 分钟后重置`,
       resetsAt:t=>`${t} 重置`,resetsOn:(d,t)=>`${d} ${t} 重置`,resetsDate:d=>`${d} 重置`,
       ago:m=>m<60?`${m} 分钟前`:`${Math.round(m/60)} 小时前`,
-      usedLeft:(used,left)=>`已用 ${used}% · 剩余 ${left}%`,andMore:n=>`另有 ${n} 个`,updated:a=>`更新于 ${a}`},
-  'zh-Hant':{locale:'zh-TW',title:n=>n+' 用量',resetting:'正在重置…',resetsIn:m=>`${m} 分鐘後重置`,
+      usedLeft:(used,left)=>`已用 ${used}% · 剩余 ${left}%`,
+      left:v=>`剩余 ${v}%`,resets:n=>`可用重置 ${n} 次`,until:d=>`${d} 前有效`,
+      kick:{warning:'用量提醒',limit:'已达上限',waiting:'需要你',finished:'已完成'},andMore:n=>`另有 ${n} 个`,updated:a=>`更新于 ${a}`},
+  'zh-Hant':{locale:'zh-TW',title:n=>n,resetting:'正在重置…',resetsIn:m=>`${m} 分鐘後重置`,
       resetsAt:t=>`${t} 重置`,resetsOn:(d,t)=>`${d} ${t} 重置`,resetsDate:d=>`${d} 重置`,
       ago:m=>m<60?`${m} 分鐘前`:`${Math.round(m/60)} 小時前`,
-      usedLeft:(used,left)=>`已用 ${used}% · 剩餘 ${left}%`,andMore:n=>`另有 ${n} 個`,updated:a=>`更新於 ${a}`},
+      usedLeft:(used,left)=>`已用 ${used}% · 剩餘 ${left}%`,
+      left:v=>`剩餘 ${v}%`,resets:n=>`可用重置 ${n} 次`,until:d=>`${d} 前有效`,
+      kick:{warning:'用量提醒',limit:'已達上限',waiting:'需要你',finished:'已完成'},andMore:n=>`另有 ${n} 個`,updated:a=>`更新於 ${a}`},
 };
 function ui(){return UI[uiLang]||UI.en;}
 function textCopy(value){
@@ -888,17 +902,27 @@ function renderUsageWindows(windows,boxed=true,headings=true){
         <div class="w-used">${w.count>0?`~${w.count} ${textCopy(w.count===1?'request today':'requests today')}`:textCopy('no requests today')}</div></div>`;
       continue;
     }
+    const [used,left]=usedParts(w);
     html+=`<div class="win">
-      <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-reset">${resetCopy(w.resets_at)}</span></div>
+      <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-pct">${esc(used)}%</span></div>
       <div class="w-track" data-window="${esc(w.id)}"><div class="w-fill" style="width:${(Math.min(w.used,1)*100).toFixed(0)}%;background:${tone(w.used)}"></div></div>
-      <div class="w-used">${esc(usedCopy(w))}</div>
+      <div class="w-foot"><span class="w-reset">${resetCopy(w.resets_at)}</span><span class="w-left">${esc(ui().left(left))}</span></div>
     </div>`;
   }
   if(group&&boxed) html+=`</div>`;
   return html;
 }
 
+// A banked or granted reset is worth seeing at a glance, so it is a row of the card, not metadata
+const RESET_ICON='<svg class="r-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg>';
+function resetsRow(r){
+  if(!r||!(r.count>0))return '';
+  const until=r.expires>Date.now()?`<span class="r-until">${esc(ui().until(new Date(r.expires).toLocaleDateString(ui().locale,{month:'short',day:'numeric'})))}</span>`:'';
+  return `<div class="c-resets">${RESET_ICON}<span class="r-count">${esc(ui().resets(r.count))}</span>${until}</div>`;
+}
 function renderCard(){
+  // An alert holds the card until it is read or turned into this account's usage (notify.js)
+  if(typeof alertShowing!=='undefined'&&alertShowing){renderAlert(alertShowing);return;}
   const c=document.getElementById('card');
   const p=providers().find(x=>x.id===hoverId)||providers()[0];
   if(!p)return;
@@ -920,6 +944,7 @@ function renderCard(){
     html+=`<div class="c-note">${esc(textCopy(snap.note||'Waiting for first reading…'))}</div>`;
   }else{
     html+=renderUsageWindows(mainWindows,p.base!=='gemini',p.base!=='gemini');
+    html+=resetsRow(snap.resets);
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
@@ -966,6 +991,10 @@ function placeCard(){
   if(notchEdge==='right') x=r.left-w;
   if(notchEdge==='top') y=r.bottom;
   if(notchEdge==='bottom') y=r.top-h;
+  // An alert's words sit beside the ring they are about, within the notch's length
+  if(typeof alertShowing!=='undefined'&&alertShowing&&edgeIsVertical()&&cell!==pill){
+    const c=cell.getBoundingClientRect();y=Math.max(r.top,Math.min(r.bottom-h,c.top+c.height/2-h/2));
+  }
   x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
   card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
   // The transparent bridge only supplies hit testing; details.js draws the connected ink.
@@ -998,7 +1027,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(typeof clearAlert==='function')clearAlert();if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,250);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1024,7 +1053,7 @@ function flushHot(){
     controls.settings=rectOf(orb);rects.push(controls.settings);
     if(showPin){controls.pin=rectOf(pinHandle);rects.push(controls.pin);}
   }
-  const data={rects,controls,expanded:open};const signature=JSON.stringify(data);
+  const data={rects,controls,expanded:open,alerting:typeof alertShowing!=='undefined'&&!!alertShowing};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
 }
 // Expansion and scrolling alter the clickable card bounds without a cursor move.
@@ -1134,6 +1163,11 @@ document.addEventListener('mousemove',e=>{
   // Over a handle or the pin/refresh row, the card gives way
   if(hovered||e.target.closest?.('.ctl')){ clearTimeout(showTimer);pendingAccount=null;if(card.classList.contains('show')){ clearTimeout(hideTimer); hideCard(); } return; }
   const hot=pointerInHot(e.clientX,e.clientY);
+  if(typeof alertShowing!=='undefined'&&alertShowing){
+    const id=hot&&cellAt(e.clientX,e.clientY);
+    if(!id){holdAlert(hot);return;}
+    endAlert(false);renderCard(); // a ring under the pointer: its usage takes the alert's place
+  }
   if(hot){
     clearTimeout(hideTimer);
     const id=cellAt(e.clientX,e.clientY);
@@ -1151,9 +1185,9 @@ document.addEventListener('mousemove',e=>{
 });
 document.addEventListener('mouseout',e=>{ // relatedTarget null = the cursor left the page
   if(!e.relatedTarget){clearTimeout(showTimer);pendingAccount=null;}
-  if(!e.relatedTarget && card.classList.contains('show')){ if(hideLogged++<5) jslog('mouseout left the page -> collapse'); scheduleHide(); }
+  if(!e.relatedTarget && card.classList.contains('show') && !(typeof alertShowing!=='undefined'&&alertShowing)){ if(hideLogged++<5) jslog('mouseout left the page -> collapse'); scheduleHide(); }
 });
-listen('pointer_left',()=>{clearTimeout(hideTimer);hideCard();}).catch(()=>{});
+listen('pointer_left',()=>{if(typeof alertShowing!=='undefined'&&alertShowing)return;clearTimeout(hideTimer);hideCard();}).catch(()=>{});
 // Card content changes change its height -> report the hot rectangles again
 listen('usage',()=>{if(card.classList.contains('show'))armWatchdog();}).catch(()=>{});
 listen('state',()=>{if(card.classList.contains('show'))armWatchdog();}).catch(()=>{});
@@ -1302,9 +1336,10 @@ function setFolded(f){
 }
 function unfold(){ clearTimeout(foldTimer); }
 function scheduleFold(){ clearTimeout(foldTimer); }
+let shownAt=0;
 function setShown(on,edge){
   if(on===shown) return;
-  shown=on;
+  shown=on;if(on)shownAt=performance.now();
   const root=document.getElementById('root');
   if(!on){ root.classList.remove('visible'); cancelAnimationFrame(openFrame);openFrame=0;moveArms(0,.18);setHovered(null); return; } // absorb, then slide away
   /* Arriving: wells out of the edge instead of sliding in, so its base and flares sit on the screen edge

@@ -9,7 +9,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(()=>{
       let accounts=['Codex B','Claude','Antigravity'].map((name,i)=>({id:String(i),base:i===0?'codex':i===1?'claude':'gemini',name,snap:{status:'ok',windows:[]}}));
-      let prefs={quota:true,waiting:false,completion:false,peek:true,sound:false,muted:[]},slots=[{provider:'0'},{provider:'1'}];
+      let prefs={quota:true,waiting:false,completion:false,sound:false,muted:[]},slots=[{provider:'0'},{provider:'1'}];
       const listeners={};window.__calls=[];
       window.agentUsage={on:(event,cb)=>{(listeners[event]??=[]).push(cb);},invoke:async(cmd,args={})=>{
         window.__calls.push({cmd,args});
@@ -56,7 +56,6 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
       await page.waitForFunction(key=>document.querySelector('#sw-alert-'+key).getAttribute('aria-checked')==='true',key);
     }
     assert.equal(await page.locator('#sw-alert-quota').getAttribute('aria-checked'),'true');
-    assert.equal(await page.locator('#sw-alert-peek').getAttribute('aria-checked'),'true');
     await page.screenshot({path:'/tmp/agent-usage-3.1-alerts.png'});
     assert.deepEqual(errors,[]);
     console.log('PASS: reorder, drag, visibility, per-account muting and alert preferences');

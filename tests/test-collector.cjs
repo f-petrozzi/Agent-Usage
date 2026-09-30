@@ -33,12 +33,16 @@ test('Automatic account selection stays automatic when Antigravity arrives',()=>
   assert.deepEqual(cfg.slots,[]);
 });
 
-test('Claude replaces plan with available resets and preserves expiry',()=>{
-  const [a]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:1,
-    resetCreditDetails:[{expiresAt:4070908800,expirationKnown:true}],limits:[]}]});
-  assert.equal(a.snap.details[0],'1 reset available');
-  assert.match(a.snap.details[1],/^Reset expires /);
-  assert.ok(!a.snap.details.includes('pro'));
+test('Resets are a count and the soonest expiry, not metadata lines',()=>{
+  const [a]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:2,
+    resetCreditDetails:[{expiresAt:4070908800,expirationKnown:true},{expiresAt:4070000000,expirationKnown:true},{expiresAt:null,expirationKnown:false}],limits:[]}]});
+  assert.deepEqual(a.snap.resets,{count:2,expires:4070000000000});
+  assert.deepEqual(a.snap.details,[],'no reset lines and no Claude plan in metadata');
+  const [codex]=normalize({schema:2,accounts:[{provider:'codex',label:'a',plan:'Plus',resetCredits:1,limits:[]}]});
+  assert.deepEqual(codex.snap.resets,{count:1,expires:null},'an unknown expiry is left unknown');
+  assert.deepEqual(codex.snap.details,['Plus']);
   const [unknown]=normalize({schema:2,accounts:[{provider:'claude',plan:'pro',resetCredits:null,limits:[]}]});
-  assert.deepEqual(unknown.snap.details,[],'unknown reset count is not fabricated');
+  assert.equal(unknown.snap.resets,null,'unknown reset count is not fabricated');
+  const [none]=normalize({schema:2,accounts:[{provider:'claude',resetCredits:0,limits:[]}]});
+  assert.equal(none.snap.resets,null,'no resets, no row');
 });

@@ -20,4 +20,20 @@ with patch.dict(query.__globals__,{'_claude_token':lambda:('test-token','pro',Fa
  account=query(1)
  assert account['resetCredits']==1 and account['resetCreditDetails']==details
  assert 'redemption-handle' not in str(account)
-print('PASS: available Claude resets, expiry, eligibility, no redemption handles, account wiring')
+# Over SSH, PATH finds a stale npm global while the current build sits in ~/.local/bin; the newest wins
+import os, tempfile
+with tempfile.TemporaryDirectory() as root:
+ def fake(path,version):
+  os.makedirs(os.path.dirname(path),exist_ok=True)
+  with open(path,'w') as f: f.write(f'#!/bin/sh\necho "{version} (Claude Code)"\n')
+  os.chmod(path,0o755)
+ fake(root+'/usr/bin/claude','2.1.162');fake(root+'/home/.local/bin/claude','2.1.285')
+ cli=m['_claude_cli']
+ with patch.dict(os.environ,{'PATH':root+'/usr/bin','HOME':root+'/home'}):
+  os.environ.pop('CLAUDE_BIN',None);cli.cache_clear()
+  assert cli()==(root+'/home/.local/bin/claude',(2,1,285)),cli()
+  assert m['_claude_usage_user_agent']()=='claude-cli/2.1.285 (external, cli)'
+  os.environ['CLAUDE_BIN']=root+'/usr/bin/claude';cli.cache_clear()
+  assert cli()==(root+'/usr/bin/claude',(2,1,162)),'CLAUDE_BIN overrides discovery'
+ cli.cache_clear()
+print('PASS: available Claude resets, expiry, eligibility, no redemption handles, account wiring, newest CLI over SSH')
