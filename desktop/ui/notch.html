@@ -180,7 +180,10 @@
   #sliver-shape{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;fill:#000}
   .sliver{position:absolute;z-index:3;display:flex;align-items:center;justify-content:center;gap:7px;box-sizing:border-box;white-space:nowrap;
     overflow:hidden;font-size:12px;line-height:1;color:var(--ink-2);cursor:pointer;opacity:0;pointer-events:auto;padding:0 2px}
-  .s-word{font-weight:700}
+  body[data-edge="top"] .sliver,body[data-edge="bottom"] .sliver{flex-direction:column;font-size:12px;line-height:1.25;gap:4px;padding:0 12px}
+  body[data-edge="top"] .sliver .s-more,body[data-edge="bottom"] .sliver .s-more{position:absolute;right:5px;top:50%;translate:0 -50%}
+  body[data-edge="top"] .sliver .s-text,body[data-edge="bottom"] .sliver .s-text{max-width:100%}
+  .s-word{font-weight:700;flex:none}
   .s-text{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
   .s-more{color:var(--ink-dim);font-size:11px}
   /* Refresh lives on the card's title row: a ring click holds its card instead */
@@ -204,6 +207,13 @@
   .a-log{display:flex;flex-direction:column;margin:8px -8px 0}
   .a-row{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;display:grid;
     grid-template-columns:16px minmax(0,1fr) auto auto;column-gap:8px;row-gap:3px;align-items:baseline;padding:8px;border-radius:10px;transition:background-color .15s ease}
+  #card.alert-card{max-width:none;margin:0;padding:14px}
+  .alert-card .a-chips{gap:4px}
+  .alert-card .a-chip{padding:0 7px}
+  .alert-card .a-row{grid-template-columns:16px minmax(0,1fr) auto}
+  .alert-card .a-word{grid-column:2;grid-row:2}
+  .alert-card .a-when{grid-column:3;grid-row:1}
+  .alert-card .a-detail{grid-column:2 / -1;grid-row:3}
   .a-row:hover{background:#141414}
   .log-content.entering .a-row{animation:a-in .44s cubic-bezier(.32,.72,.24,1) both;animation-delay:calc(var(--i) * 26ms + 60ms)}
   @keyframes a-in{from{opacity:0;translate:0 6px}to{opacity:1;translate:0 0}}
@@ -335,7 +345,8 @@
 <div id="root">
   <div id="card"></div>
   <div id="tail"></div>
-  <button id="pin-handle" class="handle" type="button" aria-label="Pin" title="Pin" aria-pressed="false">
+  <span id="notch-dot" class="notch-dot" aria-hidden="true"></span>
+  <button id="pin-handle" class="handle" type="button" aria-label="Pin" aria-pressed="false">
     <svg class="h-rest" viewBox="-36 -36 72 72" aria-hidden="true">
       <circle class="h-ring" r="28.5" fill="none" stroke-width="8.8" stroke-linecap="round" stroke-dasharray="44.77 179.07"/>
       <circle class="h-fill" r="28.5" fill="none" stroke-width="6.8" stroke-linecap="round" stroke-dasharray="44.77 179.07"/>
@@ -343,9 +354,9 @@
     <div class="h-disc"></div>
     <svg class="h-glyph pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 4v2H6v-2l4-4z"/><path d="M12 15v6"/></svg>
     <svg class="h-glyph bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 16.6V11a5.6 5.6 0 0 1 11.2 0v5.6l1.7 1.9H4.7z"/><path d="M10 21h4"/></svg>
-    <span class="lead-dot"></span>
+    <span class="bell-dot"></span>
   </button>
-  <button id="orb" class="handle" type="button" aria-label="Settings" title="Settings">
+  <button id="orb" class="handle" type="button" aria-label="Settings">
     <svg class="h-rest" viewBox="-36 -36 72 72" aria-hidden="true">
       <circle class="h-ring" r="28.5" fill="none" stroke-width="8.8" stroke-linecap="round" stroke-dasharray="44.77 179.07"/>
       <circle class="h-fill" r="28.5" fill="none" stroke-width="6.8" stroke-linecap="round" stroke-dasharray="44.77 179.07"/>

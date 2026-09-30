@@ -109,7 +109,7 @@ function parseSessions(line, includeTerminal = false) {
     .filter(s => s && ['claude', 'codex', 'antigravity'].includes(s.provider) && (includeTerminal ? ['busy', 'waiting', 'idle', 'canceled'] : ['busy', 'waiting']).includes(s.state) && typeof s.account === 'string')
     .map(s => {
       const reason = s.state === 'waiting' && typeof s.waitingFor === 'string' ? clean(s.waitingFor, 60) : '';
-      return { ...(includeTerminal ? { id: clean(s.id || '', 100) } : {}), provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
+      return { ...(includeTerminal ? { id: clean(s.id || '', 100), sessionId: clean(s.sessionId || '', 100) } : {}), provider: s.provider, account: accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account), state: s.state,
         name: clean(s.name || ({claude:'Claude',codex:'Codex',antigravity:'Antigravity'}[s.provider]), 80),
         detail: s.state === 'idle' ? 'Turn ended' : s.state === 'canceled' ? 'Canceled' : s.state === 'busy' ? 'Working' : reason ? reason[0].toUpperCase() + reason.slice(1) : 'Waiting',
         since: finite(s.since) ? s.since * 1000 : 0 };
@@ -144,7 +144,7 @@ class SessionFeed extends EventEmitter {
     try { sessions = parseSessions(text, true); } catch { this.emit('disconnected'); return; }
     this.failures = 0; this.watchdog();
     this.emit('snapshot', sessions);
-    this.set(sessions.filter(s => ['busy', 'waiting'].includes(s.state)).map(({id, ...activity}) => activity));
+    this.set(sessions.filter(s => ['busy', 'waiting'].includes(s.state)).map(({id, sessionId, ...activity}) => activity));
   }
   set(sessions) {
     if (JSON.stringify(sessions) === JSON.stringify(this.sessions)) return;

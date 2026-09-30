@@ -63,21 +63,19 @@ A turn has to run at least 30 seconds (a quick reply was watched as it happened)
 canceled turn never counts, and the alert says how long it worked.
 
 Alerts appear in the notch, not as Windows toasts. Since 3.2.1 each one grows out of its
-account's ring as a thin sliver of the notch, only as long as its one line: a word in the
+account's ring as a sliver of the notch sized to its text (side-edge slivers give it more breathing room): a word in the
 colour of what it reports (the usage level, yellow for an agent waiting on you) and the
 reading or session, such as "Finished homelab · 14 min". Alerts for several accounts come
-out of their own rings together. A sliver stays about six seconds, longer while the
-pointer rests on it; pointing at it counts it as seen, and a click opens that account's
-usage, held. An open card comes first: alerts wait for it. The sound is a short chime
+out of their own rings together on side edges; top/bottom lifts show accounts in order to keep text from overlapping. A sliver stays about six seconds, longer while the
+pointer rests on it; pointing at it counts it as seen, and a click opens the linked Claude or Codex conversation in VS Code. Alerts without a session link open that account's usage, held. An open card comes first: alerts wait for it. The sound is a short chime
 made by the app.
 
 The notch keeps them too (3.1.8): the pin's pocket holds more than one control. Point
 at the pin and scroll, and it flows back into the notch while a bell buds out of the
-same flare; scroll again for the pin. A yellow dot on that pocket means an alert you
+same flare; scroll again for the pin. A yellow dot inside a notch corner means an alert you
 have not seen yet: one that came and went without being pointed at. Press the bell and the last week of alerts (up to 40)
 grows out of that end of the notch, newest first, with the alert switches (Usage,
-Waiting, Finished, Sound) along the top. A row turns into that account's usage and
-Clear empties the log. Settings → Appearance → Controls chooses what the pocket holds.
+Waiting, Finished, Sound) along the top. A row opens its linked VS Code conversation, or that account's usage when no link is available; Clear empties the log. The log fits the notch's width on top/bottom edges where readable and stays centered beneath/above it. Side edges retain a compact, top-aligned log. Settings → Appearance → Controls chooses what the pocket holds.
 The notch's expansions, alerts included, are liquid while they grow and sharp at rest.
 
 Warnings track each reported quota window, retain their threshold across app
@@ -114,3 +112,13 @@ a glyph or focus it with the keyboard to switch; leaving restores all gauges.
 AGY CLI activity uses its live presence lock and local conversation status database. Active work spins the inner arc; explicit pending questions and reported waiting steps pulse yellow. Idle, canceled, killed, and disconnected conversations clear the indicator. Approval waits that AGY does not expose in its transcript cannot be distinguished from active work.
 
 Claude shows available free limit resets and the soonest expiry instead of the subscription name, as a row of the usage card on every edge (Codex banked resets use the same row). Point at the row and it opens to each reset against its own date and time and how long is left, soonest first, so you can see which to use by when. The collector requests the `cedar_ember` grant block with the newest Claude CLI on the host as its version, since the endpoint only returns resets to a current CLI: over non-interactive SSH, PATH alone found an old npm global in `/usr/bin` and the resets never arrived. It counts usable unpaused grants and never forwards redemption handles. Unsupported or ineligible responses leave the count unknown. Redeem resets in Claude itself.
+
+## Alert refinements (3.2.4)
+
+Claude completion timing retains the beginning of a continuous busy stretch, even when Claude Code rewrites its status timestamp during tool activity. The explicit idle timestamp ends the duration. The 30-second minimum and cancellation/disconnection rules remain.
+
+Waiting and completion alerts now retain the provider's UUID session identity through the collector, desktop and week-long log. Clicking their sliver or log row asks VS Code to open that session. Claude's supported `vscode://anthropic.claude-code/open?session=…` handler focuses an existing tab, provided its workspace is open in the focused VS Code window; otherwise the extension may start a fresh conversation. Codex uses `vscode://openai.chatgpt/local/…` to open the conversation view, which does not guarantee a separate editor tab. Neither link sends a prompt. Usage alerts, unsupported providers and older log entries open account usage instead. The renderer supplies only a logged alert id; the desktop builds fixed provider URLs from validated session UUIDs. This needs the corresponding VS Code extension and Windows URI association. Windows focus and remote workspace routing still require a device check.
+
+Side-edge slivers are thicker; top/bottom notifications make a smooth, text-sized lift rooted at their gauge and clamped to the notch width, with status and detail on two lines. The Alerts panel follows the notch width on top/bottom edges (208px minimum for readable controls), centered on it; side edges use a 228px panel and keep its top alignment. Rows stack status and details below the account/time to fit the compact width. The unread dot sits in an existing bezel corner and shrinks away during a pocket swap, then appears on the revealed bell; the pin never carries a badge. All native hover tooltips are removed from the notch and Settings; accessible control labels remain.
+
+Validation: 31 desktop regression checks, 13 collector session checks, notification and bell browser checks including session clicks, all four edges, reduced motion, sound and alert holding. Browser screenshots use synthetic snapshots. Update the installed collector as well as the Windows app to carry session links.

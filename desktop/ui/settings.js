@@ -94,7 +94,7 @@ function createRow(id){
   el.setAttribute('role','listitem');el.setAttribute('aria-keyshortcuts','Alt+ArrowUp Alt+ArrowDown');
   el.innerHTML=`<span class="acct-mark"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"></svg><span class="glyph" aria-hidden="true"></span></span>
     <span class="acct-text"><span class="acct-name"></span><span class="acct-detail" hidden></span></span>
-    <button class="bell" role="switch" title="Usage warnings">${BELL}</button><button class="switch" role="switch" title="Show in notch"></button>`;
+    <button class="bell" role="switch" aria-label="Usage warnings">${BELL}</button><button class="switch" role="switch" aria-label="Show in notch"></button>`;
   const r={id,el,ringEl:el.querySelector('svg.ring'),glyph:el.querySelector('.glyph'),name:el.querySelector('.acct-name'),
     detail:el.querySelector('.acct-detail'),bell:el.querySelector('.bell'),sw:el.querySelector('.switch'),ringKey:''};
   const paint=()=>paintRow(r);
@@ -130,7 +130,7 @@ function updateRow(r,a,on){
   r.bell.setAttribute('aria-checked',String(!muted));r.bell.setAttribute('aria-label',`Usage warnings for ${a.name}`);
   // A healthy account needs no status line; a stale or failed one says what went wrong
   const problem=a.snap.status==='ok'?'':a.snap.note||(a.snap.status==='stale'?'Showing the last reading':a.snap.status==='loading'?'Reading usage…':'Usage could not be read');
-  r.detail.hidden=!problem;if(r.detail.textContent!==problem){r.detail.textContent=problem;r.detail.title=problem;}
+  r.detail.hidden=!problem;if(r.detail.textContent!==problem){r.detail.textContent=problem;}
 }
 function renderAccounts(){
   const ids=accounts.map(a=>a.id), on=enabledIds();

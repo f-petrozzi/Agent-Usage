@@ -40,6 +40,7 @@ class ClaudeSessionTests(unittest.TestCase):
         self.assertEqual(got['b']['state'], 'waiting')
         self.assertEqual(got['b']['waitingFor'], 'permission')
         self.assertEqual(got['b']['name'], 'nest')
+        self.assertEqual(got['a']['sessionId'], 'a')
 
     def test_idle_crashed_and_reused_pids_are_left_out(self):
         self.write('1.json', pid=os.getpid(), procStart=own_start(), status='idle')
@@ -83,6 +84,12 @@ class CodexSessionTests(unittest.TestCase):
         self.assertEqual([(s['id'], s['state'], s['account'], s['name']) for s in got],
                          [('rollout-open', 'busy', 'codex:a', 'Nest')])
         self.assertEqual(got[0]['since'], 1790708400)
+
+    def test_codex_session_link_uses_uuid_from_rollout_name(self):
+        identity = '12345678-1234-5678-abcd-123456789012'
+        self.rollout('2026-09-30T12-00-00-' + identity, 'task_started')
+        got = usage.codex_sessions([('a', self.home)], self.now)
+        self.assertEqual(got[0]['sessionId'], identity)
 
     def test_completion_and_cancellation_are_distinct_terminal_states(self):
         self.rollout('done', 'task_started', 'task_complete')

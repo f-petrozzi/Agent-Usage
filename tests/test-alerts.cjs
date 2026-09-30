@@ -117,3 +117,23 @@ test('Finished: a turn that ran at least 30 seconds and ended on its own, with h
   assert.ok(COMPLETION_MIN_MS >= 30000);
 });
 
+
+
+test('Claude busy updates preserve elapsed work and link its completion after log reload', () => {
+  const { logAlerts, alertLog, sessionUrl } = require('../desktop/alerts.cjs');
+  const alerts = new SessionAlerts(), t0 = 1000000;
+  const sessionId = '12345678-1234-5678-abcd-123456789012';
+  const at = (state, since) => [{ id: sessionId, sessionId, provider: 'claude', account: 'claude', name: 'homelab', state, since }];
+  alerts.update(at('busy', t0), prefs, t0);
+  alerts.update(at('busy', t0 + 60000), prefs, t0 + 60000);
+  alerts.update(at('busy', t0 + 119000), prefs, t0 + 119000);
+  const events = alerts.update(at('idle', t0 + 120000), prefs, t0 + 121500);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].took, 120000, 'measure through the explicit end, not the latest busy rewrite or polling lag');
+  assert.deepEqual(alerts.update(at('idle', t0 + 121000), prefs, t0 + 122000), [], 'idle rewrites do not repeat it');
+  const [saved] = alertLog(JSON.parse(JSON.stringify(logAlerts([], events, t0 + 121500))), t0 + 121500);
+  assert.equal(sessionUrl(saved.target), `vscode://anthropic.claude-code/open?session=${sessionId}`);
+  assert.equal(sessionUrl({ provider: 'codex', sessionId }), `vscode://openai.chatgpt/local/${sessionId}`);
+  for (const target of [null, { provider: 'shell', sessionId }, { provider: 'claude', sessionId: 'x?prompt=run' }])
+    assert.equal(sessionUrl(target), null, 'cannot open arbitrary URLs or prefill commands');
+});

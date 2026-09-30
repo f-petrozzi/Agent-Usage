@@ -1,10 +1,10 @@
 'use strict';
-/* Alerts grow out of the ring they are about, as a sliver of the notch: a thin tab the height of the ring, joined
-   to the notch by flares of its own, only as long as its one line needs. It springs out a little past its length
+/* Alerts grow out of the ring they are about, as a sliver of the notch: a tab slightly taller than the ring, joined
+   to the notch by flares of its own, sized to its text. It springs out a little past its length
    and settles, liquid while it moves, and its words arrive once there is black under them. Pointing at it holds
-   it and counts it as seen; a click opens that account's usage. Alerts for several accounts come out of their own
-   rings together; a second for the same account takes over its sliver. An open card comes first: alerts wait. */
-const SLIVER={thick:40,flat:38,flare:12,pad:14,max:300,grace:1600};
+   it and counts it as seen; a click opens its linked session or account usage. Alerts for several accounts come out of their own
+   rings together on side edges; flat-edge lifts take turns to keep text readable. An open card comes first: alerts wait. */
+const SLIVER={thick:54,flat:54,flare:12,pad:14,max:300,grace:1600};
 const alertQueue=[], slivers=new Map();
 let pumpTimer=0, slivHeld=false, sliverSerial=0;
 const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
@@ -23,16 +23,23 @@ function alertWaits(){
 function pumpAlert(){
   clearTimeout(pumpTimer);
   if(!alertQueue.length)return;
-  if(alertWaits()){pumpTimer=setTimeout(pumpAlert,200);return;}
+  if(alertWaits()||(!edgeIsVertical()&&slivering())){pumpTimer=setTimeout(pumpAlert,200);return;}
   while(alertQueue.length){
     const p=alertQueue.shift(), byAccount=new Map();
     for(const e of p.events){const key=providers().some(x=>x.id===e.account)?e.account:'';(byAccount.get(key)||byAccount.set(key,[]).get(key)).push(e);}
-    for(const [account,events] of byAccount)showSliver(account,events,p.hold||6500);
+    const groups=[...byAccount];
+    if(!edgeIsVertical()&&groups.length>1){
+      const later=groups.splice(1);alertQueue.unshift({...p,events:later.flatMap(([,events])=>events),sound:false});
+    }
+    for(const [account,events] of groups)showSliver(account,events,p.hold||6500);
     if(p.sound)chime(p.events[0].kind);
+    // Flat-edge lifts share limited room: show accounts in order so their text never overlaps.
+    if(!edgeIsVertical())break;
   }
+  if(alertQueue.length)pumpTimer=setTimeout(pumpAlert,200);
   reportHot();
 }
-// The one line an alert gets: a word in the colour of what it reports, then the reading or the session
+// The words an alert gets: a word in the colour of what it reports, then the reading or the session
 const ALERT_RANK={quota100:0,waiting:1,quota80:2,completion:3};
 function sliverLine(events){
   const kick=ui().kick||UI.en.kick;
@@ -58,12 +65,16 @@ function showSliver(account,events,hold){
     const filter=sliverSvg.querySelector('#'+id);sliverSvg.append(path);
     card.parentElement.append(el);
     s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);
-    el.addEventListener('click',()=>{markSeen(s);const id=s.account;retractSlivers();if(id)holdCard(id);});
+    el.setAttribute('role','button');el.tabIndex=0;
+    const activate=()=>{markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
+    el.addEventListener('click',activate);
+    el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
   }
-  s.events=[...events,...s.events].slice(0,6);s.to=1;
+  s.events=[...events,...s.events].slice(0,6);s.to=1;s.seen=false;
   s.el.innerHTML=sliverLine(s.events);
   // Only as long as the line: measured laid out on one line, then the sliver is cut to it
-  s.el.style.width='auto';const natural=s.el.scrollWidth;
+  s.el.style.height='auto';s.el.style.width='auto';
+  const natural=s.el.scrollWidth;
   s.length=Math.min(SLIVER.max,natural+2*SLIVER.pad);
   clearTimeout(s.timer);s.hold=hold;if(!slivHeld)s.timer=setTimeout(()=>retract(s),hold);
   springSliver(s);
@@ -93,17 +104,20 @@ function drawSliver(s){
   const anchor=(s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"] .ringwrap`))||pill;
   const r=anchor.getBoundingClientRect(), [uc]=local(r.left+r.width/2-origin.left,r.top+r.height/2-origin.top);
   const depth=edgeDepth(notchEdge)-2, t=Math.max(0,s.t), grown=Math.min(1,t), vertical=edgeIsVertical();
-  let u0,u1,d;
+  let u0,u1,d,f0,f1;
   if(vertical){
     const thick=SLIVER.thick*(.62+.38*smooth(grown));
     u0=uc-thick/2;u1=uc+thick/2;d=s.length*t;
   }else{
-    const span=SLIVER.flat+(s.length-SLIVER.flat)*smooth((grown-.18)/.82), limit=notchEdge==='top'||notchEdge==='bottom'?W:H;
-    u0=Math.max(10,uc-span/2);u1=Math.min(limit-10,u0+span);u0=u1-span;d=SLIVER.flat*Math.min(1.25,t);
+    // A text-sized lift rooted at its gauge, contained by the notch even for an end account.
+    const notch=pill.getBoundingClientRect(), start=notch.left-origin.left, end=notch.right-origin.left;
+    const full=Math.min(s.length,end-start), span=Math.min(full,SLIVER.flat+(full-SLIVER.flat)*smooth((grown-.18)/.82));
+    u0=Math.max(start,Math.min(end-span,uc-span/2));u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
+    f0=Math.min(SLIVER.flare,Math.max(0,u0-start));f1=Math.min(SLIVER.flare,Math.max(0,end-u1));
   }
   if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;return;}
   const rad=Math.min((u1-u0)/2,d), flare=Math.min(SLIVER.flare,d*.5);
-  s.path.setAttribute('d',partPath(u0,u1,d,rad,flare,rad,flare));
+  s.path.setAttribute('d',partPath(u0,u1,d,rad,f0??flare,rad,f1??flare));
   s.path.setAttribute('transform',`matrix(${matrix.join(' ')}) translate(0 ${n(depth)})`);
   // Liquid while it moves, sharp at rest
   const goo=matchMedia('(prefers-reduced-motion: reduce)').matches?0:4.4*Math.sin(Math.PI*grown)*(s.t===s.to?0:1);
@@ -113,7 +127,7 @@ function drawSliver(s){
     s.path.setAttribute('filter',`url(#${s.filter.id})`);
   }else s.path.removeAttribute('filter');
   // Its words sit on the black once there is black to hold them
-  const a=screen(u0,depth+(vertical?SLIVER.pad*.4:0)),b=screen(u1,depth+d-(vertical?SLIVER.pad*.4:0));
+  const a=screen(u0,depth+SLIVER.pad*.4),b=screen(u1,depth+d-SLIVER.pad*.4);
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
 }
@@ -166,7 +180,7 @@ function chime(kind){
    Alerts no longer go to Windows' notification centre, so the notch keeps them. The bell is one of what the
    leading pocket holds (scroll over the pin to reach it); a yellow dot on that pocket says something arrived
    since the log was last open. Pressing the bell grows the log out of that end of the notch, the disc melting
-   into the widening flare, with the alert switches along the top. A row turns into that account's usage. */
+   into the widening flare, with the alert switches along the top. A row opens its linked session or account usage. */
 let alertLogData=[],alertPrefsData=null,markTimer=0;
 const unreadCount=()=>alertLogData.filter(e=>!e.read).length;
 const logShowing=()=>card.classList.contains('show')&&hoverId===ALERTS_ID;
@@ -180,16 +194,27 @@ listen('alert_preferences',e=>{alertPrefsData=e.payload;if(logShowing())renderCa
 invoke('get_alert_preferences').then(v=>{alertPrefsData=v;}).catch(()=>{});
 function paintBell(){
   pinHandle.classList.toggle('unread',unreadCount()>0&&leadFaces.includes('alerts'));
-  renderLead();
+  renderLead();placeUnreadDot();
 }
-// Something new: the bell swings from its top if it is out, otherwise the pocket's dot pops. `always` swings it
-// even with nothing unread, as it buds out of the flare
+// The unread dot occupies existing space inside the bezel corner. It shrinks there during a pocket swap,
+// then appears only on the revealed bell. The pin never wears a notification badge.
+function placeUnreadDot(){
+  const dot=document.getElementById('notch-dot');if(!dot)return;
+  const r=pill.getBoundingClientRect(),o=document.getElementById('root').getBoundingClientRect();
+  const x=notchEdge==='right'?r.right-10:r.left+10, y=notchEdge==='bottom'?r.bottom-10:r.top+10;
+  Object.assign(dot.style,{left:x-o.left+'px',top:y-o.top+'px'});
+  const unread=unreadCount()>0&&leadFaces.includes('alerts'), swapping=handles[0].swapping;
+  const bell=leadFace()==='alerts'&&(hovered==='pin'||handles[0].value>.65)&&!logShowing();
+  dot.classList.toggle('on',unread&&!bell&&!swapping);
+  pinHandle.classList.toggle('bell-unread',unread&&bell&&!swapping);
+}
 function ringBell(always=false){
   if(matchMedia('(prefers-reduced-motion: reduce)').matches||(!always&&!unreadCount()))return;
   if(leadFace()==='alerts'){
     pinHandle.querySelector('.h-glyph.bell')?.animate([{rotate:'0deg'},{rotate:'20deg'},{rotate:'-15deg'},{rotate:'10deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)'});
   }
-  if(unreadCount()&&!pinHandle.classList.contains('swapping'))pinHandle.querySelector('.lead-dot')?.animate([{scale:0},{scale:1.5},{scale:1}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
+  const dot=pinHandle.classList.contains('bell-unread')?pinHandle.querySelector('.bell-dot'):document.getElementById('notch-dot');
+  if(unreadCount()&&(dot?.classList.contains('on')||pinHandle.classList.contains('bell-unread')))dot?.animate([{scale:0},{scale:1.5},{scale:1}],{duration:520,easing:'cubic-bezier(.34,1.56,.64,1)'});
 }
 // Pressing the bell: the log grows out of the notch where the bell was
 // Pressing the bell holds the log open (pressing it again puts it away), so rings crossed on the way do not take it
@@ -230,7 +255,7 @@ function logRow(e,i,kick){
   const w=quota&&acct?acct.snap.windows.find(x=>x.id===e.window):null;
   const detail=quota?`${w?textCopy(w.label):''}${e.used!=null?`${w?' · ':''}${pctText(e.used)}%`:''}`
     :`${e.session||''}${e.kind==='completion'&&e.took!=null?`${e.session?' · ':''}${tookText(e.took)}`:''}`;
-  return `<button class="a-row${e.read?'':' fresh'}" type="button" data-account="${esc(e.account||'')}" style="--i:${i}">
+  return `<button class="a-row${e.read?'':' fresh'}" type="button" data-alert="${esc(e.id||'')}" data-account="${esc(e.account||'')}" style="--i:${i}">
     <span class="a-glyph">${acct?glyphHtml(acct,true):''}</span><span class="a-name">${esc(acct?acct.name:e.session||'Agent Usage')}</span>
     <span class="a-word" style="color:${colour}">${esc(word)}</span><span class="a-when">${esc(logWhen(e.at))}</span>
     ${detail?`<span class="a-detail">${esc(detail)}</span>`:''}</button>`;
@@ -241,5 +266,12 @@ card.addEventListener('click',e=>{
   if(chip){const key=chip.dataset.pref;chip.classList.toggle('on');invoke('set_alert_preferences',{[key]:!alertPrefsData?.[key]}).then(v=>{alertPrefsData=v;}).catch(()=>{});return;}
   if(e.target.closest('.a-clear')){invoke('clear_alert_log').catch(()=>{});return;}
   const row=e.target.closest('.a-row');
-  if(row&&providers().some(p=>p.id===row.dataset.account)){hoverId=row.dataset.account;renderCard();}
+  if(row)openNotifiedAlert(alertLogData.find(a=>a.id===row.dataset.alert),row.dataset.account);
 });
+
+async function openNotifiedAlert(entry,account){
+  if(entry?.target&&entry.id){
+    try{if(await invoke('open_alert_session',{id:entry.id})){hideCard();return;}}catch(_){ /* retain access to usage if VS Code cannot be opened */ }
+  }
+  if(providers().some(p=>p.id===account)){if(logShowing()){hoverId=account;renderCard();}else holdCard(account);}
+}

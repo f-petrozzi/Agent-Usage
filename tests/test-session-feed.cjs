@@ -59,10 +59,11 @@ test('terminal snapshots preserve identity for alerts and leave activity arcs of
   feed.on('snapshot',value=>snapshots.push(value));
   feed.line(line([{provider:'codex',account:'codex:b',id:'r1',state:'busy'}]));
   assert.equal(feed.sessions.length,1);
-  feed.line(line([{provider:'codex',account:'codex:b',id:'r1',state:'idle'}]));
+  feed.line(line([{provider:'codex',account:'codex:b',id:'r1',sessionId:'12345678-1234-5678-abcd-123456789012',state:'idle'}]));
   assert.equal(feed.sessions.length,0);
   assert.equal(snapshots[1][0].id,'r1');
   assert.equal(snapshots[1][0].state,'idle');
+  assert.equal(snapshots[1][0].sessionId,'12345678-1234-5678-abcd-123456789012');
   feed.close();
 });
 test('malformed stream data resets alert continuity', () => {

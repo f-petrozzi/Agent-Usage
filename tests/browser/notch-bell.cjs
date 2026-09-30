@@ -39,11 +39,12 @@ const answers = {
           if (c === 'set_alert_preferences') { answers.get_alert_preferences = { ...answers.get_alert_preferences, ...a }; broadcast('alert_preferences', answers.get_alert_preferences); return Promise.resolve(answers.get_alert_preferences); }
           if (c === 'mark_alerts_read') { answers.get_alert_log = answers.get_alert_log.map(e => ({ ...e, read: true })); broadcast('alert_log', answers.get_alert_log); return Promise.resolve(answers.get_alert_log); }
           if (c === 'clear_alert_log') { answers.get_alert_log = []; broadcast('alert_log', []); return Promise.resolve([]); }
+          if (c === 'open_alert_session') return Promise.resolve(true);
           return Promise.resolve(c in answers ? answers[c] : null);
         },
         on: (n, cb) => { (listeners[n] = listeners[n] || []).push(cb); return () => {}; },
       };
-      window.__emit = (n, p) => (listeners[n] || []).forEach(cb => cb(p));
+      window.__emit = (n, p) => { if(n==='alert_log')answers.get_alert_log=p; (listeners[n] || []).forEach(cb => cb(p)); };
       window.AudioContext = class { constructor() { window.__chimes = (window.__chimes || 0) + 1; this.state = 'running'; this.currentTime = 0; this.destination = {}; }
         createGain() { return { gain: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
         createOscillator() { return { frequency: {}, connect() {}, start() {}, stop() {} }; } resume() {} };
@@ -56,6 +57,8 @@ const answers = {
     // At rest: the rings are accounts only; the leading pocket holds pin and the log, showing pin, with a dot for what is new
     assert.deepEqual(await page.evaluate(() => [...pill.querySelectorAll('.cell')].map(c => c.dataset.p)), ['codex', 'claude']);
     assert.deepEqual(await page.evaluate(() => [leadFaces, leadFace(), pinHandle.classList.contains('unread')]), [['pin', 'alerts'], 'pin', true]);
+    assert.equal(await page.locator('#pin-handle .lead-dot').count(), 0, 'the pin has no unread dot');
+    assert.ok(await page.evaluate(() => document.getElementById('notch-dot').classList.contains('on')), 'unread dot sits inside the notch');
     const pocket = await page.evaluate(() => ({ x: pinAt.x, y: pinAt.y }));
     await page.mouse.move(pocket.x, pocket.y); await page.waitForTimeout(900);
     assert.equal(await page.evaluate(() => hovered), 'pin');
@@ -81,6 +84,7 @@ const answers = {
     assert.equal(await page.evaluate(() => handles[0].el.style.getPropertyValue('--sway')), '0deg', 'and is still once home');
     assert.deepEqual(await page.evaluate(() => [leadFace(), handles[0].swap, handles[0].swapping, pinHandle.classList.contains('face-alerts')]), ['alerts', 1, false, true]);
     assert.deepEqual(Object.keys(await page.evaluate(() => JSON.parse(lastHot).controls)).sort(), ['alerts', 'settings'], 'main is told the pocket now holds the log');
+    assert.ok(await page.evaluate(() => pinHandle.classList.contains('bell-unread')&&!document.getElementById('notch-dot').classList.contains('on')), 'dot leaves the corner for the revealed bell');
     await page.screenshot({ path: path.join(OUT, 'pocket-bell.png') });
 
     // Pressing it asks main for the alerts control, and main's answer grows the log out of that end of the notch
@@ -121,6 +125,10 @@ const answers = {
     await page.locator('#card .a-row', { hasText: 'Usage warning' }).click(); await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => card.dataset.account), 'claude');
     assert.equal(await page.locator('#card .w-pct').innerText(), '83%');
+    // A linked log row uses the same session-opening action as a notification.
+    await page.evaluate(() => { openAlertLog(); __emit('alert_log', [{ id: 'linked', at: Date.now(), kind: 'completion', account: 'claude', session: 'homelab', target: { provider: 'claude', sessionId: '12345678-1234-5678-abcd-123456789012' } }]); });
+    await page.locator('#card .a-row').click();
+    assert.deepEqual(await page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'linked' }]);
     // Clear empties it
     await page.evaluate(() => openAlertLog()); await page.waitForTimeout(300);
     await page.locator('#card .a-clear').click(); await page.waitForTimeout(200);
@@ -138,7 +146,7 @@ const answers = {
     // Something new with the pin showing: the pocket's dot pops back
     await page.evaluate(() => __emit('alert_log', [{ id: 'e', at: Date.now(), kind: 'quota', account: 'codex', window: 'primary', level: 80, used: .81, session: null, title: '', body: '', read: false }]));
     await page.waitForTimeout(60);
-    assert.ok(await page.evaluate(() => pinHandle.classList.contains('unread') && pinHandle.querySelector('.lead-dot').getAnimations().length > 0));
+    assert.ok(await page.evaluate(() => pinHandle.classList.contains('unread') && document.getElementById('notch-dot').getAnimations().length > 0));
 
     // Settings decide what the pocket holds: one thing means nothing to scroll through
     await page.evaluate(() => __emit('notch_buttons', { pin: false, alerts: true })); await page.waitForTimeout(100);
@@ -150,6 +158,22 @@ const answers = {
     assert.equal(await page.evaluate(() => showPin), false, 'nothing to hold, no pocket');
     await page.evaluate(() => __emit('notch_buttons', { pin: true, alerts: true })); await page.waitForTimeout(100);
     assert.equal(await page.evaluate(() => leadFace()), 'pin');
+    // Every edge: compact width, centered on flat edges, top aligned on side edges, no horizontal overflow.
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      await page.evaluate(edge => { hideCard(); __emit('layout', { width: innerWidth, height: innerHeight, scale: 1, edge, along: .5, visible: true, tracking: false, pinned: true }); openAlertLog(); }, edge);
+      await page.waitForTimeout(700);
+      const geometry = await page.evaluate(() => { const r = pill.getBoundingClientRect(), c = card.getBoundingClientRect(); return { r: { x: r.x, y: r.y, w: r.width }, c: { x: c.x, y: c.y, w: c.width }, overflow: card.scrollWidth > card.clientWidth }; });
+      assert.equal(geometry.overflow, false);
+      if (edge === 'top' || edge === 'bottom') {
+        assert.ok(Math.abs(geometry.c.w - Math.max(208, geometry.r.w)) < 2, 'uses the notch width where readable: ' + JSON.stringify(geometry));
+        assert.ok(Math.abs(geometry.c.x + geometry.c.w / 2 - geometry.r.x - geometry.r.w / 2) < 2, 'centers on the notch');
+      } else {
+        assert.equal(geometry.c.w, 228);
+        assert.ok(Math.abs(geometry.c.y - geometry.r.y + 12) < 2, 'preserves top alignment');
+      }
+      assert.equal(await page.locator('[title], svg title').count(), 0, 'tooltips removed, including generated controls');
+      await page.screenshot({ path: path.join(OUT, 'log-' + edge + '.png') });
+    }
     assert.deepEqual(errors, []);
     console.log('Passed: pocket holds pin and log, scroll swaps with one swap at a time, press follows the face, log grows liquid from the pocket end, read on sight, switches, alert into an open log, row to usage, clear, scroll back, unread dot, settings choose the faces.');
   } finally { await browser.close(); }

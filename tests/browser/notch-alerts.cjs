@@ -26,7 +26,7 @@ async function open(browser, edge = 'right', reducedMotion = 'no-preference') {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.addInitScript(({ answers, edge }) => {
     const listeners = {}; window.__calls = [];
-    window.agentUsage = { invoke: (c, a = {}) => { window.__calls.push([c, a]); return Promise.resolve(c === 'get_notch_edge' ? edge : c in answers ? answers[c] : null); },
+    window.agentUsage = { invoke: (c, a = {}) => { window.__calls.push([c, a]); return Promise.resolve(c === 'open_alert_session' ? true : c === 'get_notch_edge' ? edge : c in answers ? answers[c] : null); },
       on: (n, cb) => { (listeners[n] = listeners[n] || []).push(cb); return () => {}; } };
     window.__emit = (n, p) => (listeners[n] || []).forEach(cb => cb(p));
     window.__chimes = 0;
@@ -57,7 +57,7 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     const ring = await ringBox(page, 'claude'), s = await box(page, 'claude');
     assert.ok(s, 'a sliver out of Claude\'s ring');
     assert.equal(s.text, 'Usage warning 5 hours · 83%');
-    assert.ok(s.h < ring.height, 'thinner than the ring, not a card');
+    assert.ok(s.h >= 42 && s.h < 60, 'a readable band with room around its text');
     assert.ok(Math.abs((s.y + s.h / 2) - (ring.y + ring.height / 2)) < 2, 'level with its ring');
     assert.ok(s.x + s.w <= ring.x + 2 && s.w < 320, 'beside the ring, only as long as its line');
     assert.ok(s.fits, 'its line fits it');
@@ -114,16 +114,49 @@ const ringBox = (page, id) => page.locator(`.cell[data-p="${id}"] .ringwrap`).bo
     assert.deepEqual(errors, []);
     await page.close();
 
+    // A session notification opens VS Code by its logged alert identity, by click and keyboard.
+    const linked = await open(browser);
+    const target = { provider: 'claude', sessionId: '12345678-1234-5678-abcd-123456789012' };
+    await arrive(linked.page, { events: [{ id: 'linked', kind: 'completion', account: 'claude', session: 'homelab', took: 120000, target }], hold: 4000 });
+    await linked.page.waitForTimeout(1300);
+    await linked.page.locator('.sliver').click();
+    assert.deepEqual(await linked.page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'linked' }]);
+    assert.equal(await linked.page.evaluate(() => card.classList.contains('show')), false);
+    assert.equal(await linked.page.locator('[title], svg title').count(), 0, 'no native hover tooltips');
+    await linked.page.evaluate(target => __emit('alert', { events: [{ id: 'keyboard', kind: 'waiting', account: 'claude', session: 'homelab', target }], hold: 4000 }), target);
+    await linked.page.waitForTimeout(900);
+    await linked.page.locator('.sliver').focus(); await linked.page.keyboard.press('Enter');
+    assert.deepEqual(await linked.page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'keyboard' }]);
+    await linked.page.close();
+
     // On a flat edge it hangs below its ring, spreading to its length
-    const top = await open(browser, 'top');
-    await arrive(top.page, { events: [quota], sound: false, hold: 4000 }, 'top');
-    await top.page.waitForTimeout(1300);
-    const [tr, ts] = [await ringBox(top.page, 'claude'), await box(top.page, 'claude')];
-    assert.ok(ts.y >= tr.y + tr.height - 4 && ts.h < 60, 'below the ring, a thin band');
-    assert.ok(Math.abs((ts.x + ts.w / 2) - (tr.x + tr.width / 2)) < 20, 'centred under it');
-    await top.page.screenshot({ path: path.join(OUT, 'sliver-top.png') });
-    assert.deepEqual(top.errors, []);
-    await top.page.close();
+    for(const edge of ['top','bottom','left']){
+      const { page: ep, errors: ee } = await open(browser, edge);
+      await arrive(ep, { events: [quota], sound: false, hold: 4000 }, edge);
+      await ep.waitForTimeout(1300);
+      const [er, es] = [await ringBox(ep, 'claude'), await box(ep, 'claude')];
+      assert.ok(es.fits, 'line fits on ' + edge);
+      if(edge==='left'){
+        assert.ok(es.h>=42&&es.h<60);
+        assert.ok(Math.abs(es.y+es.h/2-er.y-er.height/2)<2);
+      }else{
+        assert.ok(es.h>=42&&es.h<60, 'a text-sized lift');
+        const notch=await ep.locator('#pill').boundingBox();
+        assert.ok(es.outline.x>=notch.x-1&&es.outline.x+es.outline.w<=notch.x+notch.width+1, 'end-gauge outline stays inside the notch width');
+        assert.ok(er.x+er.width/2>=es.x&&er.x+er.width/2<=es.x+es.w);
+        assert.ok(edge==='top'?es.y>=er.y+er.height-4:es.y+es.h<=er.y+4, 'outside the ring');
+      }
+      await ep.screenshot({ path: path.join(OUT, 'sliver-' + edge + '.png') });
+      if(edge==='top'){
+        await ep.evaluate(() => { retractSlivers(true); __emit('alert',{events:[{kind:'waiting',id:'first',account:'codex',session:'homelab'},{kind:'completion',id:'last',account:'claude',session:'homelab',took:60000}],hold:900,sound:false}); });
+        await ep.waitForTimeout(600);
+        assert.equal(await ep.evaluate(() => slivers.size),1,'flat-edge alerts do not overlap');
+        assert.equal(await ep.evaluate(() => alertQueue.length),1,'next account waits');
+        await ep.waitForFunction(() => slivers.has('claude'),null,{timeout:4000});
+        assert.ok(await ep.evaluate(() => slivers.has('claude')),'the queued account follows');
+      }
+      assert.deepEqual(ee, []); await ep.close();
+    }
 
     const reduced = await open(browser, 'right', 'reduce');
     await arrive(reduced.page, { events: [quota], sound: false, hold: 2000 });

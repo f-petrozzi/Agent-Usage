@@ -7,7 +7,7 @@ const { spawn } = require('node:child_process');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity } = require('./collector.cjs');
-const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts } = require('./alerts.cjs');
+const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionUrl } = require('./alerts.cjs');
 
 app.setName('Agent Usage');
 app.setAppUserModelId('ink.petro.agent-usage');
@@ -323,7 +323,7 @@ function showAlerts(events) {
   reveal(false);
   visibleUntil = Math.max(visibleUntil, Date.now() + 2500); // until the page has it open and says so
   send('alert', { events: events.slice(0, 8).map((e, i) => ({ id: logged[i]?.id || null, kind: e.kind, account: e.account || null, window: e.window || null,
-    level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, took: Number.isFinite(e.took) ? e.took : null,
+    level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, target: logged[i]?.target || null, took: Number.isFinite(e.took) ? e.took : null,
     title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
 function contextMenu() {
@@ -363,6 +363,13 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
     case 'get_alert_preferences': return config.alerts;
+    case 'open_alert_session': {
+      // Resolve a stored alert, never accept a URL or command from the renderer.
+      const entry = alertLog(config.alertLog).find(e => e.id === args.id);
+      const url = sessionUrl(entry?.target);
+      if (!url) return false;
+      await shell.openExternal(url); return true;
+    }
     case 'get_alert_log': return config.alertLog = alertLog(config.alertLog);
     case 'mark_alerts_read': { // all of them (the log was opened), or just the ones an alert showed and was pointed at
       const ids = Array.isArray(args.ids) ? new Set(args.ids.filter(id => typeof id === 'string').slice(0, 40)) : null;

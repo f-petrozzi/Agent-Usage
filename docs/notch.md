@@ -175,3 +175,11 @@ frame-by-frame rotation, Chromium layer promotion, phase continuity, hidden and
 compact pauses, waiting/idle transitions, and reduced motion. A headless Chromium
 run measured 61 frames/second; Windows compositor and mixed-refresh behavior still
 need an on-device check.
+
+## Alert layout and links (3.2.4)
+
+The alert log follows the notch width on top/bottom edges with a readable 208px minimum, centered above/below the notch. On side edges it is 228px wide and starts at the notch's top. Side-edge notification slivers are 54px thick before the text inset. Top/bottom notifications lift a text-sized, rounded area from their gauge with two centered lines. Its body and root flares stay within the notch width even for end accounts. Flat-edge alerts show accounts in order so their text never overlaps. Native tooltips are disabled throughout the notch and Settings; ARIA labels remain.
+
+Claude busy-state timestamp rewrites no longer shorten the measured turn. Session UUIDs accompany Claude and Codex waiting/completion alerts and survive log reloads. Clicking a sliver or log row opens the provider's VS Code URI, with account usage as the fallback for missing links or OS launch failures. Claude focuses an already-open session tab in the focused matching workspace; Codex opens its conversation view. No workspace is switched automatically, no prompt is submitted, and terminal CLI tabs are not addressed. See [Claude's session URI contract](https://code.claude.com/docs/en/vs-code#launch-a-vs-code-tab-from-other-tools) and [Codex's current URI/command limitations](https://github.com/openai/codex/issues/35694). Update the collector for session identities. Actual Windows tab/window focus remains a user-device check.
+
+The unread dot uses existing space inside the bezel corner. During a pocket swap it shrinks there, then appears on the revealed bell. Returning to the pin restores the corner dot; the pin never carries it. Reduced motion makes these changes immediate.

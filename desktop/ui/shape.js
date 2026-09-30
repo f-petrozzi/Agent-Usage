@@ -84,7 +84,7 @@ function setGoo(blur,x,y,w,h){
   if(blur>0.3) shapeBody.setAttribute('filter','url(#goo)'); else shapeBody.removeAttribute('filter');
 }
 
-function drawShape(){ if(passage) drawPassage(); else drawStraight(); }
+function drawShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof placeUnreadDot==='function')placeUnreadDot(); }
 
 /* On an edge: one part the length of the pill, and an arm off each end. At 0 an arm lies a full stroke
    past its flare, inside the black; going out it swells from the flare on a neck of goo and lets go. */

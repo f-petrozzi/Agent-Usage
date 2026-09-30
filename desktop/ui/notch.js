@@ -965,7 +965,7 @@ function renderCard(){
   // p.name is no longer a constant: for a second account it is built from the home
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
-  const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" title="Refresh" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
+  const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
   let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':refresh}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
@@ -1016,15 +1016,20 @@ function placeCard(){
   // Measured on screen, written inside #root, which is offset while it slides
   const o=document.getElementById('root').getBoundingClientRect();
   const r=pill.getBoundingClientRect(), cell=pill.querySelector(`.cell[data-p="${hoverId}"]`)||pill;
+  // Fit the alert log to the flat notch; side edges retain a compact readable column.
+  const log=hoverId===ALERTS_ID;
+  card.classList.toggle('alert-card',log);
+  if(log)card.style.setProperty('--card-width',Math.min(innerWidth-16,edgeIsVertical()?228:Math.max(208,r.width))+'px');
+  else card.style.removeProperty('--card-width');
   const cr=r, w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
   if(notchEdge==='left') x=r.right;
   if(notchEdge==='right') x=r.left-w;
   if(notchEdge==='top') y=r.bottom;
   if(notchEdge==='bottom') y=r.top-h;
-  // The log grows out of the end whose pocket holds the bell: along the edge from there, not centred
+  // On side edges keep the log at the bell's top pocket; flat edges use the notch's center.
   if(hoverId===ALERTS_ID){
-    if(edgeIsVertical())y=r.top-12;else x=r.left-12; // that pocket is at the top on a side edge, the left end lying flat
+    if(edgeIsVertical())y=r.top-12; // retain the top alignment on side edges; flat edges center on the notch
   }
   x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
   card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
@@ -1396,9 +1401,8 @@ function leadFace(){return leadFaces[Math.min(leadIndex,leadFaces.length-1)]||'p
 function renderLead(){
   const face=leadFace(),pinHandle=document.getElementById('pin-handle'); // callable before the handle constants below exist
   pinHandle.classList.toggle('face-alerts',face==='alerts');pinHandle.classList.toggle('face-pin',face==='pin');
-  if(face==='pin'){pinHandle.title=pinnedNow?'Let it hide':'Keep on screen';pinHandle.setAttribute('aria-pressed',String(pinnedNow));}
-  else{const n=typeof unreadCount==='function'?unreadCount():0;pinHandle.title=n?`Alerts, ${n} new`:'Alerts';pinHandle.removeAttribute('aria-pressed');}
-  pinHandle.setAttribute('aria-label',pinHandle.title);
+  if(face==='pin'){pinHandle.setAttribute('aria-label',pinnedNow?'Let it hide':'Keep on screen');pinHandle.setAttribute('aria-pressed',String(pinnedNow));}
+  else{const n=typeof unreadCount==='function'?unreadCount():0;pinHandle.setAttribute('aria-label',n?`Alerts, ${n} new`:'Alerts');pinHandle.removeAttribute('aria-pressed');}
   if(typeof reportHot==='function')reportHot();
 }
 function renderNotchButtons(value){
@@ -1512,8 +1516,7 @@ listen('refresh_started',()=>{for(const p of providers())turnReading(p.id);}).ca
 function showUpdateBadge(state){
   const available=['available','downloading','ready','installing'].includes(state.status);
   orb.classList.toggle('update-available',available);
-  orb.title=state.status==='ready'?'Restart to update':available?'Update available':'Settings';
-  orb.setAttribute('aria-label',orb.title);
+  orb.setAttribute('aria-label',state.status==='ready'?'Restart to update':available?'Update available':'Settings');
 }
 listen('update_state',event=>showUpdateBadge(event.payload)).catch(()=>{});
 invoke('get_update_state').then(showUpdateBadge).catch(()=>{});
