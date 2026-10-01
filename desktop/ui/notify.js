@@ -80,7 +80,7 @@ function showSliver(account,events,hold){
     const id='sliver-goo-'+(++sliverSerial);sliverSvg.insertAdjacentHTML('beforeend',`<defs>${gooDefinition(id)}</defs>`);
     const filter=sliverSvg.querySelector('#'+id);sliverSvg.append(path);
     card.parentElement.append(el);
-    s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);
+    s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);placeUnreadDot();
     el.setAttribute('role','button');el.tabIndex=0;
     const activate=()=>{markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
     el.addEventListener('click',activate);
@@ -175,7 +175,7 @@ function scrollSliver(s){
     {duration,iterations:Infinity,easing:'linear'});
   if(!slivHeld&&!s.test){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);reportHot();if(!slivers.size)ringBell();if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);}
+function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);placeUnreadDot();reportHot();if(!slivers.size)ringBell();if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);}
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -253,7 +253,9 @@ function placeUnreadDot(){
   const g=sprout.geo, on=unread&&!bell&&!swapping&&!logShowing()&&!!g;
   dot.classList.toggle('on',on);
   pinHandle.classList.toggle('bell-unread',unread&&bell&&!swapping);
-  if(sprout.available!==on){sprout.available=on;sproutButton.tabIndex=on?0:-1;}
+  // Not while an alert is out: the first account's sliver leaves right beside this corner, and a press there is the alert's
+  const offered=on&&!slivering();
+  if(sprout.available!==offered){sprout.available=offered;sproutButton.tabIndex=offered?0:-1;}
   morphSprout();
   if(!g)return;
   const o=document.getElementById('root').getBoundingClientRect(), s=Math.max(0,g.s), k=g.rho/g.Rb;

@@ -186,3 +186,12 @@ Validation: 44 desktop checks; every browser suite, including new checks for joi
 The unread dot has moved off the bezel to the notch's rounded front corner at the pin's end, centred in that rounding, so it needs no extra room. Pointing at it is a second way to the alert log beside scrolling the pin: the corner swells, and a drop of the notch's ink is drawn out along the corner on a strand that thins and parts, the same goo as the pin pocket. The bell sharpens on the drop and swings from the snap while the yellow dot stretches as it rides out and settles on the bell's shoulder. Moving away, the corner reaches out, swallows the drop, and the dot slides home. Pressing the bell opens the log, which grows over that corner and takes the bell in with it. Near a screen corner the bell turns toward the notch's front so it stays on screen.
 
 Validation: every browser suite, plus `tests/browser/notch-sprout.cjs` for the rest position on all four edges, the goo, strand, snap and swing, the dot's ride onto the bell, hit and control rectangles while the bell is out, press to log without pressing the ring underneath, the swallow on leave, quick passes, keyboard focus, a notch carried near a screen corner and reduced motion (immediate, never liquid).
+
+## Links work from the first click (3.3.2)
+
+Every launch used to reinstall the VS Code helper on the first session link you pressed, and the VS Code window already open then ignored that link until a new window was opened. That first press was usually an alert, so alerts seemed not to route while log rows and Working text did. The helper is now installed only when VS Code does not already have this version. When a link has to start VS Code, the helper waits up to 15 seconds for the workspace's terminals to come back before falling back to the conversation. While an alert is out, the bell in the corner stands aside so a press near it reaches the alert.
+
+The helper itself is updated to 0.1.1 once, on the first terminal link after this update. A VS Code window that was already open may need **Developer: Reload Window** (or a new window) that one time before its links route.
+
+Validation: 46 desktop checks, including install-once, older-version updates and the startup wait, and every browser suite, including an alert beside the unread dot's corner.
+

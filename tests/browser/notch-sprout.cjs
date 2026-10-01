@@ -34,6 +34,7 @@ const near = (a, b, tolerance = .75) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 
       window.agentUsage = {
         invoke: (c, a = {}) => {
           window.__calls.push([c, a]);
+          if (c === 'open_alert_session') return Promise.resolve(true);
           if (c === 'mark_alerts_read') { answers.get_alert_log = answers.get_alert_log.map(e => ({ ...e, read: true })); broadcast('alert_log', answers.get_alert_log); return Promise.resolve(answers.get_alert_log); }
           return Promise.resolve(c in answers ? answers[c] : null);
         },
@@ -145,6 +146,21 @@ const near = (a, b, tolerance = .75) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 
     await page.evaluate(() => document.activeElement.blur()); await page.waitForTimeout(700);
     assert.equal(await page.evaluate(() => sprout.value), 0);
 
+    // An alert out beside the corner owns it: no bell grows there, and a press on the alert opens its session
+    await page.evaluate(() => { const e = { id: 'fresh', at: Date.now(), kind: 'completion', account: 'codex', session: 'homelab', took: 120000,
+      target: { provider: 'codex', sessionId: '12345678-1234-5678-abcd-123456789012' } }; __emit('alert_log', [...alertLogData, e]); __emit('alert', { events: [e], sound: false, hold: 6000 }); });
+    await page.waitForTimeout(900);
+    assert.deepEqual(await page.evaluate(() => [slivers.size, sprout.available]), [1, false]);
+    await page.mouse.move(g.P0[0], g.P0[1]); await page.waitForTimeout(400);
+    assert.deepEqual(await page.evaluate(() => [hovered === 'sprout', sprout.value]), [false, 0]);
+    const sliverBox = await page.locator('.sliver').boundingBox();
+    await page.mouse.click(sliverBox.x + 4, sliverBox.y + sliverBox.height / 2);
+    assert.deepEqual(await page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'fresh' }]);
+    assert.equal(await page.evaluate(() => __calls.filter(c => c[0] === 'activate_control').length), 2, 'not the log');
+    await page.mouse.move(640, 400); await page.waitForTimeout(900);
+    await page.evaluate(log => __emit('alert_log', log), unread()); await page.waitForTimeout(200);
+    assert.deepEqual(await page.evaluate(() => [slivers.size, sprout.available]), [0, true], 'offered again once the alert has gone');
+
     // Every edge: the dot in the leading front corner, the bell out past the notch's front and on screen
     for (const edge of ['top', 'bottom', 'left']) {
       await place(edge);
@@ -178,6 +194,6 @@ const near = (a, b, tolerance = .75) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 
     await page.mouse.move(640, 400); await page.waitForTimeout(60);
     assert.equal(await page.evaluate(() => sprout.value), 0);
     assert.deepEqual(errors, []);
-    console.log('Passed: dot rests in the leading front corner, bell drawn out on goo with the dot onto its shoulder, hot and alerts control while out, press opens the log without a ring press, swallowed on leave, quick passes, keyboard, every edge, near a screen corner, reduced motion.');
+    console.log('Passed: dot rests in the leading front corner, bell drawn out on goo with the dot onto its shoulder, hot and alerts control while out, press opens the log without a ring press, an alert beside it keeps its own press, swallowed on leave, quick passes, keyboard, every edge, near a screen corner, reduced motion.');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -28,14 +28,23 @@ function installFailure(error, stdout, stderr) {
     : String(stderr || stdout || error.message || '').replace(/\x1b\[[0-9;]*m/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, 600);
   return new Error('The VS Code terminal helper could not be installed. ' + detail);
 }
+// The bundled helper's identity; tests keep it equal to vscode-link/package.json.
+const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.1.1' };
+// Installed only when VS Code lacks this version. Reinstalling it on every launch (as --force did) replaced the helper
+// under a running VS Code window, which then dropped the first link until a new window was opened.
 async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
   if (!exists(helper)) throw new Error('The bundled VS Code helper is missing. Reinstall the latest Agent Usage update.');
   const cli = codeCli(executable, { exists, read });
   const key = executable + ':' + helper;
   if (!installed.has(key)) {
-    const promise = new Promise((resolve, reject) => run(executable, [cli, '--install-extension', helper, '--force', ...extraArgs],
-      { windowsHide: true, timeout: 60000, maxBuffer: 65536, env: { ...env, VSCODE_DEV: '', ELECTRON_RUN_AS_NODE: '1' } },
-      (error, stdout, stderr) => error ? reject(installFailure(error, stdout, stderr)) : resolve()));
+    const options = { windowsHide: true, timeout: 60000, maxBuffer: 1 << 20, env: { ...env, VSCODE_DEV: '', ELECTRON_RUN_AS_NODE: '1' } };
+    const code = args => new Promise((resolve, reject) => run(executable, [cli, ...args, ...extraArgs], options,
+      (error, stdout, stderr) => error ? reject(Object.assign(error, { stdout, stderr })) : resolve(String(stdout || ''))));
+    const wanted = `${HELPER.id}@${HELPER.version}`.toLowerCase();
+    // A listing that fails only means installing anyway, as before
+    const promise = code(['--list-extensions', '--show-versions']).catch(() => '')
+      .then(list => list.split(/\r?\n/).some(line => line.trim().toLowerCase() === wanted) ? undefined
+        : code(['--install-extension', helper, '--force']).then(() => undefined, error => { throw installFailure(error, error.stdout, error.stderr); }));
     installed.set(key, promise); promise.catch(() => installed.delete(key));
   }
   return installed.get(key);
@@ -59,4 +68,4 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
   }
   return true;
 }
-module.exports = { codeLocations, codeCli, openSession, installHelper };
+module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper };

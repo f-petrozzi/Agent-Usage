@@ -1,6 +1,6 @@
 'use strict';
 const { test } = require('node:test'), assert = require('node:assert/strict'), { EventEmitter } = require('node:events');
-const { openSession, installHelper, codeCli } = require('../desktop/session-open.cjs');
+const { HELPER, openSession, installHelper, codeCli } = require('../desktop/session-open.cjs');
 const { sessionTarget, sessionUrl, historicalTarget } = require('../desktop/alerts.cjs');
 const { handleLink } = require('../vscode-link/extension.js');
 const id = '12345678-1234-5678-abcd-123456789012';
@@ -29,9 +29,19 @@ test('opening uses installed Code directly, installs the bundled helper once, an
   assert.equal(await openSession({provider:'shell',sessionId:id},{},{locations:[]}),false);
 });
 test('helper installation uses Code CLI without shell evaluation and coalesces calls',async()=>{
-  let calls=0;const run=(exe,args,options,done)=>{calls++;assert.equal(options.env.ELECTRON_RUN_AS_NODE,'1');assert.equal(options.env.VSCODE_DEV,'');assert.equal(options.timeout,60000);assert.ok(args.includes('--install-extension'));done(null);};
+  const calls=[];const run=(exe,args,options,done)=>{calls.push(args.slice(1));assert.equal(options.env.ELECTRON_RUN_AS_NODE,'1');assert.equal(options.env.VSCODE_DEV,'');assert.equal(options.timeout,60000);done(null,'');};
   const deps={exists:()=>true,read:()=>'',env:{VSCODE_DEV:'1'}};
-  await Promise.all([installHelper('/code/Code.exe','/helper.vsix',run,deps),installHelper('/code/Code.exe','/helper.vsix',run,deps)]);assert.equal(calls,1);
+  await Promise.all([installHelper('/code/Code.exe','/helper.vsix',run,deps),installHelper('/code/Code.exe','/helper.vsix',run,deps)]);
+  assert.deepEqual(calls,[['--list-extensions','--show-versions'],['--install-extension','/helper.vsix','--force']],'asks what is installed, then installs once');
+});
+test('the bundled helper is installed only when VS Code lacks that version, never again on each launch',async()=>{
+  assert.equal(HELPER.version,require('../vscode-link/package.json').version,'the app knows the version it ships');
+  assert.equal(HELPER.id,`${require('../vscode-link/package.json').publisher}.${require('../vscode-link/package.json').name}`);
+  const attempt=async(listing,listFails=false)=>{const calls=[];const run=(exe,args,options,done)=>{calls.push(args[1]);args[1]==='--list-extensions'&&listFails?done(new Error('no cli')):done(null,args[1]==='--list-extensions'?listing:'');};
+    await installHelper('/code-'+Math.random()+'/Code.exe','/helper.vsix',run,{exists:()=>true,read:()=>''});return calls;};
+  assert.deepEqual(await attempt(`ms-python.python@2026.1.0\r\nF-Petrozzi.Agent-Usage-Link@${HELPER.version}\r\n`),['--list-extensions'],'already there: nothing replaced under a running window');
+  assert.deepEqual(await attempt('f-petrozzi.agent-usage-link@0.0.9\n'),['--list-extensions','--install-extension'],'an older helper is updated');
+  assert.deepEqual(await attempt('',true),['--list-extensions','--install-extension'],'a failed listing still installs');
 });
 test('installer follows the installed CLI wrapper and reports the actual failure without caching it',async()=>{
   const path=require('node:path'),root=path.resolve('fixture-code'),executable=path.join(root,'Code.exe');
@@ -40,7 +50,7 @@ test('installer follows the installed CLI wrapper and reports the actual failure
   assert.equal(codeCli(executable,deps),expected);
   let calls=0;const run=(exe,args,options,done)=>{calls++;assert.equal(args[0],expected);done(new Error('exit 1'),'','Actual install error: access denied');};
   for(let i=0;i<2;i++)await assert.rejects(installHelper(executable,'test.vsix',run,deps),/Actual install error: access denied/);
-  assert.equal(calls,2,'failed installs can be retried');
+  assert.equal(calls,4,'failed installs can be retried (each attempt lists, then installs)');
   await assert.rejects(installHelper(executable,'missing.vsix',run,{exists:()=>false}),/bundled.*missing/);
 });
 test('VS Code helper focuses the matching terminal without sending text or starting a new terminal',async()=>{
@@ -53,4 +63,18 @@ test('VS Code helper focuses the matching terminal without sending text or start
   vscode.workspace.workspaceFolders=[{uri:{path:'/srv/project'}}];
   vscode.window.terminals=[];await handleLink(vscode,{path:url.pathname,query:url.search.slice(1)});assert.equal(external,1);
   await handleLink(vscode,{path:'/open',query:'provider=claude&session=bad&pids=80'});assert.equal(external,1);
+});
+test('a link that wakes VS Code waits for its restored terminals before falling back',async()=>{
+  const url=new URL(sessionUrl(target)),uri={path:url.pathname,query:url.search.slice(1)};
+  let shown=0,external=0;const listeners=new Set();
+  const vscode={workspace:{workspaceFolders:[{uri:{path:'/srv/project'}}]},window:{terminals:[],showInformationMessage:()=>{},
+    onDidOpenTerminal:cb=>{listeners.add(cb);return {dispose:()=>listeners.delete(cb)};}},env:{openExternal:()=>{external++;}},Uri:{parse:x=>x}};
+  // Still starting: the workspace reconnects and its terminal (one still resolving its pid) comes back
+  setTimeout(()=>{vscode.window.terminals=[{processId:new Promise(()=>{}),show(){}},{processId:new Promise(r=>setTimeout(()=>r(80),50)),show:()=>{shown++;}}];listeners.forEach(cb=>cb());},150);
+  const started=Date.now();await handleLink(vscode,uri,Date.now()+5000);
+  assert.deepEqual([shown,external],[1,0],'the restored terminal is focused');assert.ok(Date.now()-started<2500,'as soon as it is back');
+  assert.equal(listeners.size,0,'and stops listening');
+  // Nothing comes back before the startup window ends: then the conversation
+  vscode.window.terminals=[];const waited=Date.now();await handleLink(vscode,uri,Date.now()+400);
+  assert.equal(external,1);assert.ok(Date.now()-waited>=380,'waited out the startup window first');
 });
