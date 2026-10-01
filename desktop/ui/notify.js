@@ -421,7 +421,7 @@ function drainRows(done){
    off, a drop draws in to its middle and the neck to its neighbour stretches, pinches and parts; turned on, it wells
    up from the middle and reaches out to a neighbour that is on. Liquid while it moves, sharp at rest. The words are
    drawn in difference over the ink (notch.html), so they invert exactly where the ink has reached. */
-const inkState={},neckState={},TAIL=.18;let inkFrame=0,inkLast=0,inkSerial=0;
+const inkState={},neckState={},TAIL=.42,NECK={R:.34,Rmax:.95,least:.2,stretch:1.15};let inkFrame=0,inkLast=0,inkSerial=0;
 function inkFor(button){
   const key=button.dataset.pref,to=button.classList.contains('on')?1:0;
   const s=inkState[key]||(inkState[key]={f:to,v:0,to});
@@ -431,8 +431,9 @@ function inkFor(button){
 function stepInk(now){
   const dt=Math.max(0,Math.min(.032,(now-(inkLast||now-16))/1000));inkLast=now;let moving=false;
   for(const s of Object.values(inkState)){
-    // In on a loose spring that swells a little past the well; out without a bounce, slowly enough to see the neck give
-    const omega=2*Math.PI/(s.to?.5:.66),zeta=s.to?.5:.92;
+    // In on a loose spring that swells a little past the well; out without a bounce, slowly enough to see the neck
+    // stretch, pinch and give
+    const omega=2*Math.PI/(s.to?.5:.94),zeta=s.to?.5:.9;
     s.v+=(-omega*omega*(s.f-s.to)-2*zeta*omega*s.v)*dt;s.f+=s.v*dt;
     if(Math.abs(s.f-s.to)<.002&&Math.abs(s.v)<.02){s.f=s.to;s.v=0;}else moving=true;
   }
@@ -441,25 +442,39 @@ function stepInk(now){
 }
 const pillPath=(cx,cy,w,h)=>{const r=h/2,x0=cx-w/2+r,x1=cx+w/2-r;
   return `M${n(x0)} ${n(cy-r)}H${n(x1)}A${n(r)} ${n(r)} 0 0 1 ${n(x1)} ${n(cy+r)}H${n(x0)}A${n(r)} ${n(r)} 0 0 1 ${n(x0)} ${n(cy-r)}Z`;};
-// The neck between two drops' facing ends: a metaball bridge between the two end circles, its spread narrowing
-// as they are drawn apart until it parts
-function neckPath(r1,r2,c1,c2,rest){
-  // It holds for about a drop's radius of stretch past rest, less as either drop shrinks, thinning as it goes; it parts
-  // while it still has some body, and what is left of it whips back as tails (drawInk), never a needle
-  const d=Math.hypot(c2[0]-c1[0],c2[1]-c1[1]),reach=Math.min((r1+r2)*2.1,rest+20);
-  if(r1<.5||r2<.5||d>reach||d<=Math.abs(r1-r2))return '';
-  const pinch=Math.max(0,Math.min(1,(d-rest)/Math.max(1,reach-rest))),v=.5-.3*Math.pow(pinch,.8),handle=2.4;
-  let u1=0,u2=0;
-  if(d<r1+r2){u1=Math.acos((r1*r1+d*d-r2*r2)/(2*r1*d));u2=Math.acos((r2*r2+d*d-r1*r1)/(2*r2*d));}
-  const between=Math.atan2(c2[1]-c1[1],c2[0]-c1[0]),spread=Math.acos((r1-r2)/d);
-  const a1=between+u1+(spread-u1)*v,a2=between-u1-(spread-u1)*v;
-  const a3=between+Math.PI-u2-(Math.PI-u2-spread)*v,a4=between-Math.PI+u2+(Math.PI-u2-spread)*v;
-  const at=(c,a,r)=>[c[0]+r*Math.cos(a),c[1]+r*Math.sin(a)];
-  const p1=at(c1,a1,r1),p2=at(c1,a2,r1),p3=at(c2,a3,r2),p4=at(c2,a4,r2);
-  const k=Math.min(v*handle,Math.hypot(p3[0]-p1[0],p3[1]-p1[1])/(r1+r2))*Math.min(1,d*2/(r1+r2));
-  const h1=at(p1,a1-Math.PI/2,r1*k),h2=at(p2,a2+Math.PI/2,r1*k),h3=at(p3,a3+Math.PI/2,r2*k),h4=at(p4,a4-Math.PI/2,r2*k);
-  const P=p=>`${n(p[0])} ${n(p[1])}`;
-  return `M${P(p1)}C${P(h1)} ${P(h3)} ${P(p3)}A${n(r2)} ${n(r2)} 0 ${d>r1?1:0} 0 ${P(p4)}C${P(h4)} ${P(h2)} ${P(p2)}Z`;
+// The neck between two drops' facing ends is a liquid bridge: two arcs of radius R, each touching both end circles, as
+// a drop pulled between two others narrows to one waist. Drawn apart, the arcs close in; the neck parts while the waist
+// still has body (least), never as a thread, and each half then springs home as a droplet on a bridge of its own (drawInk).
+function bridge(c1,r1,c2,r2,R,least=0){
+  const dx=c2[0]-c1[0],dy=c2[1]-c1[1],d=Math.hypot(dx,dy),a=r1+R,b=r2+R;
+  if(d<.01||r1<.3||r2<.3||d>=a+b)return null;
+  const ux=dx/d,uy=dy/d,along=(a*a-b*b+d*d)/(2*d),up=Math.sqrt(Math.max(0,a*a-along*along)),waist=2*(up-R);
+  if(waist<least)return null;
+  // Each arc runs on the side of its circle that faces the axis, from toward one drop to toward the other
+  const arc=side=>{
+    const P=[c1[0]+ux*along-uy*up*side,c1[1]+uy*along+ux*up*side];
+    const t1=Math.atan2(c1[1]-P[1],c1[0]-P[0]);let span=Math.atan2(c2[1]-P[1],c2[0]-P[0])-t1;
+    span-=2*Math.PI*Math.round(span/(2*Math.PI));
+    return Array.from({length:13},(_,k)=>[P[0]+R*Math.cos(t1+span*k/12),P[1]+R*Math.sin(t1+span*k/12)]);
+  };
+  const points=[...arc(-1),...arc(1).reverse()];
+  return {d:'M'+points.map(p=>`${n(p[0])} ${n(p[1])}`).join('L')+'Z',waist,at:along};
+}
+const circlePath=(c,r)=>pillPath(c[0],c[1],2*r,2*r);
+// The neck's waist follows how far it has been drawn out past rest: full at rest, thinning smoothly over NECK.stretch,
+// and the arcs' radius is found to give that waist (a wider radius is a fatter neck), so it never runs to a thread
+function neckBetween(c1,r1,c2,r2,rest,h){
+  const d=Math.hypot(c2[0]-c1[0],c2[1]-c1[1]),stretch=Math.max(0,d-rest)/(NECK.stretch*h);
+  if(stretch>=1)return null;
+  // The waist it had at rest, between two full drops, thinned by the stretch: it only ever narrows as they part
+  const want=(bridge([0,0],h/2,[rest,0],h/2,NECK.R*h)?.waist??h*.4)*Math.pow(1-stretch,.6);
+  if(want<NECK.least*h)return null;
+  // Bounded, so a long neck still pinches in the middle rather than straightening into a tube; where the bound cannot
+  // keep the waist it wants, it parts
+  let lo=.5,hi=NECK.Rmax*h;
+  if((bridge(c1,r1,c2,r2,hi)?.waist??-1)<NECK.least*h)return null;
+  for(let i=0;i<22;i++){const mid=(lo+hi)/2,w=bridge(c1,r1,c2,r2,mid)?.waist??-1;if(w<want)lo=mid;else hi=mid;}
+  return bridge(c1,r1,c2,r2,hi);
 }
 function drawInk(now=performance.now()){
   let tails=false;
@@ -467,9 +482,9 @@ function drawInk(now=performance.now()){
     const svg=box.querySelector('.a-ink-svg');if(!svg)continue;
     if(!svg.firstChild){
       const id='a-ink-goo-'+(++inkSerial);
-      // Necks are a path of their own, outside the goo: blurred and cut back, a stretched neck loses its thin middle and
-      // leaves two cones; drawn as one with the drops, their opposite windings would cut holes where they overlap
-      svg.innerHTML=`<defs>${gooDefinition(id)}</defs><path class="a-well"/><g class="a-drops"><path class="a-drop"/></g><path class="a-drop a-neck"/>`;
+      // Necks are a path of their own inside the drops' goo, wound the same way as the drops so they only ever add to
+      // them: the junctions melt together while it moves, and a neck parts before it is thin enough for the goo to eat
+      svg.innerHTML=`<defs>${gooDefinition(id)}</defs><path class="a-well"/><g class="a-drops"><path class="a-drop"/><path class="a-drop a-neck"/></g>`;
     }
     const W=box.clientWidth,H=box.clientHeight;
     svg.setAttribute('width',W);svg.setAttribute('height',H);svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
@@ -489,17 +504,26 @@ function drawInk(now=performance.now()){
     for(let i=0;i+1<drops.length;i++){
       const a=drops[i],b=drops[i+1],st=neckState[a.key+'|'+b.key]||(neckState[a.key+'|'+b.key]={joined:false,at:0});
       const capA=a.none?null:[a.cx+a.dw/2-a.dh/2,a.cy],capB=b.none?null:[b.cx-b.dw/2+b.dh/2,b.cy];
-      const path=capA&&capB?neckPath(a.dh/2,b.dh/2,capA,capB,(b.x+b.h/2)-(a.x+a.w-a.h/2)):'';
-      necks+=path;
-      if(st.joined&&!path&&!logReduced())st.at=now;
-      st.joined=!!path;
-      // Parted: each end of the neck whips back into its own drop as a rounded tail that subsides into it
+      const R=a.h*NECK.R,neck=capA&&capB?neckBetween(capA,a.dh/2,capB,b.dh/2,(b.x+b.h/2)-(a.x+a.w-a.h/2),a.h):null;
+      necks+=neck?neck.d:'';
+      // Where it broke, measured from each end, so each half can be drawn home from there as the drops keep moving
+      if(neck)st.last={waist:neck.waist,a:neck.at,b:Math.hypot(capB[0]-capA[0],capB[1]-capA[1])-neck.at};
+      if(st.joined&&!neck&&!logReduced())st.at=now;
+      st.joined=!!neck;
+      // Parted: each half is a droplet at the break, joined to its own drop by a bridge, that springs home a little past
+      // (so its drop's end swells as it is taken in) while it shrinks; gooed with the drops, so it stays one body with them
       const since=(now-st.at)/1000;
       if(!st.at||since>=TAIL){st.at=0;continue;}
-      const e=1-Math.pow(1-since/TAIL,2);tails=true;blur=Math.max(blur,1.6*(1-e));
-      for(const [drop,cap,dir] of [[a,capA,1],[b,capB,-1]]){
-        if(!cap)continue;const r=drop.dh/2;
-        const k=1-e;ink+=pillPath(cap[0]+dir*r*(.82-.5*e),cap[1],2*r*.62*k+.01,2*r*.62*k+.01); // a low, broad bump, sinking back in
+      const u=since/TAIL,home=1-Math.exp(-3.4*u)*Math.cos(5.6*u),{waist=6,a:fromA=12,b:fromB=12}=st.last||{};
+      tails=true;blur=Math.max(blur,2.6*Math.pow(1-u,.5));
+      for(const [drop,cap,dir,from] of [[a,capA,1,fromA],[b,capB,-1,fromB]]){
+        if(!cap)continue;const r=drop.dh/2,leaving=inkState[drop.key]?.to===0;
+        // A finger of ink from inside the drop out to where it broke, rounding up as surface tension takes it and staying
+        // round until it is nearly home; the half on a drop that is draining is shorter, so that drop stays round
+        // It sinks in at full roundness (shrinking it would leave a cone at the drop's end) and is gone once inside
+        const round=smooth(u/.2),drip=Math.max(.3,leaving?r*.58:Math.min(r*.62,Math.max(waist/2,r*.34)+r*.22*round));
+        const base=cap[0]+dir*r*.4,tip=cap[0]+dir*Math.max(r*.4,r-drip+(from*(leaving?.3:1)-r+drip)*(1-Math.min(1.08,home)));
+        ink+=pillPath((base+tip)/2,cap[1],Math.abs(tip-base)+2*drip,2*drip);
       }
     }
     svg.querySelector('.a-well').setAttribute('d',wells);

@@ -26,11 +26,11 @@ function setup(t, initialVisible = true) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : localRequire(id),
     __dirname: path.dirname(main), process, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;}, switchMonitor, reveal };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1 };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
-  return { calls, displays, config, point: p => { point = p; }, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal,
+  return { calls, displays, config, win, root, point: p => { point = p; }, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal, test: context.monitorTest,
     command: (name, args, sender = win.webContents) => command(event(sender), name, args), settings };
 }
 const stow = async s => {
@@ -134,4 +134,47 @@ test('returning to the other screen during painting keeps the native window mask
   const latest=s.calls.filter(c=>c[0]==='layout').at(-1)[1];
   assert.notEqual(latest.placement,previous);assert.equal(latest.edge,'right');assert.equal(latest.along,.5);
   assert.equal(await s.command('monitor_placed',{placement:latest.placement}),true);
+});
+test('a placement that lands off its monitor is placed again before it is shown, and logged', async t => {
+  const s = setup(t);
+  let landed = { x: 37, y: -12, width: 1600, height: 1000 };
+  s.win.getBounds = () => landed;
+  await s.command('set_notch_monitor', { id: '2' }); await stow(s);
+  const first = s.calls.filter(c => c[0] === 'layout').at(-1)[1].placement;
+  const bounds = s.calls.filter(c => c[0] === 'bounds').length;
+  assert.equal(await s.command('monitor_placed', { placement: first }), false, 'not shown where it landed');
+  assert.equal(s.calls.filter(c => c[0] === 'bounds').length, bounds + 1, 'placed again from the screen it is on');
+  assert.equal(s.calls.some(c => c[0] === 'opacity' && c[1] === 1), false);
+  const second = s.calls.filter(c => c[0] === 'layout').at(-1)[1].placement;
+  assert.ok(second > first, 'the page paints the new placement before it is shown');
+  landed = { ...s.displays[1].bounds };
+  assert.equal(await s.command('monitor_placed', { placement: second }), true);
+  assert.deepEqual(s.calls.at(-1), ['opacity', 1]);
+  const log = require('node:fs').readFileSync(require('node:path').join(s.root, 'notch-diagnostics.log'), 'utf8').trim().split('\n');
+  assert.equal(log.length, 2); assert.match(log[0], / off$/); assert.doesNotMatch(log[1], / off$/);
+});
+test('a window that keeps landing off is shown after two retries rather than never', async t => {
+  const s = setup(t);
+  s.win.getBounds = () => ({ x: 5, y: 5, width: 1600, height: 1000 });
+  await s.command('set_notch_monitor', { id: '2' }); await stow(s);
+  const results = [];
+  for (let i = 0; i < 3; i++) results.push(await s.command('monitor_placed', { placement: s.calls.filter(c => c[0] === 'layout').at(-1)[1].placement }));
+  assert.deepEqual(results, [false, false, true]);
+});
+test('hit testing and controls measure from where the window really is', async t => {
+  const s = setup(t);
+  s.config.scale = 1.25;
+  let landed = { ...s.displays[1].bounds };
+  s.win.getBounds = () => landed;
+  await s.command('set_notch_monitor', { id: '2' }); await stow(s);
+  assert.equal(await s.command('monitor_placed', { placement: s.calls.filter(c => c[0] === 'layout').at(-1)[1].placement }), true);
+  assert.equal(s.test.phase(), 'shown');
+  // The window ends up 40,20 from its monitor's corner (as a mixed-scale first move left it): page rectangles follow it
+  landed = { x: -1600 + 40, y: 20, width: 1600, height: 1000 };
+  s.test.setHot([[100, 100, 50, 50]]);
+  const inside = { x: -1600 + 40 + 1.25 * 110, y: 20 + 1.25 * 110 }, monitorOnly = { x: -1600 + 1.25 * 110, y: 1.25 * 110 };
+  assert.equal(s.test.overNotch(inside), true, 'offset by the real window origin and zoom');
+  assert.equal(s.test.overNotch(monitorOnly), false, 'not by the monitor it was asked to cover');
+  assert.equal(s.test.controlHit([100, 100, 50, 50], inside), true);
+  assert.equal(s.test.controlHit([100, 100, 50, 50], monitorOnly), false);
 });

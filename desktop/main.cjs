@@ -28,7 +28,7 @@ let visible = false, held = false, mouseDown = false, carrying = false, dismisse
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
-let phase = 'hidden', frameReady = false, hotkeyProblem = '', lastRaise = 0;
+let phase = 'hidden', frameReady = false, hotkeyProblem = '', lastRaise = 0, replacements = 0, pageViewport = null, lastPlacedAt = 0;
 let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null, pendingPlacementStage = null, pendingPlacementAtPointer = false;
 const uiRoot = path.join(__dirname, 'ui');
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
@@ -42,6 +42,20 @@ const accounts = () => {
 };
 const broadcast = (name, payload) => { for (const w of [win, settings]) if (w && !w.isDestroyed()) w.webContents.send('event', name, payload); };
 const send = (name, payload) => { if (win && !win.isDestroyed()) win.webContents.send('event', name, payload); };
+// One line per placement (and per press that missed every control), so a placement that lands somewhere else can be read
+// back from a real Windows session. Capped; never holds anything but geometry.
+function diagnose(line) {
+  try {
+    const file = path.join(path.dirname(configPath), 'notch-diagnostics.log');
+    if (fs.existsSync(file) && fs.statSync(file).size > 65536) fs.renameSync(file, file + '.old');
+    fs.appendFileSync(file, new Date().toISOString() + ' ' + line + '\n');
+  } catch {}
+}
+// Where the window really is. Page coordinates are measured from it, not from the monitor it was asked to cover.
+function windowOrigin() {
+  const b = typeof win?.getBounds === 'function' ? win.getBounds() : null;
+  return b && Number.isFinite(b.x) && Number.isFinite(b.y) ? b : monitor.bounds;
+}
 function save() { fs.writeFileSync(configPath + '.tmp', JSON.stringify(config, null, 2)); fs.renameSync(configPath + '.tmp', configPath); }
 function theme() { return config.theme === 'system' ? nativeTheme.shouldUseDarkColors ? 'dark' : 'light' : config.theme; }
 function flags() { return { notch_visible: visible, notch_on_hover: !pinned, tray_visible: !!config.tray }; }
@@ -144,7 +158,7 @@ function switchMonitor(display, { show = visible, atPointer = false } = {}) {
   // Clear Chromium's last painted surface before moving a settled notch to another screen.
   win.setOpacity(0); win.setIgnoreMouseEvents(true, { forward: true });
   hot = []; controls = {}; lastCursor = ''; inside = false;
-  pendingPlacement = ++placementSerial; visible = show; phase = 'transfer';
+  pendingPlacement = ++placementSerial; visible = show; phase = 'transfer'; replacements = 0;
   pendingPlacementStage = 'stow'; pendingPlacementAtPointer = atPointer;
   monitor = display; config.display = String(display.id);
   if (atPointer) {
@@ -223,7 +237,7 @@ function tick() {
 }
 // The one test of whether a screen point is over the notch, its card or its controls, from the page's hot rectangles
 function overNotch(point) {
-  const x = point.x - monitor.bounds.x - stage.x, y = point.y - monitor.bounds.y - stage.y;
+  const origin = windowOrigin(), x = point.x - origin.x - stage.x, y = point.y - origin.y - stage.y;
   return hot.some(r => x >= r[0]*config.scale && x <= (r[0]+r[2])*config.scale && y >= r[1]*config.scale && y <= (r[1]+r[3])*config.scale);
 }
 function registerShortcut(value) {
@@ -252,7 +266,7 @@ function registerShortcut(value) {
         const point=screen.getCursorScreenPoint();
         const control=CONTROLS.find(name=>controlHit(controls[name],point));
         if(control) activateControl(control);
-        else if(!overNotch(point)) send('outside_press'); // puts a held card away
+        else if(!overNotch(point)) { send('outside_press'); if (Date.now() - lastPlacedAt < 60000) diagnose(`press-outside cursor=${point.x},${point.y} window=${JSON.stringify(windowOrigin())} hot=${JSON.stringify(hot)}`); } // puts a held card away
       }
       if (!mouseDown && previousMouse) endMove();
     }
@@ -261,7 +275,7 @@ function registerShortcut(value) {
 }
 function controlHit(rect,point) {
   if(!rect||phase!=='shown')return false;
-  const x=(point.x-monitor.bounds.x)/config.scale,y=(point.y-monitor.bounds.y)/config.scale;
+  const origin=windowOrigin(),x=(point.x-origin.x)/config.scale,y=(point.y-origin.y)/config.scale;
   return x>=rect[0]&&x<=rect[0]+rect[2]&&y>=rect[1]&&y<=rect[1]+rect[3];
 }
 function beginMove() {
@@ -369,6 +383,16 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       if (visible && pendingPlacementEdge !== config.edge) {
         pendingPlacement = ++placementSerial; pendingPlacementEdge = config.edge; sendLayout(); return false;
       }
+      // Asked to cover the monitor, the window can land elsewhere on its first move from the parked position (sized for
+      // the leftmost screen) to a screen at another scale; clicks then miss everything drawn. Placed again from the screen
+      // it is now on, it lands exactly, as moving it to another screen and back did by hand.
+      const actual = typeof win.getBounds === 'function' ? win.getBounds() : null;
+      const off = !!actual && ['x', 'y', 'width', 'height'].some(k => Math.abs(actual[k] - monitor.bounds[k]) > 1);
+      diagnose(`placed display=${monitor.id} scale=${monitor.scaleFactor} monitor=${JSON.stringify(monitor.bounds)} window=${JSON.stringify(actual)} page=${JSON.stringify(pageViewport)} zoom=${config.scale}${off ? ' off' : ''}`);
+      if (visible && off && replacements < 2) {
+        replacements++; place(); pendingPlacement = ++placementSerial; sendLayout(); return false;
+      }
+      replacements = 0; lastPlacedAt = Date.now();
       pendingPlacement = null; pendingPlacementEdge = null; pendingPlacementStage = null; pendingPlacementAtPointer = false;
       phase = visible ? 'shown' : 'hidden';
       win.setOpacity(1); return true;
@@ -510,7 +534,8 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'begin_move': case 'drag_begin': beginMove(); return null;
     case 'open_data_dir': await shell.openPath(app.getPath('userData')); return null;
     case 'quit_app': app.quit(); return null;
-    case 'report_dpr': case 'log_js': case 'notch_hidden': return null;
+    case 'report_dpr': pageViewport = { dpr: Number(args.dpr) || null, w: Number(args.w) || null, h: Number(args.h) || null }; return null;
+    case 'log_js': case 'notch_hidden': return null;
     default: throw new Error('This feature is not supplied by the remote collector');
   }
 });

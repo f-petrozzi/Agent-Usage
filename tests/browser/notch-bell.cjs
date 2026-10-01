@@ -136,8 +136,17 @@ const answers = {
     assert.equal(await page.evaluate(() => (card.querySelector('.a-chips .a-neck').getAttribute('d').match(/M/g) || []).length), 2, 'three on in a row are one body');
     // Turned off, the middle one draws in and parts from both neighbours, and the goo is gone once it is still
     await page.evaluate(() => { window.__parted = 0; window.__gooed = false; const t0 = performance.now(); const f = () => { const d = card.querySelector('.a-chips .a-neck')?.getAttribute('d') || ''; __parted = Math.max(__parted, 2 - (d.match(/M/g) || []).length); if (card.querySelector('.a-chips .a-drops')?.getAttribute('filter')) __gooed = true; if (performance.now() - t0 < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); });
-    await page.locator('#card .a-chip', { hasText: 'Waiting' }).click(); await page.waitForTimeout(1000);
+    // Each neck only narrows and then parts once (never a thread, never joining again mid-way)
+    await page.evaluate(() => { window.__necks = []; window.__thinnest = Infinity; const t0 = performance.now(); const f = () => {
+      __necks.push((card.querySelector('.a-chips .a-neck')?.getAttribute('d')?.match(/M/g) || []).length);
+      for (const st of Object.values(neckState)) if (st.joined && st.last) __thinnest = Math.min(__thinnest, st.last.waist / card.querySelector('.a-chip').offsetHeight);
+      if (performance.now() - t0 < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await page.locator('#card .a-chip', { hasText: 'Waiting' }).click(); await page.waitForTimeout(1400); // stretch, pinch, part and settle
     assert.deepEqual(await page.evaluate(() => [__parted, __gooed, card.querySelector('.a-chips .a-drops').getAttribute('filter')]), [2, true, null]);
+    const necks = await page.evaluate(() => __necks);
+    assert.ok(necks.every((count, i) => !i || count <= necks[i - 1]), 'parted necks stay parted: ' + necks.join(''));
+    assert.ok(necks.filter(count => count === 2).length > 6, 'the necks stretch for a while before they give');
+    assert.ok(await page.evaluate(() => __thinnest) >= .19, 'a neck parts with body left, never as a thread');
     assert.deepEqual((await ink()).inks, [1, 0, 1]);
     await page.locator('#card .a-chip', { hasText: 'Waiting' }).click(); await page.waitForTimeout(900);
     await page.locator('#card .a-sound').click(); await page.waitForTimeout(100);
@@ -245,6 +254,8 @@ const answers = {
       await page.mouse.move(history.x+history.width/2,history.y+history.height/2);
       await page.mouse.wheel(0,400);
       await page.waitForFunction(()=>document.querySelector('.a-log').scrollTop>0);
+      // Wheel scrolling animates: read the position once it has come to rest
+      await page.waitForFunction(()=>new Promise(done=>{const a=document.querySelector('.a-log').scrollTop;setTimeout(()=>done(document.querySelector('.a-log').scrollTop===a),150);}));
       assert.ok(Math.abs(await page.locator('.c-head').evaluate(e=>e.getBoundingClientRect().top)-titleTop)<1,'title stays still while history scrolls');
       const scroll=await page.locator('.a-log').evaluate(e=>e.scrollTop);
       await page.evaluate(()=>renderCard());

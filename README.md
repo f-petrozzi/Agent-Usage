@@ -195,3 +195,10 @@ The helper itself is updated to 0.1.1 once, on the first terminal link after thi
 
 Validation: 46 desktop checks, including install-once, older-version updates and the startup wait, and every browser suite, including an alert beside the unread dot's corner.
 
+## Buttons on first open, and a softer pinch (3.3.3)
+
+On a first open, every press could miss the notch until it was moved to another screen and back. The notch drew and responded to hover, but the window that takes clicks had landed slightly off the screen it covers. The likely cause is screens at different Windows scaling. Clicks are now measured from where the window really is. If a placement lands off its screen, it is placed again, before you see it, from the screen it is now on, which is what moving it away and back did by hand. Each placement writes one line of geometry to `notch-diagnostics.log` next to `settings.json`, so it can be confirmed if it recurs.
+
+The alert switches pinch like liquid when one turns off. The neck to each neighbour stretches as an hourglass, thins smoothly and gives while it still has body. Each half then springs back as a rounded drop, all inside the goo, so it never runs to a thin thread.
+
+Validation: 49 desktop checks, including re-placement and offset-window hit tests, and every browser suite, including new checks that a switch's necks stretch, part once and never thin to a thread.
