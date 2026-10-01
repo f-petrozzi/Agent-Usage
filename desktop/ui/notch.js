@@ -1026,7 +1026,9 @@ function placeCard(){
     const chips=card.querySelector('.a-chips'), style=getComputedStyle(card), switches=chips?[...chips.querySelectorAll('.a-chip')]:[];
     const controls=switches.reduce((sum,b)=>sum+b.offsetWidth,0)+Math.max(0,switches.length-1)*(chips?parseFloat(getComputedStyle(chips).gap):0);
     const minimum=controls+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+2;
-    card.style.setProperty('--card-width',Math.min(innerWidth-16,Math.max(minimum,edgeIsVertical()?228:r.width))+'px');
+    // Its width is scaled with its text by --tz in CSS, so what is measured here is set back in the notch's own units
+    const tz=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tz'))||1;
+    card.style.setProperty('--card-width',Math.min((innerWidth-16)/tz,Math.max(minimum/tz,edgeIsVertical()?228:r.width))+'px');
   }
   else card.style.removeProperty('--card-width');
   const cr=r, w=card.offsetWidth, h=card.offsetHeight;
@@ -1274,6 +1276,8 @@ document.addEventListener('mousemove',e=>{
   else { if(card.classList.contains('show')&&hideLogged++<5) jslog(`mousemove left the hot area at ${e.clientX},${e.clientY}`); leaveCard(); }
 });
 document.addEventListener('mouseout',e=>{if(!e.relatedTarget)leaveCard();}); // relatedTarget null = the cursor left the page
+// Main relays a physical press into the page when Windows does not deliver it; this says that one did arrive
+document.addEventListener('pointerdown',()=>{invoke('page_pressed').catch(()=>{});},true);
 // A press anywhere outside the notch puts a held card away (main sees it through its input helper)
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
 card.addEventListener('click',async e=>{

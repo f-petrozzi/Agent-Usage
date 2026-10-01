@@ -262,16 +262,54 @@ function registerShortcut(value) {
       held = value[0] === '1'; mouseDown = value[2] === '1';
       if (held && !previous) { dismissed = false; lastCursor=''; reveal(); }
       if (!held && previous) { visibleUntil = Date.now() + 1800; send('release'); broadcast('ui_flags', flags()); save(); }
-      if (mouseDown && !previousMouse && visible && !held && !carrying) {
-        const point=screen.getCursorScreenPoint();
-        const control=CONTROLS.find(name=>controlHit(controls[name],point));
-        if(control) activateControl(control);
-        else if(!overNotch(point)) { send('outside_press'); if (Date.now() - lastPlacedAt < 60000) diagnose(`press-outside cursor=${point.x},${point.y} window=${JSON.stringify(windowOrigin())} hot=${JSON.stringify(hot)}`); } // puts a held card away
-      }
-      if (!mouseDown && previousMouse) endMove();
+      if (mouseDown && !previousMouse && visible && !held && !carrying) physicalPress(screen.getCursorScreenPoint());
+      if (!mouseDown && previousMouse) physicalRelease(screen.getCursorScreenPoint());
     }
   });
   input.on('error', () => { hotkeyProblem = 'Held-key helper could not start. Reinstall this build. Shortcut taps can still reveal the notch.'; broadcast('notice', hotkeyProblem); });
+}
+// The helper sees every physical left press. On a control it is that control's. Elsewhere on the notch the page should
+// get the click itself, but on some first opens Windows never delivers it (hover still arrives as forwarded moves, so
+// the notch looks alive while every switch, row and ring ignores presses). If the page has not reported a press shortly
+// after, main presses it into the page at the same spot, and lets go when the button does.
+const RELAY_MS = 140, PAGE_PRESS_WINDOW = 150;
+let pagePressedAt = 0, relayed = null;
+function physicalPress(point) {
+  const control = CONTROLS.find(name => controlHit(controls[name], point));
+  const recent = Date.now() - lastPlacedAt < 60000, origin = windowOrigin();
+  if (control) { activateControl(control); return; }
+  if (!overNotch(point)) {
+    send('outside_press'); // puts a held card away
+    if (recent) diagnose(`press-outside cursor=${point.x},${point.y} window=${JSON.stringify(origin)} hot=${JSON.stringify(hot)}`);
+    return;
+  }
+  const at = Date.now(), x = Math.round(point.x - origin.x), y = Math.round(point.y - origin.y);
+  relayed = { at, x, y, down: false, up: false };
+  const press = relayed;
+  setTimeout(() => {
+    if (relayed !== press) return;
+    const delivered = Math.abs(pagePressedAt - at) <= PAGE_PRESS_WINDOW;
+    if (delivered) pagePressedAt = 0; // spent on this press, so it cannot vouch for the next one
+    if (recent) diagnose(`press x=${x} y=${y} inside=${inside} page=${delivered ? 'got it' : 'missed it, relayed'}`);
+    if (delivered || !visible || phase !== 'shown' || !win || win.isDestroyed()) { relayed = null; return; }
+    win.webContents.sendInputEvent({ type: 'mouseMove', x, y });
+    win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+    press.down = true;
+    if (press.up) releaseRelayed(press);
+  }, RELAY_MS);
+}
+function physicalRelease(point) {
+  endMove();
+  const press = relayed;
+  if (!press) return;
+  const origin = windowOrigin();
+  press.up = true; press.upX = Math.round(point.x - origin.x); press.upY = Math.round(point.y - origin.y);
+  if (press.down) releaseRelayed(press); // otherwise the relay lets go as soon as it has pressed
+}
+function releaseRelayed(press) {
+  if (relayed === press) relayed = null;
+  if (!win || win.isDestroyed()) return;
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: press.upX ?? press.x, y: press.upY ?? press.y, button: 'left', clickCount: 1 });
 }
 function controlHit(rect,point) {
   if(!rect||phase!=='shown')return false;
@@ -535,6 +573,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'open_data_dir': await shell.openPath(app.getPath('userData')); return null;
     case 'quit_app': app.quit(); return null;
     case 'report_dpr': pageViewport = { dpr: Number(args.dpr) || null, w: Number(args.w) || null, h: Number(args.h) || null }; return null;
+    case 'page_pressed': pagePressedAt = Date.now(); return null;
     case 'log_js': case 'notch_hidden': return null;
     default: throw new Error('This feature is not supplied by the remote collector');
   }

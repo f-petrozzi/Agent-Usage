@@ -51,7 +51,7 @@ function drawDetails(){
   const resizing=hoverId===ALERTS_ID&&detailAim?Math.max(...['u0','u1','v0','v1'].map(k=>Math.abs(detailAim[k]-detailBox[k]))):0;
   const goo=reducedDetails()?0:Math.max(4.2*Math.sin(Math.PI*Math.min(1,t)),Math.min(3.6,resizing*.06)),detailFilter=detailSvg.querySelector('#detail-goo');
   if(goo>.25&&detailFilter){
-    detailFilter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(goo));
+    setGooBlur(detailFilter,goo);
     for(const [key,value] of Object.entries({x:Math.min(u0,a0)-60,y:-SHAPE.bleed-60,width:Math.max(u1,a1)-Math.min(u0,a0)+120,height:expandedDepth+SHAPE.bleed+120}))detailFilter.setAttribute(key,n(value));
     detailPath.setAttribute('filter','url(#detail-goo)');
   }else detailPath.removeAttribute('filter');
@@ -161,7 +161,7 @@ function drawExtra(){
   const bridge=neck>.1?`M${n(mid-neck)} ${n(anchor)}Q${n(mid-neck*.35)} ${n((anchor+near)/2)} ${n(mid-neck)} ${n(near)}H${n(mid+neck)}Q${n(mid+neck*.35)} ${n((anchor+near)/2)} ${n(mid+neck)} ${n(anchor)}Z`:'';
   extraPath.setAttribute('d',rect+bridge);
   const blur=3*Math.sin(Math.PI*Math.min(1,t));
-  extraFilter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  setGooBlur(extraFilter,blur);
   for(const [key,value] of Object.entries({x:left-24,y:Math.min(top,anchor)-24,width:right-left+48,height:Math.max(bottom,anchor)-Math.min(top,anchor)+48}))extraFilter.setAttribute(key,n(value));
   if(blur>.2)extraPath.setAttribute('filter','url(#extra-goo)');else extraPath.removeAttribute('filter');
   extraCard.style.setProperty('--extra-rise',`${(anchor-(above?y+h:y))*(1-Math.min(1,t))}px`);

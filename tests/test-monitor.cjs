@@ -21,12 +21,12 @@ function setup(t, initialVisible = true) {
   };
   const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
     setIgnoreMouseEvents: v => calls.push(['ignore', v]), setBounds: r => calls.push(['bounds', r]),
-    setAlwaysOnTop() {}, moveTop() {}, webContents: { send: (_name, event, payload) => calls.push([event, structuredClone(payload)]) } };
+    setAlwaysOnTop() {}, moveTop() {}, webContents: { send: (_name, event, payload) => calls.push([event, structuredClone(payload)]), sendInputEvent: e => calls.push(['input', e]) } };
   const settings = { isDestroyed: () => false, webContents: { send() {} } };
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : localRequire(id),
     __dirname: path.dirname(main), process, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1 };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
@@ -177,4 +177,30 @@ test('hit testing and controls measure from where the window really is', async t
   assert.equal(s.test.overNotch(monitorOnly), false, 'not by the monitor it was asked to cover');
   assert.equal(s.test.controlHit([100, 100, 50, 50], inside), true);
   assert.equal(s.test.controlHit([100, 100, 50, 50], monitorOnly), false);
+});
+test('a press Windows does not deliver to the page is relayed into it, and one it does deliver is left alone', async t => {
+  const s = setup(t);
+  s.win.getBounds = () => ({ ...s.displays[1].bounds });
+  await s.command('set_notch_monitor', { id: '2' }); await stow(s);
+  assert.equal(await s.command('monitor_placed', { placement: s.calls.filter(c => c[0] === 'layout').at(-1)[1].placement }), true);
+  s.test.setHot([[1500, 400, 70, 200]]);
+  const over = { x: -1600 + 1530, y: 450 }, wait = ms => new Promise(r => setTimeout(r, ms)), RELAY = 200; // past main's RELAY_MS
+  const inputs = () => s.calls.filter(c => c[0] === 'input').map(c => JSON.parse(JSON.stringify(c[1]))); // made in main's VM realm
+  // Delivered: the page says so, nothing is relayed
+  s.test.physicalPress(over); await s.command('page_pressed', {}); await wait(RELAY); s.test.physicalRelease(over);
+  assert.deepEqual(inputs(), []);
+  // Not delivered: pressed into the page at the same spot, released when the button is
+  s.test.physicalPress(over); await wait(RELAY);
+  assert.deepEqual(inputs(), [{ type: 'mouseMove', x: 1530, y: 450 }, { type: 'mouseDown', x: 1530, y: 450, button: 'left', clickCount: 1 }]);
+  s.test.physicalRelease({ x: over.x + 2, y: over.y });
+  assert.deepEqual(inputs().at(-1), { type: 'mouseUp', x: 1532, y: 450, button: 'left', clickCount: 1 });
+  // A quick click released before the relay is pressed and let go together
+  s.calls.length = 0; s.test.physicalPress(over); await wait(20); s.test.physicalRelease(over); await wait(RELAY);
+  assert.deepEqual(inputs().map(e => e.type), ['mouseMove', 'mouseDown', 'mouseUp']);
+  // Controls are still main's own, and a press off the notch puts a held card away; neither is relayed
+  s.calls.length = 0; s.test.setControls({ pin: [1500, 400, 70, 70] });
+  s.test.physicalPress(over); await wait(RELAY);
+  s.test.physicalPress({ x: -1600 + 100, y: 100 }); await wait(RELAY);
+  assert.deepEqual(inputs(), []);
+  assert.ok(s.calls.some(c => c[0] === 'control_pressed' && c[1] === 'pin') && s.calls.some(c => c[0] === 'outside_press'));
 });

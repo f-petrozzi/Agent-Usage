@@ -24,7 +24,15 @@ shapeSvg.innerHTML=`<defs>${gooDefinition('goo')}${gooDefinition('goo-start')}${
   <g id="shape-body"><path class="part"/><path class="part"/>
     <g class="liquid"><path class="band" clip-path="url(#start-band)"/><path class="neck"/><path class="arm"/></g>
     <g class="liquid"><path class="band" clip-path="url(#end-band)"/><path class="neck"/><path class="arm"/></g></g>`;
-const gooFilter=shapeSvg.querySelector('#goo'), gooBlur=gooFilter.querySelector('feGaussianBlur');
+const gooFilter=shapeSvg.querySelector('#goo');
+// A goo filter's blur and its cut-back, set together. The cut-back keeps the half-alpha line, which is where shapes meet
+// and part, and makes the edge about a pixel soft at any blur. A fixed 24x cut left only a fraction of a pixel there at
+// small blurs, so edges stepped like pixels while anything moved.
+function setGooBlur(filter,sigma){
+  filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(sigma));
+  const k=Math.max(1,Math.min(24,sigma*2.6));
+  filter.querySelector('feColorMatrix').setAttribute('values',`1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${n(k)} ${n(.5-k/2)}`);
+}
 const shapeBody=shapeSvg.querySelector('#shape-body');
 const [partA,partB]=shapeSvg.querySelectorAll('.part'), [armStart,armEnd]=shapeSvg.querySelectorAll('.arm');
 const necks=[...shapeSvg.querySelectorAll('.neck')], liquids=[...shapeSvg.querySelectorAll('.liquid')];
@@ -110,7 +118,7 @@ function edgeMatrix(edge,w,h){
   return edge==='right'?[0,1,-1,0,w,0]:edge==='left'?[0,1,1,0,0,0]:edge==='bottom'?[1,0,0,-1,0,h]:[1,0,0,1,0,0];
 }
 function setGoo(blur,x,y,w,h){
-  gooBlur.setAttribute('stdDeviation',n(blur));
+  setGooBlur(gooFilter,blur);
   for(const [k,v] of Object.entries({x,y,width:w,height:h})) gooFilter.setAttribute(k,n(v));
   if(blur>0.3) shapeBody.setAttribute('filter','url(#goo)'); else shapeBody.removeAttribute('filter');
 }
@@ -199,7 +207,7 @@ function drawSprout(u0,d,r,proportions,grown){
   if(outward&&s>SPROUT.snap&&!sprout.snapAt)sprout.snapAt=performance.now();
   if(!outward||s<.5)sprout.snapAt=0;
   const blur=stroke*.72*Math.pow(Math.sin(Math.PI*Math.min(1,s)),.7);
-  sproutInk.filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  setGooBlur(sproutInk.filter,blur);
   for(const [key,value] of Object.entries({x:C[0]-100,y:C[1]-100,width:200,height:200}))sproutInk.filter.setAttribute(key,n(value));
   if(blur>.3)sproutInk.group.setAttribute('filter','url(#goo-sprout)');else sproutInk.group.removeAttribute('filter');
 }
@@ -272,7 +280,7 @@ function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,d
   h.el.style.setProperty('--disc-glyph',smooth((lift-.45)/.4)*smooth((detailRetreat-.5)/.5)*smooth(out/.6));
   const since=h.hoverSnapAt?(performance.now()-h.hoverSnapAt)/1000:9;
   h.el.style.setProperty('--sway',since<1.2?`${n(side*14*Math.exp(-since/.26)*Math.sin(2*Math.PI*since/.38))}deg`:'0deg');
-  filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  setGooBlur(filter,blur);
   for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
   if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
 }
@@ -415,7 +423,7 @@ function drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetrea
   h.el.style.setProperty('--sway',h.snapAt?`${n(21*Math.exp(-since/.28)*Math.sin(2*Math.PI*since/.4))}deg`:'0deg');
   // Liquid through the pull, sharp once the drop is home
   const blur=stroke*.72*Math.pow(Math.sin(Math.PI*s),.7);
-  filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  setGooBlur(filter,blur);
   for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
   if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
 }

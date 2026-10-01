@@ -150,7 +150,7 @@ function drawSliver(s){
   // Liquid while it moves, sharp at rest
   const goo=matchMedia('(prefers-reduced-motion: reduce)').matches?0:4.4*Math.sin(Math.PI*grown)*(s.t===s.to?0:1);
   if(goo>.25){
-    s.filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(goo));
+    setGooBlur(s.filter,goo);
     const ink0=u0, ink1=u1;
     for(const [key,value] of Object.entries({x:ink0-40,y:-SHAPE.bleed-40,width:ink1-ink0+80,height:inkDepth+SHAPE.bleed+80}))s.filter.setAttribute(key,n(value));
     s.path.setAttribute('filter',`url(#${s.filter.id})`);
@@ -530,7 +530,7 @@ function drawInk(now=performance.now()){
     const group=svg.querySelector('.a-drops'),filter=svg.querySelector('filter');
     svg.querySelector('.a-drop').setAttribute('d',ink);svg.querySelector('.a-neck').setAttribute('d',necks);
     if(blur>.3){
-      filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+      setGooBlur(filter,blur);
       for(const [key,value] of Object.entries({x:-20,y:-20,width:W+40,height:H+40}))filter.setAttribute(key,value);
       group.setAttribute('filter',`url(#${filter.id})`);
     }else group.removeAttribute('filter');

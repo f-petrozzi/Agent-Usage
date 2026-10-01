@@ -29,10 +29,10 @@
     --armed:rgba(255,255,255,.78);
   }
   .c-auth{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
-  .c-auth button{font:inherit;font-size:11px;color:var(--ink);background:var(--btn);border:1px solid var(--btn-line);border-radius:7px;padding:6px 9px;cursor:pointer}
+  .c-auth button{font:inherit;font-size:calc(11px * var(--tz,1));color:var(--ink);background:var(--btn);border:1px solid var(--btn-line);border-radius:7px;padding:6px 9px;cursor:pointer}
   .c-auth button:hover,.c-auth button:focus-visible{background:var(--btn-hover);border-color:var(--btn-line-hover)}
   .c-auth button:disabled{opacity:.5;cursor:wait}
-  .c-auth-status{font-size:10px;line-height:1.4;color:var(--ink-3);margin-top:6px;overflow-wrap:anywhere}
+  .c-auth-status{font-size:calc(10px * var(--tz,1));line-height:1.4;color:var(--ink-3);margin-top:6px;overflow-wrap:anywhere}
   /* Visual reference: upstream docs/specs/2026-08-28-usage-notch-design.md, reproduced for Windows */
   *{box-sizing:border-box} /* content-box padding once pushed the card past the window's left edge */
   html,body{margin:0;padding:0;width:100%;height:100%;background:transparent;overflow:hidden;user-select:none}
@@ -131,33 +131,33 @@
   }
   #card.show + #tail{display:block}
   .c-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-  .c-title{font-size:14px;font-weight:700}
-  .c-sub{font-size:11px;color:var(--ink-dim);margin-bottom:10px}
+  .c-title{font-size:calc(14px * var(--tz,1));font-weight:700}
+  .c-sub{font-size:calc(11px * var(--tz,1));color:var(--ink-dim);margin-bottom:10px}
   .win{margin-top:10px}
-  .w-row{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;flex-wrap:wrap;column-gap:8px}
+  .w-row{display:flex;justify-content:space-between;align-items:baseline;font-size:calc(12px * var(--tz,1));flex-wrap:wrap;column-gap:8px}
   .w-label{color:var(--ink-2);font-weight:600;white-space:nowrap}
-  .w-reset{color:var(--ink-dim);font-size:11px;white-space:nowrap;margin-left:auto} /* wrap as a whole when it does not fit; never break inside a word */
+  .w-reset{color:var(--ink-dim);font-size:calc(11px * var(--tz,1));white-space:nowrap;margin-left:auto} /* wrap as a whole when it does not fit; never break inside a word */
   .w-track{height:4px;border-radius:2px;background:var(--bar);margin:6px 0 4px;overflow:hidden}
   .w-fill{height:100%;border-radius:2px}
-  .w-used{font-size:11px;color:var(--ink-dim)}
-  .g-head{font-size:12px;font-weight:700;color:var(--ink-2);margin-top:12px}
+  .w-used{font-size:calc(11px * var(--tz,1));color:var(--ink-dim)}
+  .g-head{font-size:calc(12px * var(--tz,1));font-weight:700;color:var(--ink-2);margin-top:12px}
   .g-box{border:1px solid var(--card-line);border-radius:10px;padding:0 10px 8px;margin-top:6px}
-  .c-note{font-size:12px;color:var(--ink-3);line-height:1.5;margin-top:6px}
+  .c-note{font-size:calc(12px * var(--tz,1));color:var(--ink-3);line-height:1.5;margin-top:6px}
   button.session-link{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer;border-radius:5px}
   button.session-link:hover{background:#181818}
   .session-link:focus-visible{outline:1px solid #888;outline-offset:2px}
-  .session-link-error{font-size:11px;line-height:1.4;color:var(--ink-dim);margin:8px 0 0}
+  .session-link-error{font-size:calc(11px * var(--tz,1));line-height:1.4;color:var(--ink-dim);margin:8px 0 0}
   .c-sessions{margin-top:12px;border-top:1px solid var(--card-rule);padding-top:8px}
-  .s-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-4);padding:2px 0}
+  .s-row{display:flex;align-items:center;gap:6px;font-size:calc(11px * var(--tz,1));color:var(--ink-4);padding:2px 0}
   .s-dot{width:6px;height:6px;border-radius:3px;flex:0 0 auto}
-  .s-more{font-size:11px;color:var(--ink-dim);padding:2px 0}
+  .s-more{font-size:calc(11px * var(--tz,1));color:var(--ink-dim);padding:2px 0}
   /* A window reads as its share used beside its name, the bar, then when it resets and what is left */
-  .w-pct{margin-left:auto;font-size:13px;font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .w-foot{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;column-gap:8px;font-size:11px;color:var(--ink-dim)}
+  .w-pct{margin-left:auto;font-size:calc(13px * var(--tz,1));font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .w-foot{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;column-gap:8px;font-size:calc(11px * var(--tz,1));color:var(--ink-dim)}
   .w-foot .w-reset{margin-left:0}
   .w-left{white-space:nowrap;font-variant-numeric:tabular-nums}
   /* Resets: a quiet filled row of their own, since one is worth noticing */
-  .c-resets{margin-top:12px;padding:7px 10px;border-radius:10px;background:#151515;font-size:12px;color:var(--ink-2);outline:none;
+  .c-resets{margin-top:12px;padding:7px 10px;border-radius:10px;background:#151515;font-size:calc(12px * var(--tz,1));color:var(--ink-2);outline:none;
     transition:background-color .2s ease}
   .r-head{display:flex;align-items:center;gap:8px}
   .r-ico{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;
@@ -173,7 +173,7 @@
   .r-list{display:grid;grid-template-rows:0fr;transition:grid-template-rows .34s cubic-bezier(.32,.72,.24,1)}
   .r-list > div{overflow:hidden;min-height:0}
   .c-resets.open .r-list{grid-template-rows:1fr}
-  .r-item{display:flex;align-items:baseline;gap:8px;padding:7px 0 0 22px;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+  .r-item{display:flex;align-items:baseline;gap:8px;padding:7px 0 0 22px;font-size:calc(11.5px * var(--tz,1));color:var(--ink-2);font-variant-numeric:tabular-nums;
     opacity:0;translate:0 -3px;transition:opacity .16s ease,translate .3s cubic-bezier(.32,.72,.24,1)}
   .c-resets.open .r-item{opacity:1;translate:0 0;transition-delay:.08s}
   .r-times{color:var(--ink);font-weight:650}
@@ -183,14 +183,14 @@
   /* Alerts: a sliver of the notch from the ring they are about, one line long (notify.js) */
   #sliver-shape{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none;fill:#000}
   .sliver{position:absolute;z-index:3;display:flex;align-items:center;justify-content:center;gap:7px;box-sizing:border-box;white-space:nowrap;
-    overflow:hidden;font-size:12px;line-height:1;color:var(--ink-2);cursor:pointer;opacity:0;pointer-events:auto;padding:0 2px}
-  body[data-edge="top"] .sliver,body[data-edge="bottom"] .sliver{flex-direction:column;font-size:12px;line-height:1.25;gap:4px;padding:0 12px}
+    overflow:hidden;font-size:calc(12px * var(--tz,1));line-height:1;color:var(--ink-2);cursor:pointer;opacity:0;pointer-events:auto;padding:0 2px}
+  body[data-edge="top"] .sliver,body[data-edge="bottom"] .sliver{flex-direction:column;font-size:calc(12px * var(--tz,1));line-height:1.25;gap:4px;padding:0 12px}
   body[data-edge="top"] .sliver .s-more,body[data-edge="bottom"] .sliver .s-more{position:absolute;right:5px;top:50%;translate:0 -50%}
   body[data-edge="top"] .sliver .s-text,body[data-edge="bottom"] .sliver .s-text{max-width:100%}
   .s-word{font-weight:700;flex:none}
   .s-text{color:var(--ink-3);min-width:0;overflow:hidden;text-overflow:ellipsis}
   .s-scroll{display:inline-block;white-space:nowrap}
-  .s-more{color:var(--ink-dim);font-size:11px}
+  .s-more{color:var(--ink-dim);font-size:calc(11px * var(--tz,1))}
   /* Refresh lives on the card's title row: a ring click holds its card instead */
   .c-head .c-refresh{margin-left:auto;flex:none;appearance:none;border:0;background:transparent;width:26px;height:26px;border-radius:13px;display:grid;place-items:center;
     color:var(--ink-dim);cursor:pointer;transition:background-color .15s ease,color .15s ease}
@@ -202,7 +202,7 @@
   #card.alert-card{max-width:none;margin:0;padding:14px}
   .log-mark{display:inline-grid;place-items:center;width:16px;height:16px;flex:none}
   .log-mark .bell-mark{width:16px;height:16px;fill:none;stroke:var(--ink-2);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-  .a-clear{flex:none;appearance:none;border:0;background:none;padding:2px 0 2px 10px;font:inherit;font-size:12px;font-weight:600;color:var(--ink-dim);cursor:pointer;transition:color .15s ease}
+  .a-clear{flex:none;appearance:none;border:0;background:none;padding:2px 0 2px 10px;font:inherit;font-size:calc(12px * var(--tz,1));font-weight:600;color:var(--ink-dim);cursor:pointer;transition:color .15s ease}
   .a-clear:hover,.a-clear:focus-visible{color:var(--ink);outline:none}
   /* Each switch sits in a dark well; its ink is drawn underneath by drawInk. The words are white in difference, so
      they turn black exactly where the ink has reached, and dim with how little of it there is. */
@@ -213,7 +213,7 @@
   .a-chips{display:flex;flex-wrap:nowrap;gap:6px;margin:11px 0 4px}
   .a-chip,.a-sound{position:relative;flex:none;appearance:none;border:0;background:transparent;font:inherit;color:#fff;cursor:pointer;
     mix-blend-mode:difference;opacity:min(1,calc(.5 + .5 * var(--ink,0) + var(--lift,0)));transition:scale .3s cubic-bezier(.34,1.56,.64,1)}
-  .a-chip{height:24px;padding:0 9px;border-radius:12px;font-size:11px;font-weight:600}
+  .a-chip{height:calc(24px * var(--tz,1));padding:0 9px;border-radius:12px;font-size:calc(11px * var(--tz,1));font-weight:600}
   .a-sound{width:24px;height:24px;border-radius:12px;padding:0;display:grid;place-items:center}
   .a-chip:hover,.a-sound:hover{--lift:.3}
   .a-chip:active,.a-sound:active{scale:.94}
@@ -231,12 +231,12 @@
   .a-glyph{grid-row:1;position:relative;align-self:center;width:16px;height:16px;display:grid;place-items:center}
   .a-glyph .mark{width:15px;height:15px}.a-glyph .mark svg{width:15px;height:15px;fill:currentColor}
   .a-row.fresh .a-glyph::after{content:"";position:absolute;right:-4px;top:-3px;width:6px;height:6px;border-radius:50%;background:var(--watch);box-shadow:0 0 0 2px #000}
-  .a-word{grid-column:2;grid-row:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .a-when{grid-column:3;grid-row:1;padding-left:6px;text-align:right;font-size:11px;color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
-  .a-sub{grid-column:2 / -1;grid-row:2;display:flex;gap:6px;min-width:0;font-size:11.5px;white-space:nowrap}
+  .a-word{grid-column:2;grid-row:1;min-width:0;font-size:calc(12.5px * var(--tz,1));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .a-when{grid-column:3;grid-row:1;padding-left:6px;text-align:right;font-size:calc(11px * var(--tz,1));color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .a-sub{grid-column:2 / -1;grid-row:2;display:flex;gap:6px;min-width:0;font-size:calc(11.5px * var(--tz,1));white-space:nowrap}
   .a-name{flex:none;max-width:62%;overflow:hidden;text-overflow:ellipsis;color:var(--ink-3);font-weight:600}
   .a-detail{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--ink-dim)}
-  .a-empty{margin-top:12px;font-size:12px;color:var(--ink-dim)}
+  .a-empty{margin-top:12px;font-size:calc(12px * var(--tz,1));color:var(--ink-dim)}
   @media (prefers-reduced-motion: reduce){.a-chip,.a-sound{transition:none}}
 
   /* ---- The other three edges -------------------------------------------------

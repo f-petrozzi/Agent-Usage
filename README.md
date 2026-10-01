@@ -202,3 +202,13 @@ On a first open, every press could miss the notch until it was moved to another 
 The alert switches pinch like liquid when one turns off. The neck to each neighbour stretches as an hourglass, thins smoothly and gives while it still has body. Each half then springs back as a rounded drop, all inside the goo, so it never runs to a thin thread.
 
 Validation: 49 desktop checks, including re-placement and offset-window hit tests, and every browser suite, including new checks that a switch's necks stretch, part once and never thin to a thread.
+
+## Presses that always land, smoother goo and readable small mode (3.3.4)
+
+If Windows doesn't deliver a press to the notch, as happened on some first opens, the app now delivers it itself. The helper that already caught presses on the pin and gear now watches the whole notch. When the page doesn't report a press within about a seventh of a second, the app presses that spot in the page and lets go when you do. Presses that arrive normally are left alone.
+
+The switches' goo now has smooth, anti-aliased edges while it moves, instead of stepping like pixels. The same applies to every liquid shape in the notch.
+
+Small mode keeps the notch small but draws card, log and alert text at about medium size, with the card widened to fit.
+
+Validation: 50 desktop checks, including relayed and delivered presses, and every browser suite plus a new small-mode suite.
