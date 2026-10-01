@@ -248,7 +248,8 @@ function placeUnreadDot(){
   const x=notchEdge==='right'?r.right-10:r.left+10, y=notchEdge==='bottom'?r.bottom-10:r.top+10;
   Object.assign(dot.style,{left:x-o.left+'px',top:y-o.top+'px'});
   const unread=unreadCount()>0&&leadFaces.includes('alerts'), swapping=handles[0].swapping;
-  const bell=leadFace()==='alerts'&&(hovered==='pin'||handles[0].value>.65)&&!logShowing();
+  // Leaving, it stays on a bell that is still out; a bell melting home after a swap does not pick it up on the way
+  const bell=leadFace()==='alerts'&&!logShowing()&&(hovered==='pin'||handles[0].value>.65&&pinHandle.classList.contains('bell-unread'));
   dot.classList.toggle('on',unread&&!bell&&!swapping);
   pinHandle.classList.toggle('bell-unread',unread&&bell&&!swapping);
 }
@@ -269,7 +270,10 @@ function tookText(ms){
   return m<60?new Intl.NumberFormat(locale,{style:'unit',unit:'minute',unitDisplay:'short'}).format(m)
     :new Intl.NumberFormat(locale,{style:'unit',unit:'hour',unitDisplay:'short',maximumFractionDigits:1}).format(m/60);
 }
-const CHIPS=[['quota','Usage'],['waiting','Waiting'],['completion','Finished'],['sound','Sound']];
+// The three kinds of alert are switches along the top; whether they chime is a fourth, in the title row
+const LOG_KINDS=[['quota','Usage'],['waiting','Waiting'],['completion','Finished']];
+const SOUND_MARK=on=>`<svg class="a-sound-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.6 6.1h2.1L8 3.3v9.4L4.7 9.9H2.6z"/>${on
+  ?'<path d="M10.5 5.7a3.3 3.3 0 0 1 0 4.6"/><path d="M12.4 3.9a5.9 5.9 0 0 1 0 8.2"/>':'<path d="M10.9 6.4l3 3.2M13.9 6.4l-3 3.2"/>'}</svg>`;
 function logWhen(at){
   const m=Math.round((Date.now()-at)/60000);
   if(m<1)return textCopy('now');
@@ -278,21 +282,36 @@ function logWhen(at){
   if(days===1)return new Intl.RelativeTimeFormat(ui().locale,{numeric:'auto'}).format(-1,'day');
   return new Date(at).toLocaleDateString(ui().locale,{weekday:'short'});
 }
+const logReduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+// A damped spring as a CSS easing, for motion that is not driven frame by frame here: its own settle time is the duration
+function springEasing(period,zeta){
+  const w=2*Math.PI/period,wd=w*Math.sqrt(1-zeta*zeta),T=4.6/(zeta*w),points=[];
+  for(let i=0;i<=40;i++){const t=T*i/40;points.push(i===40?1:+(1-Math.exp(-zeta*w*t)*(Math.cos(wd*t)+zeta*w/wd*Math.sin(wd*t))).toFixed(4));}
+  return {easing:`linear(${points.join(',')})`,duration:Math.round(T*1000)};
+}
+const POUR=springEasing(.62,.62), SETTLE=springEasing(.5,.74);
 function renderAlertLog(){
-  const scroll=card.dataset.account===ALERTS_ID?(card.querySelector('.a-log')?.scrollTop||0):0;
-  const kick=ui().kick||UI.en.kick, rows=[...alertLogData].reverse();
-  const chips=CHIPS.map(([key,label])=>`<button class="a-chip${alertPrefsData?.[key]?' on':''}" type="button" data-pref="${key}" aria-pressed="${!!alertPrefsData?.[key]}">${esc(textCopy(label))}</button>`).join('');
-  let html=`<div class="c-head"><span class="log-mark">${BELL_MARK}</span><span class="c-title">${esc(textCopy('Alerts'))}</span>${rows.length?`<button class="a-clear" type="button">${esc(textCopy('Clear'))}</button>`:''}</div>
-    <div class="a-chips">${chips}</div>`;
+  const old=card.dataset.account===ALERTS_ID?card.querySelector('.a-log'):null;
+  const scroll=old?.scrollTop||0, before=old?new Map([...old.querySelectorAll('.a-row')].map(r=>[r.dataset.key,r.offsetTop])):null;
+  const kick=ui().kick||UI.en.kick, rows=[...alertLogData].reverse(), on=key=>!!alertPrefsData?.[key];
+  const chips=LOG_KINDS.map(([key,label])=>`<button class="a-chip${on(key)?' on':''}" type="button" data-pref="${key}" aria-pressed="${on(key)}">${esc(textCopy(label))}</button>`).join('');
+  const sound=`<span class="a-ink a-sound-ink"><svg class="a-ink-svg" aria-hidden="true"></svg><button class="a-sound${on('sound')?' on':''}" type="button" data-pref="sound" aria-pressed="${on('sound')}" aria-label="${esc(textCopy('Sound'))}">${SOUND_MARK(on('sound'))}</button></span>`;
+  let html=`<div class="c-head"><span class="log-mark">${BELL_MARK}</span><span class="c-title">${esc(textCopy('Alerts'))}</span>${sound}${rows.length?`<button class="a-clear" type="button">${esc(textCopy('Clear'))}</button>`:''}</div>
+    <div class="a-chips a-ink"><svg class="a-ink-svg" aria-hidden="true"></svg>${chips}</div>`;
   if(!rows.length)html+=`<div class="a-empty">${esc(textCopy('No alerts this week'))}</div>`;
-  else html+=`<div class="a-log">${rows.map((e,i)=>logRow(e,i,kick)).join('')}</div>`;
-  // The rows come in one after another only as the log opens, not each time it refreshes while open
+  else html+=`<div class="a-log"><div class="a-bead" aria-hidden="true"></div>${rows.map((e,i)=>logRow(e,i,kick)).join('')}</div>`;
+  // The rows pour out only as the log opens, not each time it refreshes while open
   const entering=detailOpen<.9||card.dataset.account!==ALERTS_ID;
   card.innerHTML=`<div class="usage-content log-content${entering?' entering':''}">${html}</div>`;
-  const list=card.querySelector('.a-log');if(list)list.scrollTop=scroll;
+  const list=card.querySelector('.a-log');if(list){list.scrollTop=scroll;fadeLog(list);}
+  drawInk();placeBead();
+  if(list&&!logReduced()){
+    if(entering)pourRows(list);else if(before)flowRows(list,before);
+  }
   // Read once it has been open long enough to have been seen
   if(unreadCount()&&!markTimer)markTimer=setTimeout(()=>{markTimer=0;if(logShowing())invoke('mark_alerts_read').catch(()=>{});},1400);
 }
+// A row reads as the sliver it came out as: the word in the colour of what it reports, then where it came from
 function logRow(e,i,kick){
   const acct=providers().find(x=>x.id===e.account)||agentAccounts.find?.(x=>x.id===e.account);
   const quota=e.kind==='quota', waiting=e.kind==='waiting';
@@ -301,16 +320,223 @@ function logRow(e,i,kick){
   const w=quota&&acct?acct.snap.windows.find(x=>x.id===e.window):null;
   const detail=quota?`${w?textCopy(w.label):''}${e.used!=null?`${w?' · ':''}${pctText(e.used)}%`:''}`
     :`${e.session||''}${e.kind==='completion'&&e.took!=null?`${e.session?' · ':''}${tookText(e.took)}`:''}`;
-  return `<button class="a-row${e.read?'':' fresh'}" type="button" data-alert="${esc(e.id||'')}" data-account="${esc(e.account||'')}" style="--i:${i}">
-    <span class="a-glyph">${acct?glyphHtml(acct,true):''}</span><span class="a-name">${esc(acct?acct.name:e.session||'Agent Usage')}</span>
-    <span class="a-word" style="color:${colour}">${esc(word)}</span><span class="a-when">${esc(logWhen(e.at))}</span>
-    ${detail?`<span class="a-detail">${esc(detail)}</span>`:''}</button>`;
+  const name=acct?acct.name:e.session||'Agent Usage';
+  return `<button class="a-row${e.read?'':' fresh'}" type="button" data-key="${esc(e.id||'row-'+i)}" data-alert="${esc(e.id||'')}" data-account="${esc(e.account||'')}">
+    <span class="a-glyph">${acct?glyphHtml(acct,true):''}</span><span class="a-word" style="color:${colour}">${esc(word)}</span><span class="a-when">${esc(logWhen(e.at))}</span>
+    <span class="a-sub"><span class="a-name">${esc(name)}</span>${detail&&detail!==name?`<span class="a-detail">${esc(detail)}</span>`:''}</span></button>`;
 }
+// Opening: the list pours out of the title row, the rows further down travelling further, on a spring that runs a
+// little past and settles, so it arrives as one body rather than a row at a time. It waits for the words to have black
+// under them (the card shows from 85% open), or it would be spent before it can be seen.
+function pourRows(list){
+  const rows=[...list.querySelectorAll('.a-row')].slice(0,9),held=rows.map(row=>row.animate([{opacity:0},{opacity:0}],{duration:1e6}));
+  const t0=performance.now();
+  const go=()=>{
+    if(!list.isConnected){held.forEach(a=>a.cancel());return;}
+    if(detailOpen<.82&&performance.now()-t0<700){requestAnimationFrame(go);return;}
+    rows.forEach((row,i)=>{
+      // Lower rows come out from under the ones above them, so they clear before they are seen
+      const dy=-(row.offsetTop+row.offsetHeight*.5)*.48;
+      row.animate([{translate:`0 ${dy.toFixed(1)}px`},{translate:'0 0'}],{duration:POUR.duration,easing:POUR.easing});
+      row.animate([{opacity:0},{opacity:1}],{duration:220,delay:i*22,easing:'ease-out',fill:'backwards'});held[i].cancel();
+    });
+  };
+  requestAnimationFrame(go);
+}
+// An alert arriving while the log is open: the rows below make way on a spring and the new one wells up in its place
+function flowRows(list,before){
+  for(const row of list.querySelectorAll('.a-row')){
+    const was=before.get(row.dataset.key);
+    if(was==null){
+      row.animate([{opacity:0,scale:'.94 .62'},{opacity:1,scale:'1 1'}],{duration:SETTLE.duration,easing:SETTLE.easing});
+      continue;
+    }
+    const dy=was-row.offsetTop;
+    if(Math.abs(dy)>1)row.animate([{translate:`0 ${dy}px`},{translate:'0 0'}],{duration:SETTLE.duration,easing:SETTLE.easing});
+  }
+}
+// Clear: everything is drawn up into the title row, accelerating as the notch takes it in, then the log is emptied
+function drainRows(done){
+  const list=card.querySelector('.a-log'),rows=list?[...list.querySelectorAll('.a-row')]:[];
+  if(!rows.length||logReduced()){done();return;}
+  setBead(null);
+  for(const row of rows){
+    const dy=-(row.offsetTop-list.scrollTop+row.offsetHeight*.5);
+    row.animate([{translate:'0 0',opacity:1},{translate:`0 ${dy.toFixed(1)}px`,opacity:0}],{duration:300,easing:'cubic-bezier(.55,0,.8,.3)',fill:'forwards'});
+  }
+  setTimeout(done,260);
+}
+
+/* The switches are drops of white ink. A switch that is on is full of it, and switches that are on side by side run
+   together through a neck, the way the notch's black meets the screen edge, so what is on reads as one body. Turned
+   off, a drop draws in to its middle and the neck to its neighbour stretches, pinches and parts; turned on, it wells
+   up from the middle and reaches out to a neighbour that is on. Liquid while it moves, sharp at rest. The words are
+   drawn in difference over the ink (notch.html), so they invert exactly where the ink has reached. */
+const inkState={},neckState={},TAIL=.18;let inkFrame=0,inkLast=0,inkSerial=0;
+function inkFor(button){
+  const key=button.dataset.pref,to=button.classList.contains('on')?1:0;
+  const s=inkState[key]||(inkState[key]={f:to,v:0,to});
+  if(s.to!==to){s.to=to;if(logReduced()){s.f=to;s.v=0;}else if(!inkFrame)inkFrame=requestAnimationFrame(stepInk);}
+  return s;
+}
+function stepInk(now){
+  const dt=Math.max(0,Math.min(.032,(now-(inkLast||now-16))/1000));inkLast=now;let moving=false;
+  for(const s of Object.values(inkState)){
+    // In on a loose spring that swells a little past the well; out without a bounce, slowly enough to see the neck give
+    const omega=2*Math.PI/(s.to?.5:.66),zeta=s.to?.5:.92;
+    s.v+=(-omega*omega*(s.f-s.to)-2*zeta*omega*s.v)*dt;s.f+=s.v*dt;
+    if(Math.abs(s.f-s.to)<.002&&Math.abs(s.v)<.02){s.f=s.to;s.v=0;}else moving=true;
+  }
+  if(drawInk(now))moving=true; // a parted neck's tails are still whipping home
+  if(moving)inkFrame=requestAnimationFrame(stepInk);else{inkFrame=0;inkLast=0;}
+}
+const pillPath=(cx,cy,w,h)=>{const r=h/2,x0=cx-w/2+r,x1=cx+w/2-r;
+  return `M${n(x0)} ${n(cy-r)}H${n(x1)}A${n(r)} ${n(r)} 0 0 1 ${n(x1)} ${n(cy+r)}H${n(x0)}A${n(r)} ${n(r)} 0 0 1 ${n(x0)} ${n(cy-r)}Z`;};
+// The neck between two drops' facing ends: a metaball bridge between the two end circles, its spread narrowing
+// as they are drawn apart until it parts
+function neckPath(r1,r2,c1,c2,rest){
+  // It holds for about a drop's radius of stretch past rest, less as either drop shrinks, thinning as it goes; it parts
+  // while it still has some body, and what is left of it whips back as tails (drawInk), never a needle
+  const d=Math.hypot(c2[0]-c1[0],c2[1]-c1[1]),reach=Math.min((r1+r2)*2.1,rest+20);
+  if(r1<.5||r2<.5||d>reach||d<=Math.abs(r1-r2))return '';
+  const pinch=Math.max(0,Math.min(1,(d-rest)/Math.max(1,reach-rest))),v=.5-.3*Math.pow(pinch,.8),handle=2.4;
+  let u1=0,u2=0;
+  if(d<r1+r2){u1=Math.acos((r1*r1+d*d-r2*r2)/(2*r1*d));u2=Math.acos((r2*r2+d*d-r1*r1)/(2*r2*d));}
+  const between=Math.atan2(c2[1]-c1[1],c2[0]-c1[0]),spread=Math.acos((r1-r2)/d);
+  const a1=between+u1+(spread-u1)*v,a2=between-u1-(spread-u1)*v;
+  const a3=between+Math.PI-u2-(Math.PI-u2-spread)*v,a4=between-Math.PI+u2+(Math.PI-u2-spread)*v;
+  const at=(c,a,r)=>[c[0]+r*Math.cos(a),c[1]+r*Math.sin(a)];
+  const p1=at(c1,a1,r1),p2=at(c1,a2,r1),p3=at(c2,a3,r2),p4=at(c2,a4,r2);
+  const k=Math.min(v*handle,Math.hypot(p3[0]-p1[0],p3[1]-p1[1])/(r1+r2))*Math.min(1,d*2/(r1+r2));
+  const h1=at(p1,a1-Math.PI/2,r1*k),h2=at(p2,a2+Math.PI/2,r1*k),h3=at(p3,a3+Math.PI/2,r2*k),h4=at(p4,a4-Math.PI/2,r2*k);
+  const P=p=>`${n(p[0])} ${n(p[1])}`;
+  return `M${P(p1)}C${P(h1)} ${P(h3)} ${P(p3)}A${n(r2)} ${n(r2)} 0 ${d>r1?1:0} 0 ${P(p4)}C${P(h4)} ${P(h2)} ${P(p2)}Z`;
+}
+function drawInk(now=performance.now()){
+  let tails=false;
+  for(const box of card.querySelectorAll('.a-ink')){
+    const svg=box.querySelector('.a-ink-svg');if(!svg)continue;
+    if(!svg.firstChild){
+      const id='a-ink-goo-'+(++inkSerial);
+      // Necks are a path of their own, outside the goo: blurred and cut back, a stretched neck loses its thin middle and
+      // leaves two cones; drawn as one with the drops, their opposite windings would cut holes where they overlap
+      svg.innerHTML=`<defs>${gooDefinition(id)}</defs><path class="a-well"/><g class="a-drops"><path class="a-drop"/></g><path class="a-drop a-neck"/>`;
+    }
+    const W=box.clientWidth,H=box.clientHeight;
+    svg.setAttribute('width',W);svg.setAttribute('height',H);svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+    let wells='',ink='',necks='',blur=0;
+    const drops=[...box.querySelectorAll('[data-pref]')].map(b=>{
+      const s=inkFor(b),x=b.offsetLeft,y=b.offsetTop,w=b.offsetWidth,h=b.offsetHeight,cx=x+w/2,cy=y+h/2,f=Math.max(0,s.f);
+      b.style.setProperty('--ink',Math.min(1,f).toFixed(3));
+      wells+=pillPath(cx,cy,w,h);
+      if(s.f!==s.to)blur=Math.max(blur,1.8*Math.sin(Math.PI*Math.min(1,f)));
+      if(f<.05)return {key:b.dataset.pref,x,w,h,none:true};
+      // A drop wells up round, then spreads along its switch; past 1 the spring swells it a little beyond the well
+      const grow=Math.min(1,f),over=Math.max(0,f-1);
+      const dh=h*(.3+.7*smooth(grow/.5))+over*5,dw=dh+(w-h)*smooth((grow-.22)/.78)+over*9;
+      ink+=pillPath(cx,cy,dw,dh);
+      return {key:b.dataset.pref,x,w,h,cx,cy,dw,dh};
+    });
+    for(let i=0;i+1<drops.length;i++){
+      const a=drops[i],b=drops[i+1],st=neckState[a.key+'|'+b.key]||(neckState[a.key+'|'+b.key]={joined:false,at:0});
+      const capA=a.none?null:[a.cx+a.dw/2-a.dh/2,a.cy],capB=b.none?null:[b.cx-b.dw/2+b.dh/2,b.cy];
+      const path=capA&&capB?neckPath(a.dh/2,b.dh/2,capA,capB,(b.x+b.h/2)-(a.x+a.w-a.h/2)):'';
+      necks+=path;
+      if(st.joined&&!path&&!logReduced())st.at=now;
+      st.joined=!!path;
+      // Parted: each end of the neck whips back into its own drop as a rounded tail that subsides into it
+      const since=(now-st.at)/1000;
+      if(!st.at||since>=TAIL){st.at=0;continue;}
+      const e=1-Math.pow(1-since/TAIL,2);tails=true;blur=Math.max(blur,1.6*(1-e));
+      for(const [drop,cap,dir] of [[a,capA,1],[b,capB,-1]]){
+        if(!cap)continue;const r=drop.dh/2;
+        const k=1-e;ink+=pillPath(cap[0]+dir*r*(.82-.5*e),cap[1],2*r*.62*k+.01,2*r*.62*k+.01); // a low, broad bump, sinking back in
+      }
+    }
+    svg.querySelector('.a-well').setAttribute('d',wells);
+    const group=svg.querySelector('.a-drops'),filter=svg.querySelector('filter');
+    svg.querySelector('.a-drop').setAttribute('d',ink);svg.querySelector('.a-neck').setAttribute('d',necks);
+    if(blur>.3){
+      filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+      for(const [key,value] of Object.entries({x:-20,y:-20,width:W+40,height:H+40}))filter.setAttribute(key,value);
+      group.setAttribute('filter',`url(#${filter.id})`);
+    }else group.removeAttribute('filter');
+  }
+  if(tails&&!inkFrame)inkFrame=requestAnimationFrame(stepInk);
+  return tails;
+}
+
+/* One bead of ink lies under the row the pointer is on. Moving to another row it runs there like a drop on glass:
+   its leading edge goes first and its trailing edge catches up, so it stretches on the way, thinning a little, and
+   gathers on arrival. Coming onto the list it swells out of the row's middle; leaving, it draws back into it. */
+const bead={key:null,top:0,bottom:0,vt:0,vb:0,frame:0,last:0,width:1};
+let beadPointer=null;
+function setBead(row){
+  const key=row?row.dataset.key:null;
+  if(key===bead.key)return;
+  const fresh=key&&(bead.bottom-bead.top<1);
+  bead.key=key;
+  if(fresh){const mid=row.offsetTop+row.offsetHeight/2;bead.top=bead.bottom=mid;bead.vt=bead.vb=0;}
+  if(logReduced()){const r=beadRow();if(r){bead.top=r.offsetTop;bead.bottom=r.offsetTop+r.offsetHeight;}else bead.top=bead.bottom=(bead.top+bead.bottom)/2;placeBead();return;}
+  if(!bead.frame)bead.frame=requestAnimationFrame(stepBead);
+}
+const beadRow=()=>bead.key==null?null:card.querySelector(`.a-row[data-key="${CSS.escape(bead.key)}"]`);
+function stepBead(now){
+  const dt=Math.min(.032,(now-(bead.last||now-16))/1000);bead.last=now;
+  const row=beadRow(),mid=(bead.top+bead.bottom)/2;
+  const top=row?row.offsetTop:mid,bottom=row?row.offsetTop+row.offsetHeight:mid;
+  const down=top>bead.top+.5,up=top<bead.top-.5;
+  const spring=(x,v,to,period,zeta)=>{const w=2*Math.PI/period;v+=(-w*w*(x-to)-2*zeta*w*v)*dt;return [x+v*dt,v];};
+  // The edge in the direction of travel leads; the other follows on a softer spring
+  [bead.top,bead.vt]=spring(bead.top,bead.vt,top,row?(up?.24:.4):.3,row?(up?.8:.9):1);
+  [bead.bottom,bead.vb]=spring(bead.bottom,bead.vb,bottom,row?(down?.24:.4):.3,row?(down?.8:.9):1);
+  if(bead.bottom<bead.top){const m=(bead.top+bead.bottom)/2;bead.top=bead.bottom=m;}
+  const settled=Math.abs(bead.top-top)<.3&&Math.abs(bead.bottom-bottom)<.3&&Math.abs(bead.vt)<.05&&Math.abs(bead.vb)<.05;
+  if(settled){bead.top=top;bead.bottom=bottom;bead.vt=bead.vb=0;}
+  placeBead();
+  bead.frame=settled?0:requestAnimationFrame(stepBead);if(settled)bead.last=0;
+}
+function placeBead(){
+  const el=card.querySelector('.a-bead');if(!el)return;
+  const row=beadRow()||card.querySelector('.a-row'),full=row?row.offsetHeight:48,h=Math.max(0,bead.bottom-bead.top);
+  // Round while small, a little narrower while stretched: it keeps roughly the volume of a drop
+  const inset=h<full?(1-h/full)*38:Math.min(10,(h/full-1)*14);
+  Object.assign(el.style,{top:n(bead.top)+'px',height:n(h)+'px',left:n(inset)+'%',width:n(100-2*inset)+'%',
+    borderRadius:n(Math.min(12,h/2))+'px',opacity:h<1?0:1});
+}
+function trackBead(x,y){
+  if(!logShowing()){setBead(null);return;}
+  const row=document.elementFromPoint(x,y)?.closest?.('#card .a-row');
+  setBead(row||(document.activeElement?.closest?.('#card .a-row'))||null);
+}
+document.addEventListener('mousemove',e=>{beadPointer=[e.clientX,e.clientY];if(logShowing()||bead.key)trackBead(e.clientX,e.clientY);});
+document.addEventListener('mouseout',e=>{if(!e.relatedTarget){beadPointer=null;setBead(null);}});
+// The history runs on into the black past its ends rather than stopping at a cut line, by as much as there is to scroll
+function fadeLog(list){
+  const below=list.scrollHeight-list.clientHeight-list.scrollTop;
+  list.style.setProperty('--fade-top',n(Math.min(18,Math.max(0,list.scrollTop)))+'px');
+  list.style.setProperty('--fade-bottom',n(Math.min(26,Math.max(0,below)))+'px');
+}
+// Scrolling the history moves the rows under a still pointer
+document.addEventListener('scroll',e=>{
+  if(!e.target?.classList?.contains('a-log'))return;
+  fadeLog(e.target);if(beadPointer)trackBead(...beadPointer);
+},true);
+card.addEventListener('focusin',e=>{const row=e.target.closest('.a-row');if(row)setBead(row);});
+card.addEventListener('focusout',e=>{if(!e.relatedTarget?.closest?.('.a-row')&&!beadPointer)setBead(null);});
+
 card.addEventListener('click',e=>{
   if(!logShowing())return;
-  const chip=e.target.closest('.a-chip');
-  if(chip){const key=chip.dataset.pref;chip.classList.toggle('on');invoke('set_alert_preferences',{[key]:!alertPrefsData?.[key]}).then(v=>{alertPrefsData=v;}).catch(()=>{});return;}
-  if(e.target.closest('.a-clear')){invoke('clear_alert_log').catch(()=>{});return;}
+  const toggle=e.target.closest('[data-pref]');
+  if(toggle){
+    const key=toggle.dataset.pref,on=!toggle.classList.contains('on');
+    toggle.classList.toggle('on',on);toggle.setAttribute('aria-pressed',String(on));
+    if(key==='sound')toggle.innerHTML=SOUND_MARK(on);
+    drawInk();
+    invoke('set_alert_preferences',{[key]:on}).then(v=>{alertPrefsData=v;}).catch(()=>{});return;
+  }
+  // If the log cannot be cleared, the drained rows come back rather than staying invisible
+  if(e.target.closest('.a-clear')){drainRows(()=>invoke('clear_alert_log').catch(()=>{if(logShowing())renderCard();}));return;}
   const row=e.target.closest('.a-row');
   if(row)openNotifiedAlert(alertLogData.find(a=>a.id===row.dataset.alert),row.dataset.account);
 });

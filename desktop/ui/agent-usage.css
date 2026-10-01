@@ -38,7 +38,7 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 .handle:focus-visible{outline:1px solid #aaa;outline-offset:-4px;border-radius:50%}
 .h-disc{display:none}
 .h-glyph{width:var(--glyph-size,18px);height:var(--glyph-size,18px);margin:calc(var(--glyph-size,18px) / -2) 0 0 calc(var(--glyph-size,18px) / -2);transform-origin:center;translate:var(--glyph-x,0px) var(--glyph-y,0px)}
-.handle.hover .h-glyph{opacity:var(--disc-glyph,0)}
+.handle.hover .h-glyph,.handle.swapping .h-glyph{opacity:var(--disc-glyph,0)}
 .h-glyph.pin,.h-glyph.bell{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 /* The leading pocket shows one of what it holds (renderLead); the bell swings from its top */
 #pin-handle.face-alerts .h-glyph.pin,#pin-handle:not(.face-alerts) .h-glyph.bell{display:none}

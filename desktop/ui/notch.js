@@ -1023,8 +1023,8 @@ function placeCard(){
   const log=hoverId===ALERTS_ID;
   card.classList.toggle('alert-card',log);
   if(log){
-    const chips=card.querySelector('.a-chips'), style=getComputedStyle(card);
-    const controls=chips?[...chips.children].reduce((sum,b)=>sum+b.offsetWidth,0)+3*parseFloat(getComputedStyle(chips).gap):0;
+    const chips=card.querySelector('.a-chips'), style=getComputedStyle(card), switches=chips?[...chips.querySelectorAll('.a-chip')]:[];
+    const controls=switches.reduce((sum,b)=>sum+b.offsetWidth,0)+Math.max(0,switches.length-1)*(chips?parseFloat(getComputedStyle(chips).gap):0);
     const minimum=controls+parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+2;
     card.style.setProperty('--card-width',Math.min(innerWidth-16,Math.max(minimum,edgeIsVertical()?228:r.width))+'px');
   }

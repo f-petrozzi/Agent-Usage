@@ -198,40 +198,46 @@
   .c-refresh svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   .c-refresh.spinning svg{animation:spin .9s linear infinite}
   @media (prefers-reduced-motion: reduce){.c-refresh.spinning svg{animation:none}}
-  /* The log: the alert switches along the top, then what came in, newest first */
+  /* The log (notify.js): the alert switches as drops of ink along the top, then what came in, newest first */
+  #card.alert-card{max-width:none;margin:0;padding:14px}
   .log-mark{display:inline-grid;place-items:center;width:16px;height:16px;flex:none}
   .log-mark .bell-mark{width:16px;height:16px;fill:none;stroke:var(--ink-2);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-  .a-clear{margin-left:auto;appearance:none;border:0;background:none;padding:2px 0 2px 8px;font:inherit;font-size:12px;font-weight:600;color:var(--ink-dim);cursor:pointer;transition:color .15s ease}
-  .a-clear:hover{color:var(--ink)}
-  .a-chips{display:flex;flex-wrap:nowrap;gap:6px;margin:10px 0 2px}
-  .a-chip{flex:none;appearance:none;height:24px;padding:0 10px;border-radius:12px;border:1px solid #333;background:transparent;font:inherit;font-size:11px;font-weight:600;
-    color:var(--ink-dim);cursor:pointer;transition:background-color .2s ease,color .2s ease,border-color .2s ease,transform .3s cubic-bezier(.34,1.56,.64,1)}
-  .a-chip:hover{border-color:#555;color:var(--ink-2)}
-  .a-chip.on{background:var(--ink);border-color:var(--ink);color:#000}
-  .a-chip:active{transform:scale(.93)}
-  .a-log{display:flex;flex-direction:column;margin:8px -8px 0;max-height:min(228px,calc(100vh - 240px));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable}
+  .a-clear{flex:none;appearance:none;border:0;background:none;padding:2px 0 2px 10px;font:inherit;font-size:12px;font-weight:600;color:var(--ink-dim);cursor:pointer;transition:color .15s ease}
+  .a-clear:hover,.a-clear:focus-visible{color:var(--ink);outline:none}
+  /* Each switch sits in a dark well; its ink is drawn underneath by drawInk. The words are white in difference, so
+     they turn black exactly where the ink has reached, and dim with how little of it there is. */
+  .a-ink{position:relative;isolation:isolate}
+  .a-ink-svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+  .a-well{fill:#1a1a1a}
+  .a-drop{fill:#fff}
+  .a-chips{display:flex;flex-wrap:nowrap;gap:6px;margin:11px 0 4px}
+  .a-chip,.a-sound{position:relative;flex:none;appearance:none;border:0;background:transparent;font:inherit;color:#fff;cursor:pointer;
+    mix-blend-mode:difference;opacity:min(1,calc(.5 + .5 * var(--ink,0) + var(--lift,0)));transition:scale .3s cubic-bezier(.34,1.56,.64,1)}
+  .a-chip{height:24px;padding:0 9px;border-radius:12px;font-size:11px;font-weight:600}
+  .a-sound{width:24px;height:24px;border-radius:12px;padding:0;display:grid;place-items:center}
+  .a-chip:hover,.a-sound:hover{--lift:.3}
+  .a-chip:active,.a-sound:active{scale:.94}
+  .a-chip:focus-visible,.a-sound:focus-visible{outline:1px solid #888;outline-offset:2px}
+  .a-sound-ink{margin-left:auto;display:inline-flex}
+  .a-sound-mark{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .a-log{position:relative;display:flex;flex-direction:column;margin:8px -8px 0;max-height:min(228px,calc(100vh - 240px));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable;
+    mask-image:linear-gradient(to bottom,transparent,#000 var(--fade-top,0px),#000 calc(100% - var(--fade-bottom,0px)),transparent)}
   .a-log > .a-row{flex:none}
-  .a-row{appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;display:grid;
-    grid-template-columns:16px minmax(0,1fr) auto auto;column-gap:8px;row-gap:3px;align-items:baseline;padding:8px;border-radius:10px;transition:background-color .15s ease}
-  #card.alert-card{max-width:none;margin:0;padding:14px}
-  .alert-card .a-chips{gap:4px}
-  .alert-card .a-chip{padding:0 7px}
-  .alert-card .a-row{grid-template-columns:16px minmax(0,1fr) auto}
-  .alert-card .a-word{grid-column:2;grid-row:2}
-  .alert-card .a-when{grid-column:3;grid-row:1}
-  .alert-card .a-detail{grid-column:2 / -1;grid-row:3}
-  .a-row:hover{background:#141414}
-  .log-content.entering .a-row{animation:a-in .44s cubic-bezier(.32,.72,.24,1) both;animation-delay:calc(var(--i) * 26ms + 60ms)}
-  @keyframes a-in{from{opacity:0;translate:0 6px}to{opacity:1;translate:0 0}}
-  .a-glyph{position:relative;align-self:center;width:16px;height:16px;display:grid;place-items:center}
+  /* One bead of ink under the row the pointer is on, run from row to row on springs (stepBead) */
+  .a-bead{position:absolute;left:0;top:0;width:100%;height:0;background:#171717;border-radius:12px;pointer-events:none;opacity:0}
+  .a-row{position:relative;appearance:none;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;display:grid;
+    grid-template-columns:16px minmax(0,1fr) auto;column-gap:9px;row-gap:3px;align-items:baseline;padding:8px;border-radius:12px}
+  .a-row:focus-visible{outline:1px solid #555;outline-offset:-1px}
+  .a-glyph{grid-row:1;position:relative;align-self:center;width:16px;height:16px;display:grid;place-items:center}
   .a-glyph .mark{width:15px;height:15px}.a-glyph .mark svg{width:15px;height:15px;fill:currentColor}
   .a-row.fresh .a-glyph::after{content:"";position:absolute;right:-4px;top:-3px;width:6px;height:6px;border-radius:50%;background:var(--watch);box-shadow:0 0 0 2px #000}
-  .a-name{font-size:12.5px;font-weight:650;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .a-word{font-size:11px;font-weight:650;white-space:nowrap}
-  .a-when{min-width:44px;text-align:right;font-size:11px;color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
-  .a-detail{grid-column:2 / -1;font-size:11.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .a-word{grid-column:2;grid-row:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .a-when{grid-column:3;grid-row:1;padding-left:6px;text-align:right;font-size:11px;color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .a-sub{grid-column:2 / -1;grid-row:2;display:flex;gap:6px;min-width:0;font-size:11.5px;white-space:nowrap}
+  .a-name{flex:none;max-width:62%;overflow:hidden;text-overflow:ellipsis;color:var(--ink-3);font-weight:600}
+  .a-detail{min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--ink-dim)}
   .a-empty{margin-top:12px;font-size:12px;color:var(--ink-dim)}
-  @media (prefers-reduced-motion: reduce){.log-content.entering .a-row{animation:none}.a-chip{transition:none}}
+  @media (prefers-reduced-motion: reduce){.a-chip,.a-sound{transition:none}}
 
   /* ---- The other three edges -------------------------------------------------
      The rules above draw the right-hand edge, the original layout and still the default. Each block
@@ -333,7 +339,7 @@
     transform:rotate(calc(var(--spins,0) * 360deg - 60deg)) scale(.5);transition:opacity .2s,transform .55s cubic-bezier(.34,1.2,.64,1)}
   .handle.hover .h-rest{opacity:0;transform:rotate(var(--arc)) scale(.86)}
   .handle.hover .h-disc{opacity:1;transform:scale(1)}
-  .handle.hover .h-glyph{opacity:1;transform:rotate(calc(var(--spins,0) * 360deg)) scale(1)}
+  .handle.hover .h-glyph,.handle.swapping .h-glyph{opacity:1;transform:rotate(calc(var(--spins,0) * 360deg)) scale(1)}
   /* Carrying: the disc goes dashed and the hand stops turning. it is being held now, not offered */
   #move.armed .h-disc{border:2px dashed var(--ink-2);background:var(--armed)}
   /* The quarter that faces the fillet: up and outward past the far end on the right, and the same two

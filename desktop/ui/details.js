@@ -47,7 +47,9 @@ function drawDetails(){
   detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
   // While it grows or draws back in, the lobe is liquid: blurred and cut back, so its corners round and it swells
   // like a drop leaving the notch. Settled, it is sharp again.
-  const goo=reducedDetails()?0:4.2*Math.sin(Math.PI*Math.min(1,t)),detailFilter=detailSvg.querySelector('#detail-goo');
+  // The log grows and shrinks with what it holds (an alert in, Clear); it is liquid through that too
+  const resizing=hoverId===ALERTS_ID&&detailAim?Math.max(...['u0','u1','v0','v1'].map(k=>Math.abs(detailAim[k]-detailBox[k]))):0;
+  const goo=reducedDetails()?0:Math.max(4.2*Math.sin(Math.PI*Math.min(1,t)),Math.min(3.6,resizing*.06)),detailFilter=detailSvg.querySelector('#detail-goo');
   if(goo>.25&&detailFilter){
     detailFilter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(goo));
     for(const [key,value] of Object.entries({x:Math.min(u0,a0)-60,y:-SHAPE.bleed-60,width:Math.max(u1,a1)-Math.min(u0,a0)+120,height:expandedDepth+SHAPE.bleed+120}))detailFilter.setAttribute(key,n(value));

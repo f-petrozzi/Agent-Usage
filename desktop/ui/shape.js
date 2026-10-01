@@ -42,10 +42,11 @@ const handles=[{el:pinHandle,ink:armStart,value:0,target:0,velocity:0,frame:0,sw
 
 // A round-ended stroke rolls up from the arc's midpoint into the disc. Reversing the same
 // drawing spreads the disc back into its arc, without swapping HTML and SVG silhouettes.
+// A pocket mid-swap keeps its drop out until the new glyph is home and has swung, then melts back like any other.
 function morphHandles(){
   for(const h of handles){
     const to=!absorbing&&shown&&!carrying&&h.el.classList.contains('hover')?1:0;
-    if(absorbing||to===h.target) continue;
+    if(absorbing||h.swapping||to===h.target) continue;
     cancelAnimationFrame(h.frame);h.target=to;
     if(matchMedia('(prefers-reduced-motion: reduce)').matches){h.value=to;h.velocity=0;drawShape();continue;}
     let last=performance.now();
@@ -369,7 +370,7 @@ function swapHandle(i,onHome,onSettled){
       if(t<1||now-h.snapAt<720){h.swapFrame=requestAnimationFrame(step);return;}
       h.swap=1;h.swapping=false;h.snapAt=0;h.swapFrame=0;h.el.classList.remove('swapping');
       h.el.style.setProperty('--sway','0deg');h.el.style.setProperty('--swell','1');h.el.style.setProperty('--glyph-blur','0');
-      drawShape();onSettled?.();
+      drawShape();morphHandles();onSettled?.();
     };
     h.swapFrame=requestAnimationFrame(step);
   });

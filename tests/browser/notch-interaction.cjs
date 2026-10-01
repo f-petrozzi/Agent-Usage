@@ -37,7 +37,7 @@ const answers = {
     const open = () => page.evaluate(() => card.classList.contains('show') ? card.dataset.account : null);
     const [A, B, C] = [await ring('a'), await ring('b'), await ring('c')];
     const refreshes = () => page.evaluate(() => window.__calls.filter(c => c[0] === 'refresh_ring').length);
-    assert.equal(await page.evaluate(() => pinHandle.title), 'Keep on screen', 'the pin says what it does');
+    assert.equal(await page.evaluate(() => pinHandle.getAttribute('aria-label')), 'Keep on screen', 'the pin says what it does (no native tooltips since 3.2.4)');
 
     // A pointer sweeping across the rings opens nothing; one at rest peeks
     await page.mouse.move(A.x - 20, A.y - 30);
@@ -86,7 +86,7 @@ const answers = {
 
     // Kept on screen, a held card stays until put away: by a press elsewhere, or by its own ring again
     await page.evaluate(() => __emit('ui_flags', { notch_visible: true, notch_on_hover: false, tray_visible: false }));
-    assert.equal(await page.evaluate(() => pinHandle.title), 'Let it hide');
+    assert.equal(await page.evaluate(() => pinHandle.getAttribute('aria-label')), 'Let it hide');
     await page.mouse.move(A.x, A.y); await page.waitForTimeout(250); await page.mouse.down(); await page.mouse.up();
     await page.mouse.move(400, 400); await page.waitForTimeout(2200);
     assert.equal(await open(), 'a', 'kept on screen, it stays');

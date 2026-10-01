@@ -13,8 +13,11 @@ const accounts = [
 ];
 const glyphs = {};
 for (const p of ['claude', 'codex', 'gemini']) glyphs[p] = { kind: 'svg', svg: fs.readFileSync(path.join(UI, 'glyphs', p + '.svg'), 'utf8') };
+// The start of yesterday is over a day ago and one calendar day back at any time of day (26 hours ago is two days back
+// just after midnight, and anything under 24 hours reads as hours)
+const yesterdayStart = new Date(new Date(now).setHours(0, 0, 5, 0)).getTime() - 864e5;
 const log = [
-  { id: 'a', at: now - 26 * 3600e3, kind: 'completion', account: 'codex', window: null, level: null, used: null, session: 'homelab', title: '', body: '', read: true },
+  { id: 'a', at: yesterdayStart, kind: 'completion', account: 'codex', window: null, level: null, used: null, session: 'homelab', title: '', body: '', read: true },
   { id: 'b', at: now - 14 * 60e3, kind: 'waiting', account: 'codex', window: null, level: null, used: null, session: 'agent-usage', title: '', body: 'Approve?', read: false },
   { id: 'c', at: now - 2 * 60e3, kind: 'quota', account: 'claude', window: 'session', level: 80, used: .83, session: null, title: '', body: '', read: false },
 ];
@@ -102,6 +105,21 @@ const answers = {
     assert.deepEqual(await page.locator('#card .a-name').allInnerTexts(), ['Claude', 'Codex', 'Codex']);
     assert.equal(await page.locator('#card .a-when').last().innerText(), 'yesterday');
     assert.deepEqual(await page.locator('#card .a-chip.on').allInnerTexts(), ['Usage', 'Waiting']);
+    // The switches are drops of ink: the two that are on run together through a neck; the one that is off is an empty well
+    const ink = () => page.evaluate(() => ({ drops: (card.querySelector('.a-chips .a-drop:not(.a-neck)').getAttribute('d').match(/M/g) || []).length,
+      neck: !!card.querySelector('.a-chips .a-neck').getAttribute('d'), wells: (card.querySelector('.a-chips .a-well').getAttribute('d').match(/M/g) || []).length,
+      inks: [...card.querySelectorAll('.a-chip')].map(b => +getComputedStyle(b).getPropertyValue('--ink')) }));
+    assert.deepEqual(await ink(), { drops: 2, neck: true, wells: 3, inks: [1, 1, 0] });
+    assert.equal(await page.evaluate(() => getComputedStyle(card.querySelector('.a-chip')).mixBlendMode), 'difference', 'words invert where the ink is');
+    // Sound is its own drop in the title row, not one of the alert kinds
+    assert.deepEqual(await page.evaluate(() => [card.querySelectorAll('.a-chips .a-chip').length, !!card.querySelector('.c-head .a-sound[data-pref="sound"][aria-pressed="false"]')]), [3, true]);
+    // One bead of ink lies under the row the pointer is on and runs to the next one
+    const rowBox = await page.locator('#card .a-row').nth(1).boundingBox();
+    await page.mouse.move(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2); await page.waitForTimeout(700);
+    const bead = await page.evaluate(() => { const b = card.querySelector('.a-bead').getBoundingClientRect(), r = card.querySelectorAll('.a-row')[1].getBoundingClientRect(); return [Math.round(b.top - r.top), Math.round(b.height - r.height), getComputedStyle(card.querySelector('.a-bead')).opacity]; });
+    assert.deepEqual(bead, [0, 0, '1'], 'the bead settles exactly under the row');
+    await page.mouse.move(pocket.x, pocket.y); await page.waitForTimeout(500);
+    assert.equal(await page.evaluate(() => getComputedStyle(card.querySelector('.a-bead')).opacity), '0', 'and drains away off the list');
     await page.screenshot({ path: path.join(OUT, 'log.png') });
     // Held over the pocket, the log stays; seen, it is marked read and the dot goes
     await page.mouse.move(pocket.x + 2, pocket.y + 1); await page.waitForTimeout(600);
@@ -110,9 +128,21 @@ const answers = {
     assert.equal(await page.evaluate(() => pinHandle.classList.contains('unread')), false);
     assert.equal(await page.locator('#card .log-content.entering').count(), 0, 'a refresh while open does not replay the entrance');
 
-    // A switch changes the alert preference it names
+    // A switch changes the alert preference it names; its drop wells up and reaches the one beside it
     await page.locator('#card .a-chip', { hasText: 'Finished' }).click(); await page.waitForTimeout(100);
     assert.deepEqual(await page.evaluate(() => window.__calls.filter(c => c[0] === 'set_alert_preferences').at(-1)[1]), { completion: true });
+    await page.waitForTimeout(900);
+    assert.deepEqual(await ink(), { drops: 3, neck: true, wells: 3, inks: [1, 1, 1] });
+    assert.equal(await page.evaluate(() => (card.querySelector('.a-chips .a-neck').getAttribute('d').match(/M/g) || []).length), 2, 'three on in a row are one body');
+    // Turned off, the middle one draws in and parts from both neighbours, and the goo is gone once it is still
+    await page.evaluate(() => { window.__parted = 0; window.__gooed = false; const t0 = performance.now(); const f = () => { const d = card.querySelector('.a-chips .a-neck')?.getAttribute('d') || ''; __parted = Math.max(__parted, 2 - (d.match(/M/g) || []).length); if (card.querySelector('.a-chips .a-drops')?.getAttribute('filter')) __gooed = true; if (performance.now() - t0 < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await page.locator('#card .a-chip', { hasText: 'Waiting' }).click(); await page.waitForTimeout(1000);
+    assert.deepEqual(await page.evaluate(() => [__parted, __gooed, card.querySelector('.a-chips .a-drops').getAttribute('filter')]), [2, true, null]);
+    assert.deepEqual((await ink()).inks, [1, 0, 1]);
+    await page.locator('#card .a-chip', { hasText: 'Waiting' }).click(); await page.waitForTimeout(900);
+    await page.locator('#card .a-sound').click(); await page.waitForTimeout(100);
+    assert.deepEqual(await page.evaluate(() => [window.__calls.filter(c => c[0] === 'set_alert_preferences').at(-1)[1], card.querySelector('.a-sound').getAttribute('aria-pressed')]), [{ sound: true }, 'true']);
+    await page.locator('#card .a-sound').click(); await page.waitForTimeout(100);
     // An alert that arrives while the log is open lands in it rather than opening over it
     await page.evaluate(() => {
       const e = { id: 'd', at: Date.now(), kind: 'waiting', account: 'claude', window: null, level: null, used: null, session: 'homelab', title: '', body: '', read: false };
@@ -145,7 +175,11 @@ const answers = {
     assert.equal(await page.evaluate(()=>__calls.filter(c=>c[0]==='open_working_session').length),2);
     // Clear empties it
     await page.evaluate(() => openAlertLog()); await page.waitForTimeout(300);
-    await page.locator('#card .a-clear').click(); await page.waitForTimeout(200);
+    // Clear draws the rows up into the title row before the log is emptied
+    await page.locator('#card .a-clear').click(); await page.waitForTimeout(120);
+    assert.equal(await page.evaluate(() => window.__calls.some(c => c[0] === 'clear_alert_log')), false, 'still draining');
+    assert.ok(await page.evaluate(() => card.querySelector('.a-row').getAnimations().length > 0));
+    await page.waitForTimeout(400);
     assert.equal(await page.locator('#card .a-empty').innerText(), 'No alerts this week');
     await page.mouse.move(640, 400); await page.waitForTimeout(1300);
 
@@ -161,6 +195,23 @@ const answers = {
     await page.evaluate(() => __emit('alert_log', [{ id: 'e', at: Date.now(), kind: 'quota', account: 'codex', window: 'primary', level: 80, used: .81, session: null, title: '', body: '', read: false }]));
     await page.waitForTimeout(60);
     assert.ok(await page.evaluate(() => pinHandle.classList.contains('unread') && document.getElementById('notch-dot').getAnimations().length > 0));
+
+    // Scroll, then leave before the swap is done: the new glyph still arrives and swings on its drop, and only then
+    // does the drop melt back into an arm (it used to hang there blank, then pop into the arm in one frame)
+    await page.mouse.move(pocket.x, pocket.y); await page.waitForTimeout(800);
+    await page.evaluate(() => { window.__leave = []; const t0 = performance.now(); const f = () => { const h = handles[0], g = pinHandle.querySelector(pinHandle.classList.contains('face-alerts') ? '.h-glyph.bell' : '.h-glyph.pin');
+      __leave.push({ value: h.value, swapping: h.swapping, glyph: +getComputedStyle(g).opacity, width: +(armStart.getAttribute('stroke-width') || 0) }); if (performance.now() - t0 < 2600) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    await page.mouse.wheel(0, 100); await page.waitForTimeout(120);
+    await page.mouse.move(640, 400); await page.waitForTimeout(2700);
+    const leave = await page.evaluate(() => __leave), swapping = leave.filter(s => s.swapping);
+    assert.ok(swapping.length > 20 && swapping.every(s => s.value > .95), 'the drop stays out through the whole swap: ' + JSON.stringify(swapping.map(s => +s.value.toFixed(2))));
+    assert.ok(swapping.at(-1).glyph > .95, 'with its new glyph showing when the swap ends');
+    const after = leave.slice(leave.indexOf(swapping.at(-1)) + 1);
+    assert.ok(after.at(-1).value === 0 && Math.max(...after.map((s, i) => i ? s.width - after[i - 1].width : 0).map(Math.abs)) < 8, 'then melts back into the arm, never in one jump');
+    await page.mouse.wheel(0, 0);
+    await page.mouse.move(pocket.x, pocket.y); await page.waitForTimeout(700); await page.mouse.wheel(0, 100); await page.waitForTimeout(1800);
+    await page.mouse.move(640, 400); await page.waitForTimeout(600);
+    assert.equal(await page.evaluate(() => leadFace()), 'pin');
 
     // Settings decide what the pocket holds: one thing means nothing to scroll through
     await page.evaluate(() => __emit('notch_buttons', { pin: false, alerts: true })); await page.waitForTimeout(100);
@@ -182,14 +233,14 @@ const answers = {
       assert.ok(Math.max(...tops)-Math.min(...tops)<1,'all four switches stay in one row');
       if (edge === 'top' || edge === 'bottom') {
         assert.ok(geometry.c.w>=geometry.r.w&&geometry.c.w<300, 'uses the notch width where readable: ' + JSON.stringify(geometry));
-        assert.ok(Math.abs(geometry.c.x + geometry.c.w / 2 - geometry.r.x - geometry.r.w / 2) < 2, 'centers on the notch');
+        assert.ok(Math.abs(geometry.c.x + geometry.c.w / 2 - geometry.r.x - geometry.r.w / 2) < 2, 'centers on the notch: ' + JSON.stringify(geometry));
       } else {
         assert.ok(geometry.c.w>=228&&geometry.c.w<300);
         assert.ok(Math.abs(geometry.c.y - geometry.r.y + 12) < 2, 'preserves top alignment');
       }
       assert.equal(await page.locator('[title], svg title').count(), 0, 'tooltips removed, including generated controls');
       assert.equal(await page.locator('.a-row').count(),40,'the entire retained history remains reachable');
-      const history=await page.locator('.a-log').boundingBox();assert.ok(history.height<=228,'history stops at the default notch length');
+      const history=await page.locator('.a-log').boundingBox();assert.ok(history.height<=228.5,'history stops at the default notch length: '+JSON.stringify(history)+edge);
       const titleTop=await page.locator('.c-head').evaluate(e=>e.getBoundingClientRect().top);
       await page.mouse.move(history.x+history.width/2,history.y+history.height/2);
       await page.mouse.wheel(0,400);
@@ -209,6 +260,6 @@ const answers = {
       await page.screenshot({ path: path.join(OUT, 'log-' + edge + '.png') });
     }
     assert.deepEqual(errors, []);
-    console.log('Passed: pocket holds pin and log, scroll swaps with one swap at a time, press follows the face, log grows liquid from the pocket end, read on sight, switches, alert into an open log, row to usage, clear, scroll back, unread dot, settings choose the faces.');
+    console.log('Passed: pocket holds pin and log, scroll swaps with one swap at a time, a swap left mid-way finishes then melts home, press follows the face, log grows liquid from the pocket end, read on sight, ink switches join and part, sound drop, row bead, alert into an open log, row to usage, clear drains, scroll back, unread dot, settings choose the faces.');
   } finally { await browser.close(); }
 })().catch(e => { console.error(e); process.exitCode = 1; });
