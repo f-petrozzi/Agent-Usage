@@ -240,22 +240,69 @@ function paintBell(){
   pinHandle.classList.toggle('unread',unreadCount()>0&&leadFaces.includes('alerts'));
   renderLead();placeUnreadDot();
 }
-// The unread dot occupies existing space inside the bezel corner. It shrinks there during a pocket swap,
-// then appears only on the revealed bell. The pin never wears a notification badge.
+// The unread dot rests in the notch's leading front corner, the rounded one away from the screen edge (shape.js
+// works out where). Under the pointer it rides the bell drawn out of that corner and settles on its shoulder. During a
+// pocket swap it shrinks, then appears only on the revealed bell; the pin never wears it. The open log replaces it.
+const SPROUT_BADGE=[.34,-.39]; // the bell's shoulder, in glyph sizes from its centre (where .bell-dot sits on the pocket's bell)
+const sproutButton=document.getElementById('alert-sprout');
 function placeUnreadDot(){
   const dot=document.getElementById('notch-dot');if(!dot)return;
-  const r=pill.getBoundingClientRect(),o=document.getElementById('root').getBoundingClientRect();
-  const x=notchEdge==='right'?r.right-10:r.left+10, y=notchEdge==='bottom'?r.bottom-10:r.top+10;
-  Object.assign(dot.style,{left:x-o.left+'px',top:y-o.top+'px'});
   const unread=unreadCount()>0&&leadFaces.includes('alerts'), swapping=handles[0].swapping;
   // Leaving, it stays on a bell that is still out; a bell melting home after a swap does not pick it up on the way
   const bell=leadFace()==='alerts'&&!logShowing()&&(hovered==='pin'||handles[0].value>.65&&pinHandle.classList.contains('bell-unread'));
-  dot.classList.toggle('on',unread&&!bell&&!swapping);
+  const g=sprout.geo, on=unread&&!bell&&!swapping&&!logShowing()&&!!g;
+  dot.classList.toggle('on',on);
   pinHandle.classList.toggle('bell-unread',unread&&bell&&!swapping);
+  if(sprout.available!==on){sprout.available=on;sproutButton.tabIndex=on?0:-1;}
+  morphSprout();
+  if(!g)return;
+  const o=document.getElementById('root').getBoundingClientRect(), s=Math.max(0,g.s), k=g.rho/g.Rb;
+  // Out to the drop first, then over to the shoulder as the bell sharpens; stretched along the way while it travels
+  const ride=smooth(s/.55), badge=smooth((s-.35)/.5);
+  const bx=g.D[0]+SPROUT_BADGE[0]*g.glyph*k*badge, by=g.D[1]+SPROUT_BADGE[1]*g.glyph*k*badge;
+  const x=g.P0[0]+(bx-g.P0[0])*ride, y=g.P0[1]+(by-g.P0[1])*ride;
+  const speed=Math.abs(sprout.velocity)*Math.hypot(g.P1[0]-g.P0[0],g.P1[1]-g.P0[1]), stretch=matchMedia('(prefers-reduced-motion: reduce)').matches?0:Math.min(.45,speed/900);
+  Object.assign(dot.style,{left:x-o.left+'px',top:y-o.top+'px',
+    transform:stretch>.01?`rotate(${Math.atan2(g.P1[1]-g.P0[1],g.P1[0]-g.P0[0]).toFixed(3)}rad) scale(${(1+stretch).toFixed(3)},${(1-stretch*.4).toFixed(3)})`:''});
+  dot.style.setProperty('--dot-ring',smooth((s-.55)/.35).toFixed(3));
+  // The bell's button sits where the bell comes to rest; its glyph rides the drop there
+  const box=g.Rb+5, st=sproutButton.style;
+  Object.assign(st,{left:g.P1[0]-o.left-box+'px',top:g.P1[1]-o.top-box+'px',width:2*box+'px',height:2*box+'px'});
+  st.setProperty('--glyph-x',`${(g.D[0]-g.P1[0]).toFixed(2)}px`);st.setProperty('--glyph-y',`${(g.D[1]-g.P1[1]).toFixed(2)}px`);
+  st.setProperty('--sprout-size',g.glyph.toFixed(2)+'px');st.setProperty('--swell',k.toFixed(3));
+  st.setProperty('--glyph-blur',(2.4*(1-smooth(s/.9))).toFixed(2));st.setProperty('--sprout-on',(smooth((s-.42)/.4)).toFixed(3));
+  const since=sprout.snapAt?(performance.now()-sprout.snapAt)/1000:9;
+  st.setProperty('--sway',since<1.2?`${(16*Math.exp(-since/.26)*Math.sin(2*Math.PI*since/.38)).toFixed(2)}deg`:'0deg');
+  sproutButton.classList.add('placed');
+  const count=unreadCount(),label=count?`Alerts, ${count} new`:'Alerts';if(sproutButton.getAttribute('aria-label')!==label)sproutButton.setAttribute('aria-label',label);
 }
+// The bell under the dot: hit and reported as hot. At rest only the dot itself; once it is coming out, the way from the
+// dot to the bell, so the pointer can follow it out; drawn back in, the drop where it is now.
+function sproutHit(x,y){
+  const g=sprout.geo;if(!g||!sprout.available)return false;
+  const capsule=(a,b,radius)=>{const dx=b[0]-a[0],dy=b[1]-a[1],t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/(dx*dx+dy*dy||1)));
+    return Math.hypot(x-a[0]-dx*t,y-a[1]-dy*t)<=radius;};
+  if(hovered==='sprout')return capsule(g.P0,g.P1,g.Rb+5);
+  if(sprout.value>.1)return capsule(g.P0,g.D,Math.max(10,g.rho+4));
+  return Math.hypot(x-g.P0[0],y-g.P0[1])<=10;
+}
+function sproutRect(){
+  const g=sprout.geo;if(!g||!(hovered==='sprout'||sprout.value>.02))return null;
+  const b=g.Rb+5,x0=Math.min(g.P0[0]-10,g.P1[0]-b),y0=Math.min(g.P0[1]-10,g.P1[1]-b);
+  return [x0,y0,Math.max(g.P0[0]+10,g.P1[0]+b)-x0,Math.max(g.P0[1]+10,g.P1[1]+b)-y0];
+}
+sproutButton.addEventListener('focus',()=>{sprout.focused=sproutButton.matches(':focus-visible');morphSprout();});
+sproutButton.addEventListener('blur',()=>{sprout.focused=false;morphSprout();});
+sproutButton.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'alerts'}).catch(()=>{});});
+// A press anywhere on it (the dot, or the bell drawn out of it) opens the log, before the ring underneath can take it
+document.addEventListener('pointerdown',e=>{
+  if(e.button!==0||hovered!=='sprout')return;
+  e.preventDefault();e.stopPropagation();callq('activate_control',{control:'alerts'}).catch(()=>{});
+},true);
 function ringBell(always=false){
   if(matchMedia('(prefers-reduced-motion: reduce)').matches||(!always&&!unreadCount()))return;
-  if(leadFace()==='alerts'){
+  if(sprout.value>.5)sproutButton.querySelector('.sprout-glyph').animate([{rotate:'0deg'},{rotate:'20deg'},{rotate:'-15deg'},{rotate:'10deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)',composite:'add'});
+  else if(leadFace()==='alerts'){
     pinHandle.querySelector('.h-glyph.bell')?.animate([{rotate:'0deg'},{rotate:'20deg'},{rotate:'-15deg'},{rotate:'10deg'},{rotate:'-5deg'},{rotate:'2deg'},{rotate:'0deg'}],{duration:1100,easing:'cubic-bezier(.22,1,.36,1)'});
   }
   const dot=pinHandle.classList.contains('bell-unread')?pinHandle.querySelector('.bell-dot'):document.getElementById('notch-dot');

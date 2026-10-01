@@ -72,8 +72,10 @@ made by the app.
 
 The notch keeps them too (3.1.8): the pin's pocket holds more than one control. Point
 at the pin and scroll, and it flows back into the notch while a bell buds out of the
-same flare; scroll again for the pin. A yellow dot inside a notch corner means an alert you
-have not seen yet: one that came and went without being pointed at. Press the bell and the last week of alerts (up to 40)
+same flare; scroll again for the pin. A yellow dot in the notch's rounded front corner, at the
+pin's end, means an alert you have not seen yet: one that came and went without being pointed at.
+Point at the dot and the bell is drawn out of that corner with the dot on its shoulder, a second
+way to the same log. Press either bell and the last week of alerts (up to 40)
 grows out of that end of the notch, newest first, with the alert switches (Usage,
 Waiting, Finished, Sound) along the top. A row opens its linked VS Code conversation, or that account's usage when no link is available; Clear empties the log. The log fits the notch's width on top/bottom edges where readable and stays centered beneath/above it. Side edges retain a compact, top-aligned log. Settings → Appearance → Controls chooses what the pocket holds.
 The notch's expansions, alerts included, are liquid while they grow and sharp at rest.
@@ -178,3 +180,9 @@ Each row reads like the notification it came from: the status word in its colour
 Scrolling the pin/bell pocket and then moving away no longer leaves a blank black disc that pops into the arm: the swap finishes with its new glyph, swings, and only then melts back into the arm the way a hover ends. The unread dot no longer flashes onto a bell that is on its way home.
 
 Validation: 44 desktop checks; every browser suite, including new checks for joined and parted switches, the sound drop, the row bead, the Clear drain and a swap left mid-way (drop out for the whole swap with its glyph showing, then no frame-to-frame jump as it melts home). Reduced motion makes every change immediate.
+
+## The bell grows out of the unread dot (3.3.1)
+
+The unread dot has moved off the bezel to the notch's rounded front corner at the pin's end, centred in that rounding, so it needs no extra room. Pointing at it is a second way to the alert log beside scrolling the pin: the corner swells, and a drop of the notch's ink is drawn out along the corner on a strand that thins and parts, the same goo as the pin pocket. The bell sharpens on the drop and swings from the snap while the yellow dot stretches as it rides out and settles on the bell's shoulder. Moving away, the corner reaches out, swallows the drop, and the dot slides home. Pressing the bell opens the log, which grows over that corner and takes the bell in with it. Near a screen corner the bell turns toward the notch's front so it stays on screen.
+
+Validation: every browser suite, plus `tests/browser/notch-sprout.cjs` for the rest position on all four edges, the goo, strand, snap and swing, the dot's ride onto the bell, hit and control rectangles while the bell is out, press to log without pressing the ring underneath, the swallow on leave, quick passes, keyboard focus, a notch carried near a screen corner and reduced motion (immediate, never liquid).

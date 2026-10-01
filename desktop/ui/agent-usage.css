@@ -45,10 +45,19 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 .h-glyph.bell{transform-origin:50% 16%}
 /* Both pockets' glyphs ride their drop: its size, a softness while it moves, a swing from the snap (shape.js) */
 .handle .h-glyph{scale:var(--swell,1);rotate:var(--sway,0deg);filter:blur(calc(var(--glyph-blur,0) * 1px))}
-/* Unread alerts live inside a notch corner; the badge moves onto the bell when its pocket is revealed. */
+/* Unread alerts rest in the notch's leading front corner; the badge moves onto the bell when its pocket is revealed,
+   and rides the bell drawn out of that corner (shape.js drawSprout) to sit on its shoulder. */
 .notch-dot,.bell-dot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--watch,#F2FF00);pointer-events:none;
   scale:0;transition:scale .24s cubic-bezier(.34,1.56,.64,1)!important}
-.notch-dot{z-index:4;margin:-3.5px 0 0 -3.5px}
+.notch-dot{z-index:5;margin:-3.5px 0 0 -3.5px;box-shadow:0 0 0 calc(var(--dot-ring,0) * 2px) #000}
+/* The bell's button only takes focus and the press bounce; hover and press are worked out from the dot's geometry */
+.sprout{position:absolute;z-index:4;display:none;padding:0;border:0;border-radius:50%;background:none;color:var(--ink-2);font:inherit;appearance:none;pointer-events:none}
+.sprout.placed{display:block}
+.sprout:focus-visible{outline:1px solid #aaa;outline-offset:-3px}
+.sprout-glyph{position:absolute;left:50%;top:50%;width:var(--sprout-size,17px);height:var(--sprout-size,17px);margin:calc(var(--sprout-size,17px) / -2) 0 0 calc(var(--sprout-size,17px) / -2);
+  fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transform-origin:50% 16%;
+  translate:var(--glyph-x,0px) var(--glyph-y,0px);scale:var(--swell,1);rotate:var(--sway,0deg);filter:blur(calc(var(--glyph-blur,0) * 1px));opacity:var(--sprout-on,0)}
+#root:not(.visible) .sprout-glyph,#root.carrying .sprout-glyph{opacity:0}
 .notch-dot.on,#pin-handle.face-alerts.bell-unread .bell-dot{scale:1}
 .bell-dot{margin:-12px 0 0 4px;box-shadow:0 0 0 2px #000;translate:var(--glyph-x,0px) var(--glyph-y,0px)}
 #root:not(.visible) .notch-dot,#root:not(.visible) .bell-dot,#root.carrying .notch-dot,#root.carrying .bell-dot{scale:0}

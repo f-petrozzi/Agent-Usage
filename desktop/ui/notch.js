@@ -1134,8 +1134,11 @@ function flushHot(){
   const controls={};
   if(placeHandles()){
     controls.settings=rectOf(orb);rects.push(controls.settings);
-    if(showPin){const lead=rectOf(pinHandle);controls[leadFace()]=lead;rects.push(lead);} // named for what the pocket holds
+    if(showPin&&hovered!=='sprout'){const lead=rectOf(pinHandle);controls[leadFace()]=lead;rects.push(lead);} // named for what the pocket holds
   }
+  // The bell drawn out of the unread dot is a second way to the log; while it is out, a press there is the log's
+  const sproutBox=typeof sproutRect==='function'?sproutRect():null;
+  if(sproutBox){rects.push(sproutBox);if(hovered==='sprout')controls.alerts=sproutBox;}
   if(typeof sliverRects==='function')rects.push(...sliverRects());
   const data={rects,controls,expanded:open,alerting:typeof slivering==='function'&&slivering()};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
@@ -1389,10 +1392,12 @@ function placeHandles(){
   if(!showPin)pinHandle.classList.remove('placed','hover');return true;
 }
 function near(at,x,y){return !!at&&Math.abs(x-at.x)<=at.reach&&Math.abs(y-at.y)<=at.reach;}
-function onHandle(x,y){return near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;}
+// The unread dot's bell comes first: it sits in the notch's corner, inside the pin's reach on some edges
+function onHandle(x,y){return typeof sproutHit==='function'&&sproutHit(x,y)?'sprout':near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;}
 function setHovered(which){
   const was=hovered;hovered=which;orb.classList.toggle('hover',which==='orb');pinHandle.classList.toggle('hover',which==='pin');
   if(was!==which&&typeof morphHandles==='function') morphHandles();
+  if(was!==which&&(was==='sprout'||which==='sprout'))reportHot();
 }
 orb.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'settings'}).catch(()=>{});});
 orb.addEventListener('click',e=>{if(e.detail===0)callq('activate_control',{control:'settings'}).catch(()=>{});});
@@ -1407,7 +1412,7 @@ function pressIn(el){
 listen('control_pressed',e=>{
   if(e.payload==='settings'){orb.style.setProperty('--spins',++orbSpins);pressIn(orb);}
   if(e.payload==='pin')pressIn(pinHandle);
-  if(e.payload==='alerts'){pressIn(pinHandle);if(typeof openAlertLog==='function')openAlertLog();}
+  if(e.payload==='alerts'){pressIn(hovered==='sprout'?document.getElementById('alert-sprout'):pinHandle);if(typeof openAlertLog==='function')openAlertLog();}
 });
 /* The leading pocket holds more than one control: pin, then the alert log, each there unless turned off in
    Settings. Scrolling over it swaps them (swapHandle in shape.js), the one in the pocket flowing back into the

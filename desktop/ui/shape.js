@@ -39,6 +39,13 @@ let armsOut=0, armsFrame=0;
 let absorbing=false;
 // swap: how far a handle is out of its pocket while it changes what it holds (1 out, 0 flowed back into the notch)
 const handles=[{el:pinHandle,ink:armStart,value:0,target:0,velocity:0,frame:0,swap:1,swapping:false,swapFrame:0},{el:orb,ink:armEnd,value:0,target:0,velocity:0,frame:0,swap:1,swapping:false,swapFrame:0}];
+// The unread dot's bell (drawSprout): its own goo, a band of the notch round the corner it leaves, a strand and a drop
+shapeSvg.querySelector('defs').insertAdjacentHTML('beforeend',`${gooDefinition('goo-sprout')}<clipPath id="sprout-clip"><rect/></clipPath>`);
+shapeBody.insertAdjacentHTML('beforeend','<g class="sprout-liquid"><path class="sprout-band" clip-path="url(#sprout-clip)"/><path class="sprout-neck"/><path class="sprout-drop"/></g>');
+const sproutInk={group:shapeSvg.querySelector('.sprout-liquid'),band:shapeSvg.querySelector('.sprout-band'),neck:shapeSvg.querySelector('.sprout-neck'),
+  drop:shapeSvg.querySelector('.sprout-drop'),clip:shapeSvg.querySelector('#sprout-clip rect'),filter:shapeSvg.querySelector('#goo-sprout')};
+// value: how far the bell is out of the corner (0 the dot at rest, 1 the bell out; the spring takes it a little past)
+const sprout={value:0,target:0,velocity:0,frame:0,snapAt:0,available:false,focused:false,geo:null};
 
 // A round-ended stroke rolls up from the arc's midpoint into the disc. Reversing the same
 // drawing spreads the disc back into its arc, without swapping HTML and SVG silhouettes.
@@ -61,6 +68,29 @@ function morphHandles(){
     };
     h.frame=requestAnimationFrame(step);
   }
+  morphSprout();
+}
+// The bell under the unread dot: out on a lively spring that pops a little past, back on a quick, nearly flat one.
+// It keeps its frames while the bell still swings from the snap.
+function morphSprout(){
+  const to=sprout.available&&shown&&!carrying&&!absorbing&&!passage&&(hovered==='sprout'||sprout.focused)?1:0;
+  if(to===sprout.target)return;
+  cancelAnimationFrame(sprout.frame);sprout.target=to;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){sprout.value=to;sprout.velocity=0;sprout.frame=0;drawShape();reportHot();return;}
+  let last=performance.now();
+  const step=now=>{
+    const dt=Math.min(.032,(now-last)/1000);last=now;
+    const omega=2*Math.PI/(to?.78:.56),damping=to?.6:.9;
+    sprout.velocity+=(-omega*omega*(sprout.value-to)-2*damping*omega*sprout.velocity)*dt;
+    sprout.value+=sprout.velocity*dt;
+    const settled=Math.abs(sprout.value-to)<.002&&Math.abs(sprout.velocity)<.025;
+    if(settled){sprout.value=to;sprout.velocity=0;}
+    drawShape();
+    if(sprout.target!==to)return; // turned round while drawing: the new spring has the frames now
+    sprout.frame=!settled||sprout.snapAt&&now-sprout.snapAt<1200?requestAnimationFrame(step):0;
+    if(!sprout.frame){sprout.snapAt=0;drawShape();reportHot();}
+  };
+  sprout.frame=requestAnimationFrame(step);
 }
 // A corner being rounded ({corner, first, second, before, after}), and how close to one the notch is (0 to 1)
 let passage=null, cornerNear=0, pillTransform='';
@@ -121,6 +151,57 @@ function drawStraight(){
     if(h.swapping){drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetreat,w,hgt);return;}
     drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,detailRetreat,w,hgt,grown);
   });
+  drawSprout(u0,d,r,proportions,grown);
+}
+
+/* The unread dot's own way to the log. The dot rests in the notch's leading front corner, on the bisector of its
+   rounding. Under the pointer the corner swells and a drop of the notch's ink is drawn out along that bisector on a
+   strand that pinches and parts; the bell sharpens on the drop and swings from the snap, and the dot rides out with
+   it to settle on the bell's shoulder. Let go, the notch reaches out a strand, swallows the drop and the dot slides
+   home. Where the screen's corner is close, the way out turns toward the notch's front so the bell stays on screen.
+   notify.js offers it (an unread dot in the corner) and places the dot from `sprout.geo`. */
+const SPROUT={rest:10,gap:4,snap:.72};
+function clearSprout(){
+  for(const el of [sproutInk.band,sproutInk.neck,sproutInk.drop])el.removeAttribute('d');
+  sproutInk.group.removeAttribute('filter');sprout.geo=null;
+}
+function drawSprout(u0,d,r,proportions,grown){
+  if(grown<.5){clearSprout();return;}
+  const ctm=shapeBody.getScreenCTM();if(!ctm){clearSprout();return;}
+  const page=p=>{const q=new DOMPoint(p[0],p[1]).matrixTransform(ctm);return [q.x,q.y];};
+  const s=sprout.value,Rb=proportions.disc*.4,stroke=proportions.stroke*grown,len=r+SPROUT.gap+Rb,C=[u0+r,d-r];
+  // Along the edge, page space runs the same way as u, so the room before the screen's corner is one subtraction
+  const along=p=>page(p)[edgeIsVertical()?1:0], room=along(C)-Rb-6;
+  const theta=Math.asin(Math.max(0,Math.min(Math.SQRT1_2,room/len)));
+  const nv=[-Math.sin(theta),Math.cos(theta)], at=k=>[C[0]+nv[0]*k,C[1]+nv[1]*k];
+  const rho0=Rb*.28, rho=Rb*(.28+.72*smooth(s)), k0=r-rho0-1, D=at(k0+(len-k0)*s);
+  const P0=at(Math.max(0,r-SPROUT.rest)), P1=at(len);
+  sprout.geo={P0:page(P0),P1:page(P1),D:page(D),rho,Rb,s,glyph:proportions.glyph*.84};
+  if(s<.004){for(const el of [sproutInk.band,sproutInk.neck,sproutInk.drop])el.removeAttribute('d');sproutInk.group.removeAttribute('filter');return;}
+  sproutInk.drop.setAttribute('d',`M${n(D[0]-rho)} ${n(D[1])}a${n(rho)} ${n(rho)} 0 1 0 ${n(2*rho)} 0a${n(rho)} ${n(rho)} 0 1 0 ${n(-2*rho)} 0Z`);
+  sproutInk.band.setAttribute('d',partA.getAttribute('d'));
+  for(const [key,value] of Object.entries({x:u0-4,y:d-r-14,width:r+44,height:r+28}))sproutInk.clip.setAttribute(key,n(value));
+  // The strand: joined while the drop is drawn off; going out, past the snap its tail whips back into the corner;
+  // coming home, the corner reaches out to take the drop before it is swallowed
+  const outward=sprout.target===1, joined=s<=SPROUT.snap, src=at(r-stroke*1.1);
+  let tip=1, end=D;
+  if(!joined){if(outward){tip=1-smooth((s-SPROUT.snap)/.16);end=at(k0+(len-k0)*SPROUT.snap);}else tip=smooth((1-Math.min(1,s))/(1-SPROUT.snap));}
+  if(tip>.02){
+    const thin=1-smooth((s-.3)/(SPROUT.snap-.3));
+    const base=stroke*1.35,pinch=Math.max(.5,stroke*.95*thin),tail=joined?rho*.78:Math.max(.5,stroke*.35);
+    const half=f=>f<.55?base+(pinch-base)*smooth(f/.55):pinch+(tail-pinch)*smooth((f-.55)/.45);
+    const dx=end[0]-src[0],dy=end[1]-src[1],l=Math.hypot(dx,dy)||1,g=[dx/l,dy/l],left=[],right=[];
+    for(let k=0;k<=20;k++){const f=k/20,t=f*tip,q=[src[0]+dx*t,src[1]+dy*t],hw=half(f);
+      left.push(`${n(q[0]-g[1]*hw)} ${n(q[1]+g[0]*hw)}`);right.push(`${n(q[0]+g[1]*hw)} ${n(q[1]-g[0]*hw)}`);}
+    sproutInk.neck.setAttribute('d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
+  }else sproutInk.neck.removeAttribute('d');
+  // Liquid while it moves, sharp once it is out or home
+  if(outward&&s>SPROUT.snap&&!sprout.snapAt)sprout.snapAt=performance.now();
+  if(!outward||s<.5)sprout.snapAt=0;
+  const blur=stroke*.72*Math.pow(Math.sin(Math.PI*Math.min(1,s)),.7);
+  sproutInk.filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(blur));
+  for(const [key,value] of Object.entries({x:C[0]-100,y:C[1]-100,width:200,height:200}))sproutInk.filter.setAttribute(key,n(value));
+  if(blur>.3)sproutInk.group.setAttribute('filter','url(#goo-sprout)');else sproutInk.group.removeAttribute('filter');
 }
 
 /* The resting arm is an inset of the notch's own outline round its pocket: a leg along the screen edge, a corner
@@ -232,6 +313,7 @@ function drawPassage(){
   part(partB,second,after,before,atStart[second]);
   armStart.removeAttribute('d'); armEnd.removeAttribute('d');
   for(const el of [...necks,...bands]) el.removeAttribute('d');
+  clearSprout();
   const share=Math.min(1,4*Math.min(before,after)/L), blur=D*.22*share*share*(3-2*share);
   const cx=corner==='tr'||corner==='br'?W:0, cy=corner==='br'||corner==='bl'?H:0;
   setGoo(blur,cx-L-120,cy-L-120,2*L+240,2*L+240);
@@ -251,6 +333,7 @@ function stowShape(){
     h.value=h.target=h.velocity=0;h.swap=1;h.swapping=false;h.snapAt=0;
     h.el.classList.remove('hover','swapping');
   }
+  cancelAnimationFrame(sprout.frame);sprout.frame=0;sprout.value=sprout.target=sprout.velocity=0;sprout.snapAt=0;
   setOpenness(0);
 }
 function openShape(){

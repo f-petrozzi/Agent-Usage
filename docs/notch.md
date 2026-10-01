@@ -190,7 +190,7 @@ The bundled Agent Usage Link helper is installed on the first terminal-linked cl
 
 Old completion rows try a bounded `--session-links` query, matching account, name and one recorded turn end within 15 seconds of the alert. The query exports no message bodies. Missing/ambiguous links and launch failures display an explanation. Update the collector for historical recovery and terminal identities. Actual Windows focus and first-click VSIX installation require a device check.
 
-The unread dot uses existing space inside the bezel corner. During a pocket swap it shrinks there, then appears on the revealed bell. Returning to the pin restores the corner dot; the pin never carries it. Reduced motion makes these changes immediate.
+The unread dot rests in the notch's leading front corner (see 3.3.1). During a pocket swap it shrinks there, then appears on the revealed bell. Returning to the pin restores the corner dot; the pin never carries it. Reduced motion makes these changes immediate.
 
 ## History scrolling and notification tests (3.2.6)
 
@@ -235,3 +235,11 @@ The log's switches are drawn by `drawInk` (notify.js) in an SVG under the button
 Rows are two lines (status word and time; account and detail). One `.a-bead` under the hovered or focused row runs on two springs, the leading edge stiffer, keeping roughly a drop's volume. Opening waits for the lobe to reach 82% before the rows pour out on a spring easing (`linear()` generated from a damped spring); a live alert uses FLIP with the same family; Clear drains rows up into the title row for 0.26 s before `clear_alert_log`. The lobe is gooed while the log changes size. A scroll-edge mask fades the history into the black.
 
 Pocket swaps (shape.js): `morphHandles` leaves a swapping handle's hover spring alone and is called again when the swap settles, so leaving mid-swap finishes the swap with its glyph (`.handle.swapping .h-glyph` keeps the hover glyph style) and then retracts through `drawArm`'s return path.
+
+## Unread dot sprout (3.3.1)
+
+The dot sits on the bisector of the leading front corner's 20px rounding, 10px from its centre (a 6.5px gap inside the curve), clear of the first gauge on every edge. `drawSprout` (shape.js) draws its bell in the notch's own SVG: a band of the notch clipped round that corner, a strand and a drop, gooed while moving. A spring (out: period 0.78 s, damping 0.6, popping a little past; back: 0.56 s, 0.9) drives it. The drop (full radius 0.4 of a handle's disc) starts at 28% of that size and leaves along the bisector, the strand thins until it parts at 0.72 of the way, and the bell's glyph sharpens and swings from the snap. `placeUnreadDot` (notify.js) moves the dot out to the drop and over to the bell's shoulder, stretched by its speed and ringed in black once over the glyph. When the screen's corner leaves too little room, the way out turns toward the notch's front.
+
+`sproutHit` is the dot alone at rest, then the path from the dot to the bell while it is out, and it wins over the pin's reach. While out, the bell's rectangle is hot and reported as the `alerts` control, with the pin pocket's control left out so main's helper cannot press the pin under it. A capture-phase pointerdown opens the log before a ring under the dot can take the press. The open log replaces the dot, and the bell retracts into its lobe. The button is focusable only while the dot shows; keyboard focus brings the bell out and Enter opens the log.
+
+Regression checks: `PLAYWRIGHT_MODULE=/path/to/playwright node tests/browser/notch-sprout.cjs`.
