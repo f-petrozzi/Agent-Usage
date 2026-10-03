@@ -90,25 +90,40 @@ function resumeCommand(target) {
   return `exec env ${variable}=${quote(target.home)} ${command} ${quote(target.sessionId)}`;
 }
 const resumed = new Map();
-async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_MS) {
+function localResumeOptions(vscode, target, host) {
+  // This is a UI extension, so the Windows home is local even in an SSH window. A file URI explicitly
+  // selects Code's local terminal backend instead of executing ssh.exe on the workspace's remote host.
+  if(host.platform!=='win32')return null;
+  const cwd=vscode.Uri.file(host.home);
+  if(target.remote.startsWith('wsl+'))return {cwd,shellPath:'wsl.exe',
+    shellArgs:['--distribution',target.remote.slice(4),'--cd',target.cwd,'--exec','/bin/bash','-ilc',resumeCommand(target)]};
+  const command=`cd -- ${quote(target.cwd)} && ${resumeCommand(target)}`;
+  return {cwd,shellPath:'ssh.exe',shellArgs:['-t',target.remote.slice('ssh-remote+'.length),`exec /bin/bash -ilc ${quote(command)}`]};
+}
+const localHost=()=>({platform:process.platform,home:require('node:os').homedir()});
+async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_MS, host = localHost()) {
   const target = parseResume(uri); if (!target) throw new Error('The session link is invalid. Update Agent Usage and its VS Code helper, then try again.');
   const folders = vscode.workspace.workspaceFolders || [];
   const remoteMatches = folders.some(f => f.uri.scheme === 'vscode-remote' && f.uri.authority === target.remote);
+  const key = target.remote + ':' + target.home + ':' + target.sessionId;
+  const previous = resumed.get(key);
+  if (previous && previous.exitStatus===undefined && vscode.window.terminals.includes(previous)) { previous.show(false); return true; }
   if (remoteMatches) {
-    const key = target.remote + ':' + target.home + ':' + target.sessionId;
-    const previous = resumed.get(key);
-    if (previous && vscode.window.terminals.includes(previous)) { previous.show(false); return true; }
     const terminal = await findTerminal(vscode, target.pids, until);
     if (terminal) { terminal.show(false); return true; }
-    if (folders.some(f => target.cwd === f.uri.path.replace(/\/$/, '') || target.cwd.startsWith(f.uri.path.replace(/\/$/, '') + '/'))) {
-      if (!vscode.workspace.isTrusted) {
-        throw new Error('Trust this workspace in VS Code before resuming its agent session.');
-      }
-      const created = vscode.window.createTerminal({ name: `${{codex:'Codex',claude:'Claude',antigravity:'Antigravity'}[target.provider]} ${target.sessionId.slice(0, 8)}`,
-        cwd: vscode.Uri.from({ scheme: 'vscode-remote', authority: target.remote, path: target.cwd }),
-        shellPath: '/bin/bash', shellArgs: ['-ilc', resumeCommand(target)] });
-      resumed.set(key, created); created.show(false); return true;
-    }
+  }
+  // A terminal may start anywhere on this host; the open editor folder does not have to contain the session.
+  // If the window uses another SSH alias, host or a local folder, connect from a local terminal in this window.
+  const options = remoteMatches ? {
+    cwd: vscode.Uri.from({ scheme: 'vscode-remote', authority: target.remote, path: target.cwd }),
+    shellPath: '/bin/bash', shellArgs: ['-ilc', resumeCommand(target)]
+  } : localResumeOptions(vscode,target,host);
+  if(options){
+    if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace in VS Code before resuming its agent session.');
+    const created = vscode.window.createTerminal({
+      name: `${{codex:'Codex',claude:'Claude',antigravity:'Antigravity'}[target.provider]} ${target.sessionId.slice(0, 8)}`,
+      location: vscode.TerminalLocation?.Panel ?? 1, ...options });
+    resumed.set(key, created); created.show(false); return true;
   }
   // A UI extension persists the validated request locally; the new remote window consumes it after reconnecting.
   await context.globalState.update('pendingResume', { query: uri.query, at: Date.now() });
@@ -119,12 +134,12 @@ async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_
   }
   return false;
 }
-async function dispatchResume(vscode, context, uri, until = activatedAt + STARTUP_MS) {
+async function dispatchResume(vscode, context, uri, until = activatedAt + STARTUP_MS, host = localHost()) {
   const target = parseResume(uri);
   if (!target) throw new Error('The session link is invalid. Update Agent Usage and its VS Code helper, then try again.');
   await sendReceipt(target.reply, 'received');
   try {
-    const opened = await handleResume(vscode, context, uri, until);
+    const opened = await handleResume(vscode, context, uri, until, host);
     if (opened) await sendReceipt(target.reply, 'opened');
     return opened;
   } catch (error) { await sendReceipt(target.reply, 'error', error.message); throw error; }
@@ -146,4 +161,4 @@ function activate(context) {
     (uri.path === '/resume' ? dispatchResume(vscode, context, uri) : handleLink(vscode, uri)).catch(report) }));
   restoreResume(vscode, context).catch(report);
 }
-module.exports = { activate, parseLink, handleLink, parseResume, resumeCommand, handleResume, restoreResume, dispatchResume, sendReceipt };
+module.exports = { activate, parseLink, handleLink, parseResume, resumeCommand, localResumeOptions, handleResume, restoreResume, dispatchResume, sendReceipt };

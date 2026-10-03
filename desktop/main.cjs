@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
-const { openSession, resumeUrl } = require('./session-open.cjs');
+const { openSession, resumeUrl, prepareHelper } = require('./session-open.cjs');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks, readSessionHistory } = require('./collector.cjs');
@@ -121,6 +121,9 @@ async function start() {
   secure(win); win.setIgnoreMouseEvents(true, { forward: true });
   win.setAlwaysOnTop(true, 'screen-saver');
   win.webContents.setZoomFactor(config.scale);
+  // Install the bundled UI helper before the app appears, so reloading an already-open Code window after
+  // updating the app loads the new helper even before the first history click. Clicks still retry failures.
+  if(process.platform==='win32'&&app.isPackaged)await prepareHelper().catch(()=>{});
   await win.loadFile(path.join(uiRoot, 'notch.html'));
   place(); win.showInactive(); // its one show happens parked, off every screen
   updates = createUpdates({ app, updater: require('electron-updater').autoUpdater,

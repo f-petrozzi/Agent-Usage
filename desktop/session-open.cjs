@@ -72,7 +72,7 @@ function installFailure(error, stdout, stderr) {
   return new Error('The VS Code terminal helper could not be installed. ' + detail);
 }
 // The bundled helper's identity; tests keep it equal to vscode-link/package.json.
-const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.1' };
+const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.2' };
 // Installed only when VS Code lacks this version. Reinstalling it on every launch (as --force did) replaced the helper
 // under a running VS Code window, which then dropped the first link until a new window was opened.
 async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
@@ -94,21 +94,25 @@ async function installHelper(executable, helper, run = execFile, { exists = fs.e
   const changed = await installed.get(key);
   return first && changed;
 }
+async function prepareHelper({locations=codeLocations(),exists=fs.existsSync,ensureHelper=installHelper,
+  helper=path.join(process.resourcesPath || path.join(__dirname,'resources'),'agent-usage-link.vsix')}={}){
+  const executable=locations.find(exists);
+  return executable?ensureHelper(executable,helper):false;
+}
 async function openSession(target, shell, { locations = codeLocations(), exists = fs.existsSync, launch = spawn,
   protocolName = () => '', helper = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'agent-usage-link.vsix'), ensureHelper = installHelper, receiptFactory = createReceipt } = {}) {
   let url = target?.resume ? resumeUrl(target) : sessionUrl(target);
   if (!url) return false;
   const executable = locations.find(exists);
   if (executable) {
-    const changed = target.resume || target.terminalPids?.length ? await ensureHelper(executable, helper) : false;
+    if(target.resume || target.terminalPids?.length)await ensureHelper(executable, helper);
     const receipt = target.resume ? await receiptFactory() : null;
     if (receipt) url = resumeUrl(target, receipt.reply);
-    // A running window can still have the previous helper loaded after CLI installation. One fresh window loads
-    // the update immediately; later clicks reuse the normal handler and existing session terminals.
-    if (target.resume && changed) url += '&windowId=_blank';
+    // Keep normal routing to the active Code window, including after helper installation. An older running
+    // helper may need Reload Window once; forcing _blank here defeated the user's existing-window preference.
     // Fixed executable paths and validated session UUIDs; never pass a shell command or prompt.
     try { await new Promise((resolve, reject) => {
-      const child = launch(executable, ['--open-url', '--', url], { windowsHide: true, detached: true, stdio: 'ignore' });
+      const child = launch(executable, [...(target.resume?['--reuse-window']:[]),'--open-url', '--', url], { windowsHide: true, detached: true, stdio: 'ignore' });
       child.once('error', () => reject(new Error('VS Code could not be started.')));
       child.once('spawn', () => { child.unref(); resolve(); });
     });
@@ -121,4 +125,4 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
   }
   return true;
 }
-module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper, resumeUrl, createReceipt };
+module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper, prepareHelper, resumeUrl, createReceipt };

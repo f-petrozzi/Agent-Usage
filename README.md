@@ -244,3 +244,11 @@ History links now preserve SSH/WSL addresses and session identity through VS Cod
 Updates use the existing notification's fluid spring and shape, with yellow status text, a download action and a small progress line. A verified download offers Restart; it never restarts automatically. Agent notifications take priority, and updates wait while an account card or alert is open. Prompts return when the notch is next shown until acted on. A failed update offers Check again. The old Settings dot is removed.
 
 Validation: 64 desktop checks including real VS Code URI parsing and loopback acknowledgements; browser checks for download/restart actions, progress, notification priority, all four edges, keyboard access and reduced motion. Actual Windows activation and SSH/WSL reconnection still need a device trial.
+
+## Resume in the active VS Code window (3.3.9)
+
+History clicks now prefer the active VS Code window and open a terminal tab there, even when its editor folder differs from the session's saved workspace. A window connected to the same remote authority starts the resume command directly on that host. If it uses another SSH alias/host, a local workspace or a different WSL distribution, the Windows UI helper creates a local SSH/WSL terminal in that window and connects to the saved target. Its working directory and CLI account still come from the saved session; editor folders stay open. Repeated clicks focus the tab, and an exited tab can be resumed again.
+
+The app no longer forces an empty VS Code window during helper upgrades. It prepares the bundled 0.2.2 helper on app startup, before the notch appears. After updating/restarting Agent Usage, run **Developer: Reload Window** once in an already-running VS Code window to load that helper, then click a history session. If Code is closed, launching it still opens a window for the session. Workspace trust and normal SSH/WSL authentication still apply.
+
+Validation: 68 desktop checks covering different folders, SSH aliases, local/empty windows, WSL selection, correct accounts, safe shell quoting, repeated/exited tabs, trust, helper preparation and acknowledgement errors; browser history checks on all four edges. Windows packaging also checks the real bundled VSIX installation. Actual window focus and SSH/WSL connections require the Windows device trial.

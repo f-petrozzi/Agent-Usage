@@ -3,7 +3,7 @@
   "publisher": "f-petrozzi",
   "displayName": "Agent Usage Link",
   "description": "Focus or resume saved Claude and Codex sessions from Agent Usage.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "license": "MIT",
