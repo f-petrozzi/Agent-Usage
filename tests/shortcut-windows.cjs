@@ -62,7 +62,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
 }
 `);
   injector=spawn('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',injectorPath],{windowsHide:true,stdio:['pipe','pipe','pipe']});
-  let output='',errors='';injector.stdout.on('data',data=>output+=data);injector.stderr.on('data',data=>errors+=data);
+  let output='',errors='';injector.stdout.on('data',data=>output+=data);injector.stderr.on('data',data=>{errors+=data;console.error(data.toString());});
   await until(()=>output.includes('ready'),'Windows input injector did not start: '+errors);
   async function key(code,up=false){const token=`${code} ${up?'up':'down'}`,offset=output.length;injector.stdin.write(token+'\n');await until(()=>output.slice(offset).includes('sent '+token),'Input injection failed: '+errors);}
   const showing=()=>main.window.webContents.executeJavaScript('sessionSwitcherShowing() && document.activeElement === card.querySelector(".session-search")');
