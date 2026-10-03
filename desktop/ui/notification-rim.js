@@ -49,6 +49,11 @@ const notificationRim=(()=>{
       for(const [name,value] of Object.entries({x:1,y:1,width:innerWidth-2,height:innerHeight-2}))screenClip.setAttribute(name,value);
       for(const el of regions)for(const [name,value] of Object.entries({x:bounds[0]-18,y:bounds[1]-18,width:bounds[2]+36,height:bounds[3]+36}))el.setAttribute(name,value);
       for(const foreign of foreigns)for(const [name,value] of Object.entries({x:bounds[0]-18,y:bounds[1]-18,width:bounds[2]+36,height:bounds[3]+36}))foreign.setAttribute(name,value);
+      // Draw the sweep in a square, then fit it to the live outline. An unscaled conic gradient spends
+      // almost its whole turn on one long edge when the sliver closes into a thin notch. Keeping both
+      // axes normalized lets the light finish all four sides while the spring changes the silhouette.
+      const width=bounds[2]+36,height=bounds[3]+36,size=Math.max(width,height);
+      for(const sweep of sweeps)Object.assign(sweep.style,{width:size+'px',height:size+'px',transform:`scale(${width/size},${height/size})`});
     }
     return true;
   }

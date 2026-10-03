@@ -35,9 +35,7 @@ listen('alert',e=>{
   const p=e.payload;if(!p||!Array.isArray(p.events)||!p.events.length)return;
   // Already reading the log: the alert is there at the top of it, so it does not open a second time
   if(logShowing()){if(p.sound)chime(p.events[0].kind);ringBell();return;}
-  // Session alerts get the space first; an update can wait until they have been read.
-  const update=slivers.get(UPDATE_ID);
-  if(update){updatePending=updateHovered||document.activeElement===updateDot;retract(update);}
+  // Update options keep this space until dismissed; agent alerts remain queued and in the log.
   alertQueue.push(p);pumpAlert();
 }).catch(()=>{});
 // Not over something the person is doing: while the notch is arriving, carried, tracking or showing a card
@@ -46,6 +44,8 @@ function alertWaits(){
 }
 function pumpAlert(){
   clearTimeout(pumpTimer);
+  if(updatePending){pumpUpdate();return;}
+  if(slivers.has(UPDATE_ID))return;
   if(!alertQueue.length){pumpUpdate();return;}
   if(alertWaits()||(!edgeIsVertical()&&slivering())){pumpTimer=setTimeout(pumpAlert,200);return;}
   while(alertQueue.length){
@@ -134,13 +134,13 @@ function drawSliver(s){
   const origin=document.getElementById('root').getBoundingClientRect(), W=innerWidth, H=innerHeight;
   const matrix=edgeMatrix(notchEdge,W,H), local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
   const screen=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
-  const cell=s.account===UPDATE_ID?pill.querySelector('.cell:last-child'):s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
+  const cell=s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
   const notch=pill.getBoundingClientRect(), [start]=local(notch.left-origin.left,notch.top-origin.top);
   const length=vertical?notch.height:notch.width, end=start+length;
   const cells=[...pill.querySelectorAll('.cell')].map(el=>{
     const box=el.getBoundingClientRect();return {el,u:local(box.left+box.width/2-origin.left,box.top+box.height/2-origin.top)[0]};
   }).sort((a,b)=>a.u-b.u);
-  const index=cells.findIndex(a=>a.el===cell);
+  const index=s.account===UPDATE_ID?0:cells.findIndex(a=>a.el===cell);
   const depth=edgeDepth(notchEdge), rootDepth=depth-SHAPE.corner, t=Math.max(0,s.t), grown=Math.min(1,t);
   let u0,u1,d;
   if(vertical){
@@ -218,10 +218,9 @@ function placeUpdateDot(){
   updateDot.hidden=!shown||folded||!updateVisible()||!g;
   if(previous!==updateDot.hidden)reportHot();
   if(updateDot.hidden)return;
-  const r=pill.getBoundingClientRect(),o=document.getElementById('root').getBoundingClientRect();
-  // Mirror the unread dot's resting point, so both dots share the same inset from the rounded outline.
-  const vertical=edgeIsVertical(),x=vertical?g.P0[0]:r.left+r.right-g.P0[0],y=vertical?r.top+r.bottom-g.P0[1]:g.P0[1];
-  Object.assign(updateDot.style,{left:x-o.left+'px',top:y-o.top+'px'});
+  const o=document.getElementById('root').getBoundingClientRect();
+  // Releases take the unread notification's corner, including its existing rounded-edge padding.
+  Object.assign(updateDot.style,{left:g.P0[0]-o.left+'px',top:g.P0[1]-o.top+'px'});
   updateDot.dataset.status=updateState.status;
   const [word,text]=updateCopy();updateDot.setAttribute('aria-label',`${word}: ${text}. Show update options`);
   updateDot.setAttribute('aria-expanded',String(!!slivers.get(UPDATE_ID)?.to));
@@ -279,14 +278,20 @@ function renderUpdate(){
 }
 function pumpUpdate(){
   if(!updatePending)return;
-  if(alertWaits()||slivering()||window.notificationTestAccount){pumpTimer=setTimeout(pumpAlert,200);return;}
+  if(alertWaits()||window.notificationTestAccount){pumpTimer=setTimeout(pumpAlert,200);return;}
+  const alerts=[...slivers.values()].filter(s=>s.account!==UPDATE_ID);
+  for(const s of alerts)if(s.to){
+    if(!s.seen)alertQueue.unshift({events:s.events,hold:s.hold,sound:false});
+    retract(s);
+  }
+  if(alerts.length){pumpTimer=setTimeout(pumpAlert,200);return;}
   updatePending=false;
   if(updateVisible())renderUpdate();
 }
 function showUpdate(state){
   if(!state||typeof state.status!=='string')return;
   const announced=state.status!==updateState.status&&['available','ready'].includes(state.status);
-  updateState=state;placeUpdateDot();reportHot();
+  updateState=state;placeUnreadDot();reportHot();
   if(announced){updateRimPending=true;if(shown&&!document.getElementById('root').classList.contains('placing'))startPendingUpdateRim();}
   const s=slivers.get(UPDATE_ID);
   if(!updateVisible()){
@@ -359,7 +364,7 @@ const sproutButton=document.getElementById('alert-sprout');
 function placeUnreadDot(){
   placeUpdateDot();
   const dot=document.getElementById('notch-dot');if(!dot)return;
-  const unread=unreadCount()>0&&leadFaces.includes('alerts'), swapping=handles[0].swapping;
+  const unread=unreadCount()>0&&leadFaces.includes('alerts')&&!updateVisible(), swapping=handles[0].swapping;
   // Leaving, it stays on a bell that is still out; a bell melting home after a swap does not pick it up on the way
   const bell=leadFace()==='alerts'&&!logShowing()&&(hovered==='pin'||handles[0].value>.65&&pinHandle.classList.contains('bell-unread'));
   const g=sprout.geo, on=unread&&!bell&&!swapping&&!logShowing()&&!!g;

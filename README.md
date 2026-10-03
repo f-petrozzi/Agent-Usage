@@ -268,3 +268,9 @@ Validation: desktop checks cover notice signatures, tampering, replay, chunked s
 Notifications now send one glowy shimmer around the outside of the notch and the notification as it grows. A bright tip leaves a soft tail, travels one complete circuit over 3.2 seconds, then fades. The border follows the custom rounded shape and flares, with no line across the join between a notification and the notch. Finished notifications use white, waiting and usage warnings use their existing severity colour, and releases use blue. Bursts share the current circuit; download progress does not repeatedly restart it.
 
 The effect is decorative and never intercepts clicks. Hiding, carrying, or transferring the notch clears it. A release received while hidden waits for the notch's next appearance. With reduced motion enabled, a quiet stationary outline appears briefly instead. Validation includes real rendered-pixel comparisons on all four edges, travelling/fading behaviour, merged outlines, notification click targets, bursts, hidden release notices and reduced motion, plus the existing alert, update and motion checks.
+
+## Shared notification position and update priority (4.0.2)
+
+Updates now use the notification corner and open their fluid options from that same end of the notch. The blue dot stays steady and replaces the yellow unread dot while an update is available. Update options take priority: opening them puts an interrupted unread agent alert back in the queue, and new agent alerts wait until the options close. Agent alerts remain in the notification log.
+
+The border shimmer continues around the whole notch when update options retract, then finishes its original circuit. Validation covers shared placement and update priority on all four edges, queued and interrupted alerts, keyboard actions, reduced motion, and rendered-pixel checks for continued shimmer movement and completion after hover-off. All 76 desktop checks pass.

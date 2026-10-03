@@ -7,9 +7,11 @@ it no longer scales the C# prototype's bitmap. The notch stays solid black.
 Run **AgentUsage-Setup-3.0.0.exe** once to migrate the ZIP install in place.
 Settings and collector configuration are retained. The installer is per-user
 and does not request administrator access. Future published releases appear
-in Settings as **Update**, followed by **Restart** after download. A pulsing blue dot
-on the notch indicates an available update; hover it to reveal Download or Restart. No updates
-are downloaded or installed without those actions.
+in Settings as **Update**, followed by **Restart** after download. A steady blue dot
+in the notification corner indicates an available update; hover it to reveal Download or Restart.
+Update options take priority over agent notifications, which wait until the options close. The
+border shimmer completes its circuit even if those options retract. No updates are downloaded
+or installed without those actions.
 
 Every launch starts invisible, without a taskbar button or tray icon by default.
 Hold **Ctrl+Shift+Space** to reveal and follow the closest monitor edge. Motion

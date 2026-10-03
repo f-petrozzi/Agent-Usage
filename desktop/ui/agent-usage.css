@@ -121,23 +121,20 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 .inline-extras{margin-top:10px}
 .inline-extras .g-head{margin-top:8px}
 
-/* Releases rest opposite the unread-alert corner. The hit target stays still while only its blue ink pulses. */
+/* Releases use the unread-alert corner; one steady dot gives the update priority without repeated motion. */
 :root{--update-blue:#8bafff}
 .update-dot{position:absolute;z-index:6;width:24px;height:24px;margin:-12px 0 0 -12px;padding:0;border:0;
   border-radius:50%;background:transparent;appearance:none;cursor:pointer;display:grid;place-items:center;pointer-events:auto}
 .update-dot[hidden]{display:none}
 .update-dot span{width:7px;height:7px;border-radius:50%;background:var(--update-blue);box-shadow:0 0 0 2px #000}
-.update-dot[data-status="available"] span,.update-dot[data-status="ready"] span{animation:update-breathe 2.4s ease-in-out infinite}
-.update-dot:hover span,.update-dot:focus-visible span,.update-dot[aria-expanded="true"] span{animation:none;scale:1.15}
+.update-dot:hover span,.update-dot:focus-visible span,.update-dot[aria-expanded="true"] span{scale:1.15}
 .update-dot:focus-visible{outline:1px solid var(--update-blue);outline-offset:-2px}
-@keyframes update-breathe{0%,100%{scale:1;opacity:.85}50%{scale:1.22;opacity:1;box-shadow:0 0 0 2px #000,0 0 0 5px #8bafff22}}
-@media(prefers-reduced-motion:reduce){.update-dot span{animation:none!important}}
 
 /* Notification light follows the merged SVG silhouette; its overlay never receives input. */
 #notification-rim{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:visible;pointer-events:none}
 #notification-rim *{pointer-events:none}
 #notification-rim[hidden],#root:not(.visible) #notification-rim,#root.placing #notification-rim,#root.carrying #notification-rim{display:none}
-.rim-sweep{width:100%;height:100%;background:conic-gradient(from var(--rim-turn,-90deg),
+.rim-sweep{transform-origin:0 0;background:conic-gradient(from var(--rim-turn,-90deg),
   transparent 0deg 258deg,color-mix(in srgb,var(--rim-color,#fff) 5%,transparent) 278deg,
   color-mix(in srgb,var(--rim-color,#fff) 28%,transparent) 314deg,
   var(--rim-color,#fff) 348deg,#fff 358deg,transparent 360deg)}

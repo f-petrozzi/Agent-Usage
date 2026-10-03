@@ -2,13 +2,15 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/agent-usage-rim';fs.mkdirSync(OUT,{recursive:true});
-async function brightDifference(page,before,after){
-  return page.evaluate(async([a,b])=>{
+async function brightDifference(page,before,after,position=false){
+  return page.evaluate(async([a,b,position])=>{
     const pixels=async encoded=>{const img=new Image();img.src='data:image/png;base64,'+encoded;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);return ctx.getImageData(0,0,img.width,img.height).data;};
-    const first=await pixels(a),second=await pixels(b);let count=0;
-    for(let i=0;i<first.length;i+=4)if(Math.max(second[i]-first[i],second[i+1]-first[i+1],second[i+2]-first[i+2])>24)count++;
-    return count;
-  },[before.toString('base64'),after.toString('base64')]);
+    const first=await pixels(a),second=await pixels(b);let count=0,weight=0,x=0,y=0;
+    for(let i=0;i<first.length;i+=4){const delta=Math.max(second[i]-first[i],second[i+1]-first[i+1],second[i+2]-first[i+2]);
+      if(delta>24){count++;const w=(delta-24)**3;weight+=w;x+=(i/4%innerWidth)*w;y+=Math.floor(i/4/innerWidth)*w;}
+    }
+    return position?{count,x:x/weight,y:y/weight}:count;
+  },[before.toString('base64'),after.toString('base64'),position]);
 }
 (async()=>{
  const browser=await chromium.launch();
@@ -48,6 +50,41 @@ async function brightDifference(page,before,after){
     assert.equal(await page.locator('.sliver').count(),1);
     await page.evaluate(()=>retractSlivers(true));
   }
+  // Leaving an update retracts its sliver during the circuit. The light must keep travelling on the
+  // remaining notch, including its short ends, rather than getting stranded on a single long edge.
+  await page.evaluate(()=>{SLIVER.grace=80;alertQueue.length=0;});
+  for(const edge of ['top','right','bottom','left']){
+    await page.mouse.move(0,0);
+    await page.evaluate(edge=>{__emit('update_state',{status:'current'});notificationRim.clear();retractSlivers(true);
+      __emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false});__emit('appear',{edge});},edge);
+    await page.waitForTimeout(850);
+    await page.evaluate(()=>__emit('update_state',{status:'available',version:'4.0.2'}));
+    await page.locator('#update-dot').hover();await page.waitForTimeout(750);
+    assert.equal(await page.locator('.sliver-update').count(),1);
+    await page.mouse.move(0,0);
+    await page.waitForFunction(()=>!slivers.has('__update'));
+    assert.equal(await page.locator('#notification-rim').getAttribute('hidden'),null,'closing the update keeps its circuit alive');
+    const points=[];
+    for(const target of [80,150,225]){
+      await page.waitForFunction(target=>parseFloat(document.querySelector('.rim-sweep').style.getPropertyValue('--rim-turn'))>=target,target);
+      assert.equal(await page.locator('#notification-rim').getAttribute('hidden'),null);
+      await page.evaluate(()=>document.getElementById('notification-rim').style.visibility='hidden');
+      const off=await page.screenshot();await page.evaluate(()=>document.getElementById('notification-rim').style.visibility='');
+      const on=await page.screenshot({path:path.join(OUT,edge+'-closed-'+target+'.png')});
+      const light=await brightDifference(page,off,on,true);assert.ok(light.count>20,'the remaining shimmer visibly renders after closure');points.push(light);
+    }
+    const bounds=await page.locator('#rim-screen rect').evaluate(()=>{const paths=[...document.querySelectorAll('#rim-silhouette path')].map(el=>el.getBoundingClientRect());
+      const left=Math.max(0,Math.min(...paths.map(r=>r.left))),top=Math.max(0,Math.min(...paths.map(r=>r.top)));
+      return {left,top,width:Math.min(innerWidth,Math.max(...paths.map(r=>r.right)))-left,height:Math.min(innerHeight,Math.max(...paths.map(r=>r.bottom)))-top};});
+    assert.ok((Math.max(...points.map(p=>p.x))-Math.min(...points.map(p=>p.x)))/bounds.width>.2,'the light traverses the width after the sliver closes: '+JSON.stringify({edge,points,bounds}));
+    assert.ok((Math.max(...points.map(p=>p.y))-Math.min(...points.map(p=>p.y)))/bounds.height>.2,'the light traverses the height after the sliver closes: '+JSON.stringify({edge,points,bounds}));
+    const notch=await page.locator('#pill').boundingBox(),context=JSON.stringify({edge,points,notch});
+    if(['top','bottom'].includes(edge))assert.ok(points[2].x<notch.x+notch.width*.2,'the shimmer reaches the short left end before fading: '+context);
+    else assert.ok(points[1].y>notch.y+notch.height*.85,'the shimmer reaches the short bottom end before fading: '+context);
+    await page.waitForTimeout(650);
+    assert.equal(await page.locator('#notification-rim').getAttribute('hidden'),'','the original circuit completes without lingering or restarting');
+  }
+  await page.evaluate(()=>{__emit('update_state',{status:'current'});SLIVER.grace=1600;});
   // A burst shares one circuit, rather than flashing back to the starting side for every account.
   await page.evaluate(()=>__emit('alert',{events:[{id:'wait',kind:'waiting',account:'claude',session:'Homelab'}],hold:6000,sound:false}));
   await page.waitForTimeout(550);
@@ -87,6 +124,6 @@ async function brightDifference(page,before,after){
   await page.screenshot({path:path.join(OUT,'reduced-motion.png')});
   await page.waitForTimeout(1200);assert.equal(await page.locator('#notification-rim').getAttribute('hidden'),'');
   assert.deepEqual(errors,[]);
-  console.log('Passed notification shimmer: rendered glow on four edges, merged silhouette, travelling light, one circuit, click-through, burst coalescing, hide cleanup, blue release and reduced motion.');
+  console.log('Passed notification shimmer: rendered glow on four edges, travel and completion after update hover-off, merged silhouette, one circuit, click-through, burst coalescing, hide cleanup, blue release and reduced motion.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
