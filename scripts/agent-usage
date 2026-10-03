@@ -43,6 +43,7 @@ import time
 import tempfile
 import signal
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -882,12 +883,13 @@ def rollout_processes(proc_root: Path = Path("/proc")) -> dict[str, list[int]]:
         if not process.name.isdigit():
             continue
         try:
-            if not (process / "exe").resolve().name.startswith("codex"):
+            executable = (process / "exe").resolve().name
+            if not (executable.startswith("codex") or executable == "agy"):
                 continue
             for fd in (process / "fd").iterdir():
                 try:
                     target = fd.resolve()
-                    if target.name.startswith("rollout-") and target.suffix == ".jsonl":
+                    if (target.name.startswith("rollout-") and target.suffix == ".jsonl") or (executable == "agy" and target.parent.name == "presence" and target.suffix == ".lock"):
                         found[str(target)] = process_ancestry(int(process.name), proc_root)
                 except OSError:
                     continue
@@ -1090,6 +1092,7 @@ def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list
     try:
         with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.1)) as conn:
             records = conn.execute("SELECT conversation_id, title, status, not_fully_idle, killed, last_modified_time FROM conversation_summaries ORDER BY last_modified_time DESC LIMIT 64").fetchall()
+        processes = rollout_processes() if include_terminal else {}
         for identity, title, status, background, killed, modified in records:
             if killed or not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", identity or ""):
                 continue
@@ -1133,6 +1136,7 @@ def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list
             if state == "idle" and not include_terminal:
                 continue
             sessions.append({"provider": "antigravity", "account": "antigravity", "id": identity,
+                             **({"sessionId": identity, "terminalPids": processes.get(str((data_dir / "presence" / (identity + ".lock")).resolve()), [])} if include_terminal else {}),
                              "name": _short(title or "Antigravity"), "state": state,
                              "waitingFor": reason, "since": _parse_iso(modified) if isinstance(modified, str) else None})
     except (OSError, sqlite3.Error):
@@ -1181,6 +1185,114 @@ def session_links(profiles: list[tuple[str, Path]], config_dir: Path, now: float
             except (OSError, ValueError, AttributeError, TypeError):
                 continue
     return sessions[-2048:]
+
+
+def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: float,
+                    include_claude: bool = True, include_antigravity: bool = True) -> list[dict[str, Any]]:
+    """Recent saved conversations, including closed ones. Export names/identity only, never messages."""
+    limit = 30
+    uuid = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}")
+    live = (claude_sessions(config_dir, True) if include_claude else []) + codex_sessions(profiles, now, True)
+    live_by_id = {(s["account"], s.get("sessionId")): s for s in live}
+    history: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+
+    def recent(root: Path, pattern: str) -> list[Path]:
+        candidates = []
+        for i, path in enumerate(root.glob(pattern)):
+            if i >= 10000:
+                break
+            try:
+                candidates.append((path.stat().st_mtime, path))
+            except OSError:
+                continue
+        return [p for _, p in sorted(candidates, reverse=True)[:256]]
+
+    def edges(path: Path) -> list[dict[str, Any]]:
+        with path.open("rb") as handle:
+            head = handle.read(64 * 1024)
+            start = max(0, path.stat().st_size - 64 * 1024)
+            handle.seek(start)
+            tail = handle.read(64 * 1024)
+        records = []
+        for line in head.splitlines() + (tail.splitlines()[1:] if start else []):
+            try:
+                record = json.loads(line)
+                if isinstance(record, dict):
+                    records.append(record)
+            except (ValueError, UnicodeDecodeError):
+                continue
+        return records
+
+    for provider, account, home, paths in (
+        [("claude", "claude", config_dir, recent(config_dir / "projects", "*/*.jsonl"))] if include_claude else []
+    ) + [("codex", f"codex:{name}", home, recent(home / "sessions", "*/*/*/rollout-*.jsonl")) for name, home in profiles]:
+        titles = {}
+        if provider == "codex":
+            # The CLI's index is append-only. Read a bounded tail for the latest saved names.
+            try:
+                for record in edges(home / "session_index.jsonl"):
+                    titles[record.get("id")] = record.get("thread_name")
+            except OSError:
+                pass
+        count = 0
+        for path in paths:
+            if count >= limit:
+                break
+            try:
+                real = path.resolve()
+                if real in seen:
+                    continue
+                records = edges(path)
+                if provider == "codex":
+                    meta = next((r.get("payload") or {} for r in records if r.get("type") == "session_meta"), {})
+                    source = meta.get("source")
+                    if (isinstance(source, dict) and "subagent" in source) or meta.get("parent_thread_id"):
+                        continue
+                    identity, cwd = meta.get("id") or path.stem[-36:], meta.get("cwd")
+                    title = titles.get(identity) or meta.get("title")
+                else:
+                    identity = path.stem
+                    cwd = next((r["cwd"] for r in records if isinstance(r.get("cwd"), str)), None)
+                    title = next((r.get("customTitle") or r.get("summary") for r in reversed(records)
+                                  if r.get("type") in {"custom-title", "summary"}), None)
+                if not isinstance(identity, str) or not uuid.fullmatch(identity):
+                    continue
+                seen.add(real)
+                current = live_by_id.get((account, identity), {})
+                cwd = current.get("cwd") or cwd
+                history.append({"provider": provider, "account": account, "id": identity, "sessionId": identity,
+                                "name": _short(title or current.get("name") or Path(cwd or provider.title()).name),
+                                "state": current.get("state", "idle"), "since": path.stat().st_mtime,
+                                "cwd": cwd, "agentHome": str(home.absolute()),
+                                "terminalPids": current.get("terminalPids", []), "live": bool(current)})
+                count += 1
+            except (OSError, ValueError, TypeError, AttributeError):
+                continue
+    if include_antigravity:
+        database = Path.home() / ".gemini" / "antigravity-cli" / "conversation_summaries.db"
+        if database.is_file():
+            try:
+                with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.1)) as conn:
+                    rows = conn.execute("SELECT conversation_id, title, last_modified_time, workspace_uris FROM conversation_summaries WHERE parent_conversation_id = '' AND app_data_dir = 'antigravity-cli' ORDER BY last_modified_time DESC LIMIT 30").fetchall()
+                agy_live = {s["id"]: s for s in antigravity_sessions(database.parent, True)}
+                for identity, title, modified, workspaces in rows:
+                    if isinstance(identity, str) and uuid.fullmatch(identity):
+                        try:
+                            uris = json.loads(workspaces)
+                            if not isinstance(uris, list):
+                                continue
+                        except (ValueError, TypeError):
+                            continue
+                        workspace = next((urllib.parse.urlparse(u) for u in uris if isinstance(u, str) and u.startswith("file:///")), None)
+                        current = agy_live.get(identity, {})
+                        history.append({"provider": "antigravity", "account": "antigravity", "id": identity, "sessionId": identity,
+                                        "name": _short(title or "Antigravity"), "state": current.get("state", "idle"), "since": _parse_iso(modified) or 0,
+                                        "cwd": urllib.parse.unquote(workspace.path) if workspace else None,
+                                        "agentHome": str(database.parent), "live": bool(current), "terminalPids": current.get("terminalPids", [])})
+            except (OSError, sqlite3.Error, ValueError, TypeError):
+                pass
+    return sorted(history, key=lambda s: s["since"], reverse=True)
 
 
 def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool, include_antigravity: bool = True) -> int:
@@ -1437,6 +1549,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="stream live session state as JSON lines instead of reading usage",
     )
     parser.add_argument("--session-links", action="store_true", help="read recent completion metadata for historical alert links")
+    parser.add_argument("--session-history", action="store_true", help="list the 30 most recent saved sessions per account")
     return parser.parse_args(argv)
 
 
@@ -1454,6 +1567,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         include_claude = not args.no_claude
         include_antigravity = not args.no_antigravity and bool(antigravity_executable())
+        if args.session_history:
+            document = {"schema": 1, "sessions": session_history(profiles, claude_config_dir(), time.time(), include_claude, include_antigravity),
+                        "wslDistro": os.environ.get("WSL_DISTRO_NAME", "")}
+            json.dump(document, sys.stdout, separators=(",", ":")); sys.stdout.write("\n")
+            return 0
         if not profiles and not include_claude and not include_antigravity:
             raise UsageError("Nothing to read: no Codex accounts and Claude is disabled.")
         if args.watch_sessions:

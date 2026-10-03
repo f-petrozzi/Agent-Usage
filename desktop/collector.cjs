@@ -171,4 +171,30 @@ function readSessionLinks(config) {
     try { resolve(parseSessions(stdout, true, 2048)); } catch { reject(new Error('The collector returned no session links.')); }
   }));
 }
-module.exports = { normalize, enrollAntigravity, Collector, SessionFeed, parseSessions, accountId, validHost, readSessionLinks };
+const validLinuxPath = value => typeof value === 'string' && value.startsWith('/') && value.length <= 1024 && !/[\x00-\x1f\x7f]/.test(value);
+function normalizeHistory(raw) {
+  const parsed = parseSessions(JSON.stringify(raw), true, 1200).sort((a, b) => b.since - a.since);
+  const metadata = new Map(raw.sessions.filter(s => s && typeof s === 'object').map(s => [accountId(s.provider === 'antigravity' ? 'gemini' : s.provider, s.account) + ':' + s.id, s]));
+  const counts = new Map(), seen = new Set();
+  return parsed.filter(s => {
+    const key = s.account + ':' + s.id, count = counts.get(s.account) || 0;
+    if (!s.id || seen.has(key) || count >= 30) return false;
+    seen.add(key); counts.set(s.account, count + 1); return true;
+  }).map(s => {
+    const meta = metadata.get(s.account + ':' + s.id) || {};
+    const { cwd: ignoredCwd, ...identity } = s;
+    return { ...identity, ...(validLinuxPath(meta.cwd) ? { cwd: meta.cwd } : {}),
+      ...(validLinuxPath(meta.agentHome) ? { agentHome: meta.agentHome } : {}), live: meta.live === true };
+  }).sort((a, b) => b.since - a.since);
+}
+function readSessionHistory(config, run = execFile) {
+  const command = collectorCommand(config, '--session-history --compact');
+  if (!command) return Promise.reject(new Error('Set a collector host in Settings → General.'));
+  return new Promise((resolve, reject) => run(command[0], command[1], { windowsHide: true, timeout: 20000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+    if (error) return reject(new Error('Update agent-usage on your collector host to load session history.'));
+    try { const raw = JSON.parse(stdout); resolve({ sessions: normalizeHistory(raw),
+      wslDistro: typeof raw.wslDistro === 'string' && /^[A-Za-z0-9._-]{1,120}$/.test(raw.wslDistro) ? raw.wslDistro : '' }); }
+    catch { reject(new Error('The collector returned invalid session history.')); }
+  }));
+}
+module.exports = { normalize, enrollAntigravity, Collector, SessionFeed, parseSessions, accountId, validHost, readSessionLinks, readSessionHistory, normalizeHistory, validLinuxPath };

@@ -4,10 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
-const { openSession } = require('./session-open.cjs');
+const { openSession, resumeUrl } = require('./session-open.cjs');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
-const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks } = require('./collector.cjs');
+const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks, readSessionHistory } = require('./collector.cjs');
 const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionUrl, historicalTarget, sessionTarget } = require('./alerts.cjs');
 
 app.setName('Agent Usage');
@@ -22,6 +22,20 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
 }
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
 let trayTimer;
+let historyCache = null, historyPending = null, historyAt = 0, historyGeneration = 0;
+async function recentHistory() {
+  if (historyCache && Date.now() - historyAt < 60000) return historyCache;
+  if (historyPending) return historyPending;
+  const generation = historyGeneration;
+  const pending = readSessionHistory({ ...config }).then(value => {
+    if (generation !== historyGeneration) throw new Error('Collector changed. Open history again.');
+    historyCache = value; historyAt = Date.now(); return value;
+  }).finally(() => { if (historyPending === pending) historyPending = null; });
+  historyPending = pending; return pending;
+}
+function historyTarget(s, history) {
+  return { ...s, resume: true, source: config.source, sshTarget: config.sshTarget, wslDistro: history.wslDistro };
+}
 let visible = false, held = false, mouseDown = false, carrying = false, dismissed = false;
 // alerting: the page is showing an alert, which decides for itself how long it stays (notify.js); expanded: a card
 // is open, and the notch never goes before it has closed
@@ -129,6 +143,8 @@ async function start() {
   save();
 }
 function restartCollector() {
+  historyCache = null; historyPending = null; historyAt = 0; historyGeneration++;
+  broadcast('session_history_reset', null);
   sessionAlerts.reset();
   collector?.close();
   collector = new Collector(() => config);
@@ -451,6 +467,20 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_codex': return accounts().find(a => a.base === 'codex')?.snap || absent();
     case 'get_cursor': case 'get_grok': case 'get_glm': case 'get_opencode': case 'get_antigravity': return absent();
     case 'get_activity': return feed?.sessions || [];
+    case 'get_session_history': {
+      const history = await recentHistory();
+      return history.sessions.filter(s => s.account === args.account).map(s => ({ id: s.id, name: s.name, since: s.since,
+        state: s.state, live: s.live, sessionId: s.sessionId, canOpen: !!resumeUrl(historyTarget(s, history)) }));
+    }
+    case 'open_history_session': {
+      // Identity only from the renderer: launch metadata must come from this collector's saved snapshot.
+      const history = await recentHistory(), saved = history.sessions.find(s => s.account === args.account && s.id === args.id);
+      if (!saved) throw new Error('This session is no longer in recent history. Open history again.');
+      const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === saved.account && (s.sessionId || s.id) === saved.sessionId);
+      const target = historyTarget({ ...saved, terminalPids: current?.terminalPids || [] }, history);
+      if (!resumeUrl(target)) throw new Error('This agent does not support session resume here, or its workspace metadata is missing.');
+      return openSession(target, shell);
+    }
     case 'get_claude_auth': return { available: false, busy: false, can_sign_in: false };
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));

@@ -28,7 +28,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
       - run: npm ci
         working-directory: desktop
-      - run: node --test tests/test-updates.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs tests/test-session-open.cjs tests/test-monitor.cjs
+      - run: node --test tests/test-updates.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs tests/test-session-open.cjs tests/test-session-history.cjs tests/test-monitor.cjs
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh

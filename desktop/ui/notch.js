@@ -945,6 +945,41 @@ function openResets(row,on){
   resetsOpen=on?row.dataset.account:null;row.classList.toggle('open',on);
   if(on){resetsGrowing=true;clearTimeout(resetsGrowTimer);resetsGrowTimer=setTimeout(()=>{resetsGrowing=false;},520);}
 }
+const HISTORY_ICON='<svg class="r-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 8A5.2 5.2 0 1 1 4.4 11.8"/><path d="M2.8 11.3V8H6"/><path d="M8 4.8V8l2 1.3"/></svg>';
+const histories=new Map();
+let historyOpen=null;
+function loadHistory(account){
+  const previous=histories.get(account);
+  if(previous&&(previous.loading||Date.now()-previous.at<60000))return;
+  const record={...previous,loading:true,error:'',at:Date.now()};histories.set(account,record);
+  invoke('get_session_history',{account}).then(rows=>{
+    if(!Array.isArray(rows))throw new Error('Update the collector to load session history.');
+    record.rows=rows;record.loading=false;
+  }).catch(error=>{record.loading=false;record.error=error.message||'Session history could not be loaded.';}).finally(()=>{
+    if(histories.get(account)===record&&card.dataset.account===account&&card.classList.contains('show'))renderCard();
+  });
+}
+function historyRow(account){
+  const record=histories.get(account)||{},rows=record.rows||[],open=historyOpen===account;
+  const content=record.error?`<div class="h-empty">${esc(record.error)}</div>`
+    :!rows.length?`<div class="h-empty">${record.loading?'Loading sessions…':'No saved sessions yet.'}</div>`
+    :rows.map(s=>{
+      const stamp=s.since?new Date(s.since).toLocaleString(ui().locale,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hourCycle:stateSnap.clock_24h?'h23':'h12'}):'';
+      const live=s.live?(s.state==='busy'?'Working':s.state==='waiting'?'Waiting':'Open'):'';
+      const tag=s.canOpen?'button':'div',attrs=s.canOpen?` type="button" data-session="${esc(s.id)}" data-account="${esc(account)}"`:'';
+      return `<${tag}${attrs} class="h-item${s.canOpen?' history-session':''}" title="${esc(s.canOpen?'Open in VS Code':'Session resume is unavailable for this agent or workspace')}"><span class="h-name">${esc(s.name)}</span><span class="h-meta"><span>${esc(stamp)}</span><span>${esc(live||s.sessionId?.slice(0,8)||'History only')}</span></span></${tag}>`;
+    }).join('');
+  return `<div class="c-history${open?' open':''}" data-account="${esc(account)}"><button type="button" class="h-head r-head" aria-expanded="${open}" aria-controls="session-history-list">${HISTORY_ICON}<span class="r-count">Chat history</span><span class="h-count">${rows.length||''}</span><svg class="h-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button><div class="h-list" id="session-history-list" aria-hidden="${!open}"${open?'':' inert'}><div><div class="h-scroll">${content}</div></div></div></div>`;
+}
+function openHistory(row,on){
+  if(!row)return;
+  if(on)loadHistory(row.dataset.account);
+  if(row.classList.contains('open')===on)return;
+  historyOpen=on?row.dataset.account:null;row.classList.toggle('open',on);
+  row.querySelector('.h-head').setAttribute('aria-expanded',String(on));
+  const list=row.querySelector('.h-list');list.setAttribute('aria-hidden',String(!on));list.inert=!on;
+  if(on){resetsGrowing=true;clearTimeout(resetsGrowTimer);resetsGrowTimer=setTimeout(()=>{resetsGrowing=false;},520);}
+}
 function renderCard(){
   const c=document.getElementById('card');
   if(hoverId===ALERTS_ID){ // the bell: the alert log in the same lobe
@@ -957,6 +992,7 @@ function renderCard(){
   const p=providers().find(x=>x.id===hoverId)||providers()[0];
   if(!p)return;
   const snap=p.snap;
+  if(p.id!=='collector')loadHistory(p.id);
   const extraWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)==='3p'):[];
   const mainWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)!=='3p'):snap.windows;
   const hasExtras=!!snap.details?.length||extraWindows.length>0;
@@ -976,8 +1012,10 @@ function renderCard(){
   }else{
     html+=renderUsageWindows(mainWindows,p.base!=='gemini',p.base!=='gemini');
     html+=resetsRow(snap.resets,p.id);
+    if(p.id!=='collector')html+=historyRow(p.id);
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
+  if(!snap.windows.length&&p.id!=='collector')html+=historyRow(p.id);
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
     const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
     if(acts.length){
@@ -994,7 +1032,11 @@ function renderCard(){
   if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
+  const historyScroll=changedAccount?0:c.querySelector('.h-scroll')?.scrollTop||0;
+  const focusedHistory=!changedAccount&&c.querySelector('.c-history')?.contains(document.activeElement)?{head:document.activeElement.classList.contains('h-head'),id:document.activeElement.dataset.session}:null;
   c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;
+  const historyList=c.querySelector('.h-scroll');if(historyList)historyList.scrollTop=historyScroll;
+  if(focusedHistory){const button=focusedHistory.head?c.querySelector('.h-head'):[...c.querySelectorAll('.history-session')].find(b=>b.dataset.session===focusedHistory.id);button?.focus({preventScroll:true});}
   if(typeof setExtraContent==='function')setExtraContent(inlineExtras?[]:snap.details||[],inlineExtras?[]:extraWindows);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){
@@ -1068,6 +1110,12 @@ card.addEventListener('mouseover',e=>openResets(e.target.closest?.('.c-resets.ex
 card.addEventListener('mouseout',e=>{const row=e.target.closest?.('.c-resets.expandable');if(row&&!row.contains(e.relatedTarget))openResets(row,false);});
 card.addEventListener('focusin',e=>openResets(e.target.closest?.('.c-resets.expandable'),true));
 card.addEventListener('focusout',e=>{const row=e.target.closest?.('.c-resets.expandable');if(row&&!row.contains(e.relatedTarget))openResets(row,false);});
+card.addEventListener('mouseover',e=>openHistory(e.target.closest?.('.c-history'),true));
+card.addEventListener('mouseout',e=>{const row=e.target.closest?.('.c-history');if(row&&!row.contains(e.relatedTarget)&&!row.contains(document.activeElement))openHistory(row,false);});
+card.addEventListener('focusin',e=>openHistory(e.target.closest?.('.c-history'),true));
+card.addEventListener('focusout',e=>{const row=e.target.closest?.('.c-history');if(row&&!row.contains(e.relatedTarget)&&!row.matches(':hover'))openHistory(row,false);});
+card.addEventListener('keydown',e=>{const row=e.target.closest?.('.c-history');if(row&&e.key==='Escape'){row.querySelector('.h-head').focus();openHistory(row,false);e.stopPropagation();}});
+listen('session_history_reset',()=>{histories.clear();historyOpen=null;if(card.classList.contains('show'))renderCard();}).catch(()=>{});
 // The card grows while the row opens, and the notch's ink follows it frame by frame. While it opens the ink leads
 // rather than easing after it, so no line of the list is ever drawn outside the black.
 new ResizeObserver(()=>{
@@ -1281,6 +1329,14 @@ document.addEventListener('pointerdown',()=>{invoke('page_pressed').catch(()=>{}
 // A press anywhere outside the notch puts a held card away (main sees it through its input helper)
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
 card.addEventListener('click',async e=>{
+  const history=e.target.closest('.history-session');
+  if(history){
+    clearSessionLinkError();history.disabled=true;
+    try{if(await invoke('open_history_session',{id:history.dataset.session,account:history.dataset.account})){hideCard();return;}showSessionLinkError('VS Code could not resume this session.');}
+    catch(error){showSessionLinkError(error.message||'VS Code could not be opened.');}
+    finally{history.disabled=false;}return;
+  }
+  const head=e.target.closest('.h-head');if(head){const row=head.closest('.c-history');openHistory(row,!row.classList.contains('open'));return;}
   const session=e.target.closest('.session-link');
   if(session){
     clearSessionLinkError();

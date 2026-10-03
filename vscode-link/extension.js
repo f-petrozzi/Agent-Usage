@@ -1,8 +1,8 @@
 'use strict';
-function parseLink(uri) {
+function parseLink(uri, providers = ['claude', 'codex']) {
   if (uri.path !== '/open') return null;
   const query = new URLSearchParams(uri.query), provider = query.get('provider'), sessionId = query.get('session');
-  if (!['claude', 'codex'].includes(provider) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sessionId || '')) return null;
+  if (!providers.includes(provider) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sessionId || '')) return null;
   const pids = (query.get('pids') || '').split(',').slice(0, 16).map(Number).filter(n => Number.isInteger(n) && n > 1 && n <= 2147483647);
   return { provider, sessionId, pids, cwd: query.get('cwd') || '' };
 }
@@ -44,9 +44,67 @@ async function handleLink(vscode, uri, until = activatedAt + STARTUP_MS) {
     : `vscode://openai.chatgpt/local/${target.sessionId}`;
   await vscode.env.openExternal(vscode.Uri.parse(fallback));
 }
+const validPath = value => typeof value === 'string' && value.startsWith('/') && value.length <= 1024 && !/[\x00-\x1f\x7f]/.test(value);
+function parseResume(uri) {
+  if (uri.path !== '/resume') return null;
+  const query = new URLSearchParams(uri.query), link = parseLink({ path: '/open', query: uri.query }, ['claude', 'codex', 'antigravity']);
+  const home = query.get('home'), remote = query.get('remote');
+  if (!link || !validPath(link.cwd) || !validPath(home)
+    || !/^(?:ssh-remote\+[A-Za-z0-9_][A-Za-z0-9._-]*(?:@[A-Za-z0-9_][A-Za-z0-9._-]*)?|wsl\+[A-Za-z0-9._-]{1,120})$/.test(remote || '')) return null;
+  return { ...link, home, remote };
+}
+const quote = value => "'" + value.replace(/'/g, "'\\''") + "'";
+function resumeCommand(target) {
+  if (target.provider === 'antigravity') return `exec agy --conversation ${quote(target.sessionId)}`;
+  // Every argument is quoted; only these two fixed CLI invocations can be launched. No prompt or permission override.
+  const variable = target.provider === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR';
+  const command = target.provider === 'codex' ? 'codex resume' : 'claude --resume';
+  return `exec env ${variable}=${quote(target.home)} ${command} ${quote(target.sessionId)}`;
+}
+const resumed = new Map();
+async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_MS) {
+  const target = parseResume(uri); if (!target) return;
+  const folders = vscode.workspace.workspaceFolders || [];
+  const remoteMatches = folders.some(f => f.uri.scheme === 'vscode-remote' && f.uri.authority === target.remote);
+  if (remoteMatches) {
+    const key = target.remote + ':' + target.home + ':' + target.sessionId;
+    const previous = resumed.get(key);
+    if (previous && vscode.window.terminals.includes(previous)) { previous.show(false); return; }
+    const terminal = await findTerminal(vscode, target.pids, until);
+    if (terminal) { terminal.show(false); return; }
+    if (folders.some(f => target.cwd === f.uri.path.replace(/\/$/, '') || target.cwd.startsWith(f.uri.path.replace(/\/$/, '') + '/'))) {
+      if (!vscode.workspace.isTrusted) {
+        vscode.window.showInformationMessage('Trust this workspace in VS Code before resuming its agent session.'); return;
+      }
+      const created = vscode.window.createTerminal({ name: `${{codex:'Codex',claude:'Claude',antigravity:'Antigravity'}[target.provider]} ${target.sessionId.slice(0, 8)}`,
+        cwd: vscode.Uri.from({ scheme: 'vscode-remote', authority: target.remote, path: target.cwd }),
+        shellPath: '/bin/bash', shellArgs: ['-ilc', resumeCommand(target)] });
+      resumed.set(key, created); created.show(false); return;
+    }
+  }
+  // A UI extension persists the validated request locally; the new remote window consumes it after reconnecting.
+  await context.globalState.update('pendingResume', { query: uri.query, at: Date.now() });
+  try {
+    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.from({ scheme: 'vscode-remote', authority: target.remote, path: target.cwd }), { forceNewWindow: true });
+  } catch (error) {
+    await context.globalState.update('pendingResume', undefined); throw error;
+  }
+}
+async function restoreResume(vscode, context) {
+  const pending = context.globalState.get('pendingResume');
+  if (!pending) return;
+  const uri = { path: '/resume', query: pending.query }, target = parseResume(uri);
+  if (!target || Date.now() - pending.at > 300000) { await context.globalState.update('pendingResume', undefined); return; }
+  if (!(vscode.workspace.workspaceFolders || []).some(f => f.uri.scheme === 'vscode-remote' && f.uri.authority === target.remote && f.uri.path.replace(/\/$/, '') === target.cwd.replace(/\/$/, ''))) return;
+  await context.globalState.update('pendingResume', undefined);
+  await handleResume(vscode, context, uri);
+}
 function activate(context) {
   activatedAt = Date.now();
   const vscode = require('vscode');
-  context.subscriptions.push(vscode.window.registerUriHandler({ handleUri: uri => handleLink(vscode, uri) }));
+  const report = error => vscode.window.showErrorMessage('Agent Usage could not resume this session: ' + error.message);
+  context.subscriptions.push(vscode.window.registerUriHandler({ handleUri: uri =>
+    (uri.path === '/resume' ? handleResume(vscode, context, uri) : handleLink(vscode, uri)).catch(report) }));
+  restoreResume(vscode, context).catch(report);
 }
-module.exports = { activate, parseLink, handleLink };
+module.exports = { activate, parseLink, handleLink, parseResume, resumeCommand, handleResume, restoreResume };

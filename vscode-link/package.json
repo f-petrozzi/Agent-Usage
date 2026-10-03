@@ -2,13 +2,13 @@
   "name": "agent-usage-link",
   "publisher": "f-petrozzi",
   "displayName": "Agent Usage Link",
-  "description": "Focus the existing terminal running a session from Agent Usage.",
-  "version": "0.1.1",
+  "description": "Focus or resume saved Claude and Codex sessions from Agent Usage.",
+  "version": "0.2.0",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "license": "MIT",
   "main": "./extension.js",
-  "activationEvents": ["onUri"],
+  "activationEvents": ["onUri", "onStartupFinished"],
   "extensionKind": ["ui"],
   "capabilities": { "untrustedWorkspaces": { "supported": true } }
 }

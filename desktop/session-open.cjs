@@ -3,6 +3,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
 const { sessionUrl } = require('./alerts.cjs');
+const { validHost, validLinuxPath } = require('./collector.cjs');
+function resumeUrl(target) {
+  if (!target || !['claude', 'codex', 'antigravity'].includes(target.provider) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.sessionId || '')
+    || !validLinuxPath(target.cwd) || !validLinuxPath(target.agentHome)) return null;
+  const remote = target.source === 'ssh' && validHost(target.sshTarget) ? 'ssh-remote+' + target.sshTarget
+    : target.source === 'wsl' && /^[A-Za-z0-9._-]{1,120}$/.test(target.wslDistro || '') ? 'wsl+' + target.wslDistro : '';
+  if (!remote) return null;
+  const query = new URLSearchParams({ provider: target.provider, session: target.sessionId, cwd: target.cwd, home: target.agentHome, remote });
+  const pids = (target.terminalPids || []).filter(n => Number.isInteger(n) && n > 1 && n <= 2147483647).slice(0, 16);
+  if (pids.length) query.set('pids', pids.join(','));
+  return `vscode://f-petrozzi.agent-usage-link/resume?${query}`;
+}
 function codeLocations(env = process.env) {
   return [env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
     env.ProgramFiles && path.join(env.ProgramFiles, 'Microsoft VS Code', 'Code.exe'),
@@ -29,7 +41,7 @@ function installFailure(error, stdout, stderr) {
   return new Error('The VS Code terminal helper could not be installed. ' + detail);
 }
 // The bundled helper's identity; tests keep it equal to vscode-link/package.json.
-const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.1.1' };
+const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.0' };
 // Installed only when VS Code lacks this version. Reinstalling it on every launch (as --force did) replaced the helper
 // under a running VS Code window, which then dropped the first link until a new window was opened.
 async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
@@ -51,11 +63,11 @@ async function installHelper(executable, helper, run = execFile, { exists = fs.e
 }
 async function openSession(target, shell, { locations = codeLocations(), exists = fs.existsSync, launch = spawn,
   protocolName = () => '', helper = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'agent-usage-link.vsix'), ensureHelper = installHelper } = {}) {
-  const url = sessionUrl(target);
+  const url = target?.resume ? resumeUrl(target) : sessionUrl(target);
   if (!url) return false;
   const executable = locations.find(exists);
   if (executable) {
-    if (target.terminalPids?.length) await ensureHelper(executable, helper);
+    if (target.resume || target.terminalPids?.length) await ensureHelper(executable, helper);
     // Fixed executable paths and validated session UUIDs; never pass a shell command or prompt.
     await new Promise((resolve, reject) => {
       const child = launch(executable, ['--open-url', '--', url], { windowsHide: true, detached: true, stdio: 'ignore' });
@@ -63,9 +75,10 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
       child.once('spawn', () => { child.unref(); resolve(); });
     });
   } else {
+    if (target.resume) throw new Error('Install the standard Windows VS Code build so Agent Usage can install its session helper.');
     if (!protocolName(url)) throw new Error('VS Code was not found. Install VS Code or register its vscode: links.');
     await shell.openExternal(url);
   }
   return true;
 }
-module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper };
+module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper, resumeUrl };
