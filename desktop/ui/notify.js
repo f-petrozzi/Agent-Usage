@@ -214,15 +214,14 @@ addEventListener('resize',()=>{for(const s of slivers.values())drawSliver(s);});
 // Updates use the same ink, spring and notification space as a finished turn. The words are the action:
 // download only after a click, then offer restart only once the updater has verified the download.
 function placeUpdateDot(){
-  const previous=updateDot.hidden;
-  updateDot.hidden=!shown||folded||!updateVisible();
+  const previous=updateDot.hidden,g=sprout.geo;
+  updateDot.hidden=!shown||folded||!updateVisible()||!g;
   if(previous!==updateDot.hidden)reportHot();
   if(updateDot.hidden)return;
   const r=pill.getBoundingClientRect(),o=document.getElementById('root').getBoundingClientRect();
-  const m=edgeMatrix(notchEdge,innerWidth,innerHeight),x=r.left+r.width/2-o.left,y=r.top+r.height/2-o.top;
-  const center=m[0]*(x-m[4])+m[1]*(y-m[5]);
-  const u=center+(edgeIsVertical()?r.height:r.width)/2-11,v=edgeDepth(notchEdge)-11;
-  Object.assign(updateDot.style,{left:(m[0]*u+m[2]*v+m[4])+'px',top:(m[1]*u+m[3]*v+m[5])+'px'});
+  // Mirror the unread dot's resting point, so both dots share the same inset from the rounded outline.
+  const vertical=edgeIsVertical(),x=vertical?g.P0[0]:r.left+r.right-g.P0[0],y=vertical?r.top+r.bottom-g.P0[1]:g.P0[1];
+  Object.assign(updateDot.style,{left:x-o.left+'px',top:y-o.top+'px'});
   updateDot.dataset.status=updateState.status;
   const [word,text]=updateCopy();updateDot.setAttribute('aria-label',`${word}: ${text}. Show update options`);
   updateDot.setAttribute('aria-expanded',String(!!slivers.get(UPDATE_ID)?.to));
