@@ -37,6 +37,12 @@ function drawDetails(){
   const first=point(detailBox.u0,detailBox.v0),last=point(detailBox.u1,detailBox.v1);
   card.style.setProperty('--detail-offset-x',`${Math.min(first[0],last[0])-card.offsetLeft}px`);
   card.style.setProperty('--detail-offset-y',`${Math.min(first[1],last[1])-card.offsetTop}px`);
+  // Search results can change the lobe's height while its spring is still catching up. Keep the
+  // footer inside the live ink instead of showing its words below the rounded outline mid-resize.
+  if(typeof isSessionToolsCard==='function'&&isSessionToolsCard()){
+    const width=Math.abs(last[0]-first[0]),height=Math.abs(last[1]-first[1]);
+    card.style.clipPath=`inset(0 ${Math.max(0,card.offsetWidth-width)}px ${Math.max(0,card.offsetHeight-height)}px 0)`;
+  }else card.style.removeProperty('clip-path');
   const spread=t*smooth(Math.max(0,Math.min(1,detailArm)));
   const u0=a0+(Math.min(a0,detailBox.u0)-a0)*spread;
   const u1=a1+(Math.max(a1,detailBox.u1)-a1)*spread;
@@ -48,7 +54,7 @@ function drawDetails(){
   // While it grows or draws back in, the lobe is liquid: blurred and cut back, so its corners round and it swells
   // like a drop leaving the notch. Settled, it is sharp again.
   // The log grows and shrinks with what it holds (an alert in, Clear); it is liquid through that too
-  const resizing=hoverId===ALERTS_ID&&detailAim?Math.max(...['u0','u1','v0','v1'].map(k=>Math.abs(detailAim[k]-detailBox[k]))):0;
+  const resizing=(hoverId===ALERTS_ID||typeof isSessionToolsCard==='function'&&isSessionToolsCard())&&detailAim?Math.max(...['u0','u1','v0','v1'].map(k=>Math.abs(detailAim[k]-detailBox[k]))):0;
   const goo=reducedDetails()?0:Math.max(4.2*Math.sin(Math.PI*Math.min(1,t)),Math.min(3.6,resizing*.06)),detailFilter=detailSvg.querySelector('#detail-goo');
   if(goo>.25&&detailFilter){
     setGooBlur(detailFilter,goo);

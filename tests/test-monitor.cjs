@@ -5,7 +5,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
 const main = path.resolve(__dirname, '../desktop/main.cjs');
-function setup(t, initialVisible = true) {
+function setup(t, initialVisible = true, dependencies = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-usage-monitor-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const calls = [], displays = [
@@ -18,16 +18,18 @@ function setup(t, initialVisible = true) {
       requestSingleInstanceLock: () => true, on() {}, whenReady: () => new Promise(() => {}) },
     ipcMain: { handle: (_name, handler) => { command = handler; } },
     screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => point, getDisplayNearestPoint: p => p.x < 0 ? displays[1] : displays[0] },
+    globalShortcut:{register:(key,callback)=>{calls.push(['shortcut',key,callback]);return true;},isRegistered:()=>false,unregister(){}},
   };
   const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
     setIgnoreMouseEvents: v => calls.push(['ignore', v]), setBounds: r => calls.push(['bounds', r]),
+    setFocusable:value=>calls.push(['focusable',value]),focus:()=>calls.push(['focus']),blur:()=>calls.push(['blur']),
     setAlwaysOnTop() {}, moveTop() {}, webContents: { send: (_name, event, payload) => calls.push([event, structuredClone(payload)]), sendInputEvent: e => calls.push(['input', e]) } };
   const settings = { isDestroyed: () => false, webContents: { send() {} } };
   const localRequire = createRequire(main);
-  const context = vm.createContext({ require: id => id === 'electron' ? electron : localRequire(id),
+  const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;} };', context, { filename: main });
-  const config = { edge: 'right', along: .5, scale: 1 };
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
   return { calls, displays, config, win, root, point: p => { point = p; }, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal, test: context.monitorTest,
@@ -53,6 +55,41 @@ test('monitor change clears the rendered surface before moving and reveals only 
   await s.command('monitor_placed', { placement: layout.placement });
   assert.deepEqual(s.calls.at(-1), ['opacity', 1]);
   assert.equal(s.calls.some(c=>c[0]==='appear'),false,'destination is already drawn before native unmasking');
+});
+
+test('Ctrl + Scroll Lock opens the switcher, enables keyboard focus only for it, and toggles closed',async t=>{
+ const s=setup(t);assert.equal(s.test.registerSessionShortcut(),true);
+ const registration=s.calls.find(c=>c[0]==='shortcut');assert.equal(registration[1],'Ctrl+Scrolllock');registration[2]();
+ assert.deepEqual(s.calls.at(-1),['session_switcher',true]);
+ assert.equal(await s.command('session_switcher_focus',{},s.settings.webContents),false);
+ assert.equal(await s.command('session_switcher_focus',{}),true);
+ assert.deepEqual(s.calls.slice(-2),[['focusable',true],['focus']]);
+ registration[2]();assert.deepEqual(s.calls.slice(-3),[['session_switcher',false],['blur'],['focusable',false]]);
+});
+test('switcher pins and resume commands resolve trusted saved metadata, including chats outside recent history',async t=>{
+ const {accountId}=require('../desktop/collector.cjs'),account=accountId('codex','a'),opened=[];
+ const saved={id:'chat',account,provider:'codex',name:'Agent Usage',since:1700000000000,state:'idle',live:false,
+  sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/agent-usage',agentHome:'/home/me/.codex-a'};
+ let history={sessions:[saved]};
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>history},'./session-open.cjs':{openSession:async target=>{opened.push(target);return true;}}});
+ s.test.setAccounts([{id:account,base:'codex',name:'Codex a'}]);
+ assert.equal(await s.command('set_session_pin',{id:'chat',account,on:true,cwd:'/injected',sshTarget:'evil'}),true);
+ assert.equal(s.config.sessionPins[0].cwd,saved.cwd);assert.equal(s.config.sessionPins[0].sshTarget,'homelab');
+ assert.equal(JSON.parse(fs.readFileSync(path.join(s.root,'settings.json'))).sessionPins[0].account,account);
+ history={sessions:[]};s.test.clearHistory();const rows=await s.command('get_session_library');assert.equal(rows.length,1);assert.equal(rows[0].pinned,true);assert.equal(rows[0].agentHome,undefined);
+ await s.command('session_switcher_focus',{});assert.equal(await s.command('open_history_session',{id:'chat',account,cwd:'/injected',source:'wsl'}),true);
+ assert.equal(opened[0].cwd,saved.cwd);assert.equal(opened[0].agentHome,saved.agentHome);assert.equal(opened[0].source,'ssh');
+ assert.deepEqual(s.calls.filter(c=>c[0]==='focusable').at(-1),['focusable',false]);
+ await assert.rejects(s.command('open_history_session',{id:'forged',account}),/no longer/);
+ s.config.sshTarget='other';s.test.clearHistory();assert.equal((await s.command('get_session_library')).length,0);
+ await assert.rejects(s.command('open_history_session',{id:'chat',account}),/no longer/);
+});
+test('focus mode persists a known account and makes it available in the notch',async t=>{
+ const s=setup(t);s.test.setAccounts([{id:'codex-a',base:'codex',name:'Codex a'},{id:'claude-b',base:'claude',name:'Claude b'}]);s.config.slots=[{provider:'claude-b'}];
+ await assert.rejects(s.command('set_focus_account',{account:'missing'}),/no longer/);
+ assert.equal(await s.command('set_focus_account',{account:'codex-a'}),'codex-a');
+ assert.equal(s.config.slots.some(slot=>slot.provider==='codex-a'),true);assert.equal(JSON.parse(fs.readFileSync(path.join(s.root,'settings.json'))).focusAccount,'codex-a');
+ assert.equal(await s.command('get_focus_account'),'codex-a');assert.equal(await s.command('set_focus_account',{account:null}),null);
 });
 test('stale and settings acknowledgments cannot move or unmask a newer monitor transfer', async t => {
   const s = setup(t);

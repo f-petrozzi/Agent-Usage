@@ -36,7 +36,7 @@ The installer is unsigned, so SmartScreen may ask you to confirm it.
 
 ## Update
 
-A yellow **Update available** notification grows out of the notch in the same space as agent notifications. Click it to download; **Update ready** offers a separate click to restart once the download is verified. Settings → General → **Update** → **Restart** remains available. On the collector machine, run
+A steady blue dot at the notification corner announces an update. Hover it to grow the download options; **Update ready** offers a separate click to restart once the download is verified. Update options take priority over agent notifications. Settings → General → **Update** → **Restart** remains available. On the collector machine, run
 `git pull --ff-only && scripts/install-agent-usage.sh --force`.
 
 Claude reads are cached, and HTTP 429 responses trigger a shared cooldown.
@@ -274,3 +274,15 @@ The effect is decorative and never intercepts clicks. Hiding, carrying, or trans
 Updates now use the notification corner and open their fluid options from that same end of the notch. The blue dot stays steady and replaces the yellow unread dot while an update is available. Update options take priority: opening them puts an interrupted unread agent alert back in the queue, and new agent alerts wait until the options close. Agent alerts remain in the notification log.
 
 The border shimmer continues around the whole notch when update options retract, then finishes its original circuit. Validation covers shared placement and update priority on all four edges, queued and interrupted alerts, keyboard actions, reduced motion, and rendered-pixel checks for continued shimmer movement and completion after hover-off. All 76 desktop checks pass.
+
+## Session switcher, pinned chats and focus mode (4.1.0)
+
+Press **Ctrl + Scroll Lock** from any app to reveal the notch and open **Sessions**. Search across all accounts by chat title, workspace or session ID, or filter to one agent. Use ↑/↓ to choose a chat and Enter to resume it in VS Code; click a row for the same action. Escape or the shortcut closes the switcher. **Sessions…** in the notch's right-click menu is another way to open it. The list scrolls inside one bounded lobe on any screen edge.
+
+Star a chat in the switcher or account's Chat history to pin it above recent sessions. Up to six pins per account survive app restarts and remain available after falling out of the recent list. Pins retain their original workspace and CLI account and are kept separately for each SSH host or WSL distribution. Resuming produces a small liquid ripple, followed by a check only after the VS Code helper confirms it opened the terminal. Failed launches keep an explanation in the switcher.
+
+Several finished notifications gather into one **N finished** stack. Hover it to unfold the individual chats; click one to return to that session, including saved AGY conversations when the collector can identify them. Waiting and usage warnings keep their severity, and update options retain priority.
+
+Choose the focus control in an agent's usage header, **Focus on…** in its right-click menu, or **Focus agent** under Settings → General. At rest, the notch contracts to that agent; hovering smoothly restores all agents. Choose the same control again, or **All agents** in Settings, to leave focus mode. Live gauge nodes remain intact through the transition.
+
+The switcher, selection, focus contraction and resume accents use the existing notch's black surface and fluid motion. Focus springs stop once settled, accents have bounded lifetimes, and reduced motion removes the ripple and makes layout changes immediate. Validation includes 85 desktop checks and browser checks for all four edges, keyboard focus, hidden reveal, collector changes during loading, pin persistence/order, stacked completions, acknowledged/failed resumes, scrolling, small viewports and reduced motion, alongside the existing motion, notification, shimmer, history and Settings checks.

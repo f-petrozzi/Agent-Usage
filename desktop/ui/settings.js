@@ -2,6 +2,13 @@
 const api=window.agentUsage, $=id=>document.getElementById(id);
 let flags={},slots=[],accounts=[],glyphs={},alertPrefs={muted:[]},colorTransition='hard_step',activeTab='';
 let notificationTestAccount=null;
+let focusAccount=null;
+function renderFocusChoice(){
+  const select=$('focus-agent');if(!select)return;
+  select.replaceChildren(new Option('All agents',''),...accounts.map(a=>new Option(a.name,a.id)));select.value=focusAccount||'';
+}
+api.invoke('get_focus_account').then(value=>{focusAccount=value;renderFocusChoice();}).catch(()=>{});
+api.on('focus_account',value=>{focusAccount=value;renderFocusChoice();});
 function error(e){$('strip').hidden=false;$('strip').textContent=String(e.message||e);}
 async function call(cmd,args){try{return await api.invoke(cmd,args);}catch(e){error(e);throw e;}}
 function action(fn){return ()=>Promise.resolve().then(fn).catch(()=>{});}
@@ -139,6 +146,7 @@ function updateRow(r,a,on){
   r.detail.hidden=!problem;if(r.detail.textContent!==problem){r.detail.textContent=problem;}
 }
 function renderAccounts(){
+  renderFocusChoice();
   const ids=accounts.map(a=>a.id), on=enabledIds();
   for(const [id,r] of rows)if(!ids.includes(id)){r.el.remove();rows.delete(id);for(const s of [r.x,r.y,r.tilt,r.lift])live.delete(s);}
   for(const a of accounts)updateRow(rows.get(a.id)||createRow(a.id),a,on);
@@ -357,6 +365,7 @@ $('btn-data').onclick=action(()=>call('open_data_dir'));
 $('btn-recentre').onclick=action(()=>call('reset_notch_position'));
 $('save-collector').onclick=action(async()=>{await call('set_collector',{source:$('source').value,sshTarget:$('ssh').value.trim()});$('strip').hidden=false;$('strip').textContent='Collector saved; refreshing…';});
 $('shortcut').onchange=action(async()=>{try{await call('set_shortcut',{shortcut:$('shortcut').value});}finally{const c=await call('get_collector');$('shortcut').value=c.shortcut;}});
+$('focus-agent').onchange=action(async()=>{focusAccount=await call('set_focus_account',{account:$('focus-agent').value||null});renderFocusChoice();});
 $('seg-show').onclick=event=>{const b=event.target.closest('button');if(!b)return;action(async()=>renderFlags(await call('set_ui_flags',{notchVisible:b.dataset.v!=='hide',notchOnHover:b.dataset.v!=='show'})))();};
 $('sw-tray').onclick=action(async()=>renderFlags(await call('set_ui_flags',{trayVisible:!$('sw-tray').classList.contains('on')})));
 // The colour transition also recolours the rings on this page, so its value is kept as well as shown

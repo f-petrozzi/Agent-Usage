@@ -855,6 +855,7 @@ function renderRing(){
     wrap.classList.toggle('stale', staleOf(p.snap));
   }
   reportHot(); // a provider appearing or leaving resizes the pill
+  if(typeof applyFocusLayout==='function')applyFocusLayout();
 }
 
 function resetCopy(ms){
@@ -967,7 +968,8 @@ function historyRow(account){
       const stamp=s.since?new Date(s.since).toLocaleString(ui().locale,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hourCycle:stateSnap.clock_24h?'h23':'h12'}):'';
       const live=s.live?(s.state==='busy'?'Working':s.state==='waiting'?'Waiting':'Open'):'';
       const tag=s.canOpen?'button':'div',attrs=s.canOpen?` type="button" data-session="${esc(s.id)}" data-account="${esc(account)}"`:'';
-      return `<${tag}${attrs} class="h-item${s.canOpen?' history-session':''}" title="${esc(s.canOpen?'Open in VS Code':'Session resume is unavailable for this agent or workspace')}"><span class="h-name">${esc(s.name)}</span><span class="h-meta"><span>${esc(stamp)}</span><span>${esc(live||s.sessionId?.slice(0,8)||'History only')}</span></span></${tag}>`;
+      const pinned=typeof isSessionPinned==='function'?isSessionPinned(account,s.id):s.pinned;
+      return `<div class="h-entry"><${tag}${attrs} class="h-item${s.canOpen?' history-session':''}" title="${esc(s.canOpen?'Open in VS Code':'Session resume is unavailable for this agent or workspace')}"><span class="h-name">${esc(s.name)}</span><span class="h-meta"><span>${esc(stamp)}</span><span>${esc(live||s.sessionId?.slice(0,8)||'History only')}</span></span></${tag}>${s.canOpen&&typeof sessionPinButton==='function'?sessionPinButton({...s,account,pinned}):''}</div>`;
     }).join('');
   return `<div class="c-history${open?' open':''}" data-account="${esc(account)}"><button type="button" class="h-head r-head" aria-expanded="${open}" aria-controls="session-history-list">${HISTORY_ICON}<span class="r-count">Chat history</span><span class="h-count">${rows.length||''}</span><svg class="h-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button><div class="h-list" id="session-history-list" aria-hidden="${!open}"${open?'':' inert'}><div><div class="h-scroll">${content}</div></div></div></div>`;
 }
@@ -982,6 +984,8 @@ function openHistory(row,on){
 }
 function renderCard(){
   const c=document.getElementById('card');
+  if(typeof renderSessionToolsCard==='function'&&renderSessionToolsCard())return;
+  c.classList.remove('session-card');
   if(hoverId===ALERTS_ID){ // the bell: the alert log in the same lobe
     const changed=!!c.dataset.account&&c.dataset.account!==ALERTS_ID;
     if(typeof setExtraContent==='function')setExtraContent([],[]);
@@ -1002,7 +1006,7 @@ function renderCard(){
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
   const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
-  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':refresh}</div>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':(typeof focusButton==='function'?focusButton(p.id):'')+refresh}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -1062,7 +1066,7 @@ function placeCard(){
   const o=document.getElementById('root').getBoundingClientRect();
   const r=pill.getBoundingClientRect(), cell=pill.querySelector(`.cell[data-p="${hoverId}"]`)||pill;
   // Fit the alert log to the flat notch; side edges retain a compact readable column.
-  const log=hoverId===ALERTS_ID;
+  const log=hoverId===ALERTS_ID,tools=typeof isSessionToolsCard==='function'&&isSessionToolsCard();
   card.classList.toggle('alert-card',log);
   if(log){
     const chips=card.querySelector('.a-chips'), style=getComputedStyle(card), switches=chips?[...chips.querySelectorAll('.a-chip')]:[];
@@ -1072,6 +1076,7 @@ function placeCard(){
     const tz=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tz'))||1;
     card.style.setProperty('--card-width',Math.min((innerWidth-16)/tz,Math.max(minimum/tz,edgeIsVertical()?228:r.width))+'px');
   }
+  else if(tools)card.style.setProperty('--card-width',Math.min(360,innerWidth-16)+'px');
   else card.style.removeProperty('--card-width');
   const cr=r, w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
@@ -1148,6 +1153,7 @@ function holdCard(id){
 function leaveCard(){
   clearTimeout(showTimer);pendingAccount=null;
   if(!card.classList.contains('show'))return;
+  if(typeof sessionSwitcherShowing==='function'&&sessionSwitcherShowing())return;
   if(cardHeld){if(!pinnedNow&&!awayTimer)awayTimer=setTimeout(()=>{awayTimer=0;hideCard();},HELD_AWAY);return;}
   scheduleHide();
 }
@@ -1160,7 +1166,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1259,6 +1265,7 @@ listen('notch_reveal',()=>{ document.documentElement.style.visibility=''; }).cat
 function inRect(x,y,r,pad){return x>=r.left-pad&&y>=r.top-pad&&x<r.right+pad&&y<r.bottom+pad;}
 function syncAccountFocus(on){
   if(hoverId===ALERTS_ID)on=false; // the log is about every account, so none recedes
+  if(typeof isSessionToolsCard==='function'&&isSessionToolsCard())on=false;
   for(const el of pill.querySelectorAll('.cell')){
     const selected=on&&el.dataset.p===hoverId;
     el.classList.toggle('focused-account',selected);
@@ -1299,6 +1306,7 @@ document.addEventListener('mousemove',e=>{
   if(window.agentTracking)return;
   if(dragging)return; // no card while dragging
   if(carrying) return; // the notch is in hand; the card would only be in the way
+  if(typeof sessionSwitcherShowing==='function'&&sessionSwitcherShowing())return;
   setHovered(onHandle(e.clientX,e.clientY));
   // Over a handle or the pin/refresh row, the card gives way
   // The bell's own log stays open while the pointer is back on the bell; any other handle takes over from the card
@@ -1331,6 +1339,7 @@ document.addEventListener('pointerdown',()=>{invoke('page_pressed').catch(()=>{}
 // A press anywhere outside the notch puts a held card away (main sees it through its input helper)
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
 card.addEventListener('click',async e=>{
+  if(e.target.closest('.session-pin,.focus-agent,.session-tool-action'))return;
   const history=e.target.closest('.history-session');
   if(history){
     clearSessionLinkError();history.disabled=true;

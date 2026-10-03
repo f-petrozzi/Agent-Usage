@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const { openSession, resumeUrl, prepareHelper } = require('./session-open.cjs');
 const { createUpdates } = require('./updates.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
+const {normalizePins,libraryRows,changePin,publicRow,alertResumeRow}=require('./session-library.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks, readSessionHistory } = require('./collector.cjs');
 const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionUrl, historicalTarget, sessionTarget } = require('./alerts.cjs');
 
@@ -33,15 +34,41 @@ async function recentHistory() {
   }).finally(() => { if (historyPending === pending) historyPending = null; });
   historyPending = pending; return pending;
 }
-function historyTarget(s, history) {
-  return { ...s, resume: true, source: config.source, sshTarget: config.sshTarget, wslDistro: history.wslDistro };
-}
 let visible = false, held = false, mouseDown = false, carrying = false, dismissed = false;
 // alerting: the page is showing an alert, which decides for itself how long it stays (notify.js); expanded: a card
 // is open, and the notch never goes before it has closed
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
+let switcherRequested=false,switcherFocused=false;
+const SESSION_SHORTCUT='Ctrl+Scrolllock';
+function registerSessionShortcut(){
+  return globalShortcut.register(SESSION_SHORTCUT,()=>{if(switcherFocused){send('session_switcher',false);releaseSwitcherFocus();return;}openSessionSwitcher();});
+}
+function focusSwitcher(){
+  if(!win||win.isDestroyed())return;
+  switcherFocused=true;win.setFocusable(true);win.focus();
+}
+function releaseSwitcherFocus(){
+  if(!switcherFocused)return;
+  switcherFocused=false;win?.blur();win?.setFocusable(false);
+}
+function openSessionSwitcher(){
+  switcherRequested=true;reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+3000);
+  send('session_switcher',true);
+}
+async function sessionLibrary(){
+  let history;
+  try{history=await recentHistory();if(config.source==='wsl'&&history.wslDistro!==config.lastWslDistro){config.lastWslDistro=history.wslDistro;save();broadcast('session_pins',currentSessionPins());}}
+  catch(error){
+    history=historyCache||{sessions:[],wslDistro:config.lastWslDistro};
+    if(!libraryRows(history,config.sessionPins,config).length)throw error;
+  }
+  return libraryRows(history,config.sessionPins,config);
+}
+function currentSessionPins(){
+  return normalizePins(config.sessionPins).filter(s=>s.source===config.source&&(s.source==='ssh'?s.sshTarget===config.sshTarget:s.wslDistro===config.lastWslDistro)).map(s=>({id:s.id,account:s.account}));
+}
 let phase = 'hidden', frameReady = false, hotkeyProblem = '', lastRaise = 0, replacements = 0, pageViewport = null, lastPlacedAt = 0;
 let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null, pendingPlacementStage = null, pendingPlacementAtPointer = false;
 const uiRoot = path.join(__dirname, 'ui');
@@ -100,6 +127,8 @@ async function start() {
   quotaAlerts = new QuotaAlerts(config.quotaWarnings); sessionAlerts = new SessionAlerts();
   config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false, alerts: config.buttons?.alerts !== false };
   config.alertLog = alertLog(config.alertLog);
+  config.sessionPins=normalizePins(config.sessionPins);
+  config.focusAccount=typeof config.focusAccount==='string'?config.focusAccount.slice(0,120):null;
   if (!shortcuts[config.shortcut]) config.shortcut = 'Scrolllock';
   if (!['left','right','top','bottom'].includes(config.edge)) config.edge = 'right';
   config.scale = [0.8, 1, 1.25].includes(config.scale) ? config.scale : 1;
@@ -139,6 +168,7 @@ async function start() {
   updates.start();
   restartCollector();
   try { registerShortcut(config.shortcut); } catch (error) { hotkeyProblem = error.message; }
+  if(!registerSessionShortcut())broadcast('notice','Ctrl + Scroll Lock is already in use. Open Sessions from the notch menu.');
   configureTray();
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!config.autostart, path: process.execPath });
   nativeTheme.on('updated', () => broadcast('theme_resolved', theme()));
@@ -221,6 +251,7 @@ function reveal(atPointer = true) {
 function hide() {
   if (!win || !visible) return;
   visible = false; phase = 'hiding'; pinned = false; hot = []; alerting = false; expanded = false;
+  switcherRequested=false;releaseSwitcherFocus();
   win.setIgnoreMouseEvents(true, { forward: true });
   send('disappear'); if (pendingPlacement) sendLayout(); broadcast('ui_flags', flags());
   // Long enough for the notch to slide back into the edge (agent-usage.css), then parked rather than hidden
@@ -283,7 +314,7 @@ function registerShortcut(value) {
       const value = buffer.slice(0, at).trim(); buffer = buffer.slice(at + 1);
       if (!/^[01]{3}$/.test(value)) continue;
       const previous = held, previousMouse = mouseDown;
-      held = value[0] === '1'; mouseDown = value[2] === '1';
+      held = value[0] === '1'&&!switcherFocused; mouseDown = value[2] === '1';
       if (held && !previous) { dismissed = false; lastCursor=''; reveal(); }
       if (!held && previous) { visibleUntil = Date.now() + 1800; send('release'); broadcast('ui_flags', flags()); save(); }
       if (mouseDown && !previousMouse && visible && !held && !carrying) physicalPress(screen.getCursorScreenPoint());
@@ -408,10 +439,13 @@ function showAlerts(events) {
     level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, target: logged[i]?.target || null, took: Number.isFinite(e.took) ? e.took : null,
     title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
-function contextMenu() {
+function contextMenu(provider=null) {
+  const focus=accounts().find(a=>a.id===provider)||accounts().find(a=>a.id===config.focusAccount);
   menuOpen = true;
   return new Promise(resolve => Menu.buildFromTemplate([
     { label: 'Pin here', type: 'checkbox', checked: pinned, click: item => setPinned(item.checked) },
+    { label: 'Sessions…   Ctrl + Scroll Lock', click:openSessionSwitcher },
+    ...(focus?[{label:'Focus on '+focus.name,type:'checkbox',checked:config.focusAccount===focus.id,click:item=>{config.focusAccount=item.checked?focus.id:null;save();broadcast('focus_account',config.focusAccount);}}]:[]),
     { label: 'Refresh usage', click: requestRefresh },
     { label: 'Settings…', click: () => openSettings() },
     { label: updates?.get().status === 'ready' ? 'Restart to update' : updates?.get().status === 'available' ? 'Update available' : 'Check for updates', click: () => { openSettings('general'); if(updates?.get().status==='ready')updates.install();else if(updates?.get().status==='available')void updates.download();else void updates?.check(); } }, { type: 'separator' },
@@ -457,7 +491,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       replacements = 0; lastPlacedAt = Date.now();
       pendingPlacement = null; pendingPlacementEdge = null; pendingPlacementStage = null; pendingPlacementAtPointer = false;
       phase = visible ? 'shown' : 'hidden';
-      win.setOpacity(1); return true;
+      win.setOpacity(1);if(switcherRequested)send('session_switcher',true);return true;
     }
     case 'stage_bounds': stage = { x: Number(args.x) || 0, y: Number(args.y) || 0 }; return null;
     case 'set_hot': {
@@ -476,18 +510,34 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_cursor': case 'get_grok': case 'get_glm': case 'get_opencode': case 'get_antigravity': return absent();
     case 'get_activity': return feed?.sessions || [];
     case 'get_session_history': {
-      const history = await recentHistory();
-      return history.sessions.filter(s => s.account === args.account).map(s => ({ id: s.id, name: s.name, since: s.since,
-        state: s.state, live: s.live, sessionId: s.sessionId, canOpen: !!resumeUrl(historyTarget(s, history)) }));
+      const rows=await sessionLibrary();
+      return rows.filter(s=>s.account===args.account).map(s=>publicRow(s,accounts().find(a=>a.id===s.account)));
+    }
+    case 'get_session_library':return (await sessionLibrary()).map(s=>publicRow(s,accounts().find(a=>a.id===s.account)));
+    case 'get_session_pins':return currentSessionPins();
+    case 'set_session_pin':{
+      if(typeof args.on!=='boolean')throw new Error('Choose whether to pin this chat.');
+      const rows=await sessionLibrary(),saved=rows.find(s=>s.account===args.account&&s.id===args.id);
+      if(!saved)throw new Error('This session is no longer available. Reload sessions.');
+      config.sessionPins=changePin(config.sessionPins,saved,args.on);save();broadcast('session_pins',currentSessionPins());return args.on;
+    }
+    case 'open_session_switcher':openSessionSwitcher();return null;
+    case 'session_switcher_focus':if(event.sender!==win?.webContents||!visible)return false;switcherRequested=false;focusSwitcher();return true;
+    case 'close_session_switcher':switcherRequested=false;releaseSwitcherFocus();return null;
+    case 'get_focus_account':return config.focusAccount;
+    case 'set_focus_account':{
+      if(args.account!==null&&!accounts().some(a=>a.id===args.account))throw new Error('This agent account is no longer available.');
+      if(args.account&&config.slots?.length&&!config.slots.some(s=>s.provider===args.account)){config.slots.push({provider:args.account});broadcast('notch_slots',config.slots);}
+      config.focusAccount=args.account;save();broadcast('focus_account',config.focusAccount);return config.focusAccount;
     }
     case 'open_history_session': {
       // Identity only from the renderer: launch metadata must come from this collector's saved snapshot.
-      const history = await recentHistory(), saved = history.sessions.find(s => s.account === args.account && s.id === args.id);
+      const saved=(await sessionLibrary()).find(s=>s.account===args.account&&s.id===args.id);
       if (!saved) throw new Error('This session is no longer in recent history. Open history again.');
       const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === saved.account && (s.sessionId || s.id) === saved.sessionId);
-      const target = historyTarget({ ...saved, terminalPids: current?.terminalPids || [] }, history);
+      const target = {...saved,terminalPids:current?.terminalPids||[]};
       if (!resumeUrl(target)) throw new Error('This agent does not support session resume here, or its workspace metadata is missing.');
-      return openSession(target, shell);
+      releaseSwitcherFocus();return openSession(target, shell);
     }
     case 'get_claude_auth': return { available: false, busy: false, can_sign_in: false };
     case 'get_glyphs': return glyphs();
@@ -503,8 +553,14 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       broadcast('notification_test', notificationTestAccount); return notificationTestAccount;
     }
     case 'open_alert_session': {
+      releaseSwitcherFocus();
       // Resolve a stored alert, never accept a URL or command from the renderer.
       const entry = alertLog(config.alertLog).find(e => e.id === args.id);
+      if(entry&&!entry.target?.terminalPids?.length){
+        // Saved CLI metadata can resume a closed chat, including AGY, without changing its account.
+        const saved=alertResumeRow(entry,await sessionLibrary().catch(()=>[]));
+        if(saved)return openSession(saved,shell);
+      }
       if (entry?.target && !entry.target.terminalPids?.length) {
         const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === entry.account && s.sessionId === entry.target.sessionId);
         const target = sessionTarget(current);
@@ -522,6 +578,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       return openSession(entry.target, shell, { protocolName: url => app.getApplicationNameForProtocol(url) });
     }
     case 'open_working_session': {
+      releaseSwitcherFocus();
       const active = feed?.sessions.find(s => s.account === args.account && s.id === args.id)
         || sessionAlerts.previous?.get(args.account + ':' + args.id);
       const url = sessionUrl(active);
@@ -606,7 +663,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'open_settings': openSettings(); return null;
     case 'close_settings': settings?.close(); return null;
     case 'refresh_ring': requestRefresh(); return false;
-    case 'show_notch_menu': return contextMenu();
+    case 'show_notch_menu': return contextMenu(args.provider);
     case 'begin_move': case 'drag_begin': beginMove(); return null;
     case 'open_data_dir': await shell.openPath(app.getPath('userData')); return null;
     case 'quit_app': app.quit(); return null;

@@ -47,7 +47,20 @@ function pumpAlert(){
   if(updatePending){pumpUpdate();return;}
   if(slivers.has(UPDATE_ID))return;
   if(!alertQueue.length){pumpUpdate();return;}
-  if(alertWaits()||(!edgeIsVertical()&&slivering())){pumpTimer=setTimeout(pumpAlert,200);return;}
+  if(alertWaits()){pumpTimer=setTimeout(pumpAlert,200);return;}
+  // Completions share one compact stack, including bursts that arrive while the first is still out.
+  // Waiting and usage warnings retain their severity and their account's own sliver.
+  if(typeof FINISHED_ID!=='undefined'&&!alertQueue.some(p=>p.events.some(e=>e.kind!=='completion'))){
+    const active=[...slivers.values()].filter(s=>s.to&&!s.test&&s.events.every(e=>e.kind==='completion'));
+    const events=[...active.flatMap(s=>s.events),...alertQueue.flatMap(p=>p.events)];
+    const unique=[...new Map(events.map(e=>[e.id||[e.account,e.session,e.took].join(':'),e])).values()];
+    if(unique.length>1){
+      const sound=alertQueue.some(p=>p.sound),hold=Math.max(6500,...alertQueue.map(p=>p.hold||6500));alertQueue.length=0;
+      for(const s of active)if(s.account!==FINISHED_ID)retract(s);
+      showSliver(FINISHED_ID,unique,hold);if(sound)chime('completion');reportHot();return;
+    }
+  }
+  if(!edgeIsVertical()&&slivering()){pumpTimer=setTimeout(pumpAlert,200);return;}
   while(alertQueue.length){
     const p=alertQueue.shift(), byAccount=new Map();
     for(const e of p.events){const key=providers().some(x=>x.id===e.account)?e.account:'';(byAccount.get(key)||byAccount.set(key,[]).get(key)).push(e);}
@@ -67,6 +80,7 @@ function pumpAlert(){
 const ALERT_RANK={quota100:0,waiting:1,quota80:2,completion:3};
 function sliverLine(events){
   if(events[0]?.kind==='update')return updateLine();
+  if(events.length>1&&events.every(e=>e.kind==='completion'))return `<span class="s-word" style="color:${INK}">${events.length} finished</span><span class="s-text"><span class="s-scroll">Choose a session</span></span>`;
   const kick=ui().kick||UI.en.kick;
   const e=[...events].sort((a,b)=>ALERT_RANK[a.kind==='quota'?'quota'+(a.level===100?100:80):a.kind]-ALERT_RANK[b.kind==='quota'?'quota'+(b.level===100?100:80):b.kind])[0];
   const acct=providers().find(x=>x.id===e.account);
@@ -92,12 +106,16 @@ function showSliver(account,events,hold){
     card.parentElement.append(el);
     s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);placeUnreadDot();
     el.setAttribute('role','button');el.tabIndex=0;
-    const activate=()=>{if(s.account===UPDATE_ID){activateUpdate();return;}markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
+    const activate=()=>{if(s.account===UPDATE_ID){activateUpdate();return;}if(typeof FINISHED_ID!=='undefined'&&s.account===FINISHED_ID){markSeen(s);openCompletionStack(s.events);return;}markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
     el.addEventListener('click',activate);
+    el.addEventListener('mouseenter',()=>{if(typeof FINISHED_ID!=='undefined'&&s.account===FINISHED_ID&&s.to){markSeen(s);openCompletionStack(s.events);}});
     el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
   }
   s.test=events.every(e=>e.test===true);
-  s.events=account===UPDATE_ID?events:[...events,...s.events.filter(e=>!e.test)].slice(0,6);s.to=1;s.seen=false;
+  const stack=typeof FINISHED_ID!=='undefined'&&account===FINISHED_ID;
+  s.events=account===UPDATE_ID||stack?events.slice(0,40):[...events,...s.events.filter(e=>!e.test)].slice(0,6);s.to=1;s.seen=false;
+  s.el.classList.toggle('sliver-stack',stack);if(stack)s.el.setAttribute('aria-label',`${s.events.length} finished sessions. Show sessions`);
+  if(typeof setFocusExpanded==='function')setFocusExpanded(true);
   s.scroll?.cancel();s.scroll=null;s.scrollDistance=null;
   s.el.innerHTML=sliverLine(s.events);
   // Only as long as the line: measured laid out on one line, then the sliver is cut to it
@@ -140,7 +158,7 @@ function drawSliver(s){
   const cells=[...pill.querySelectorAll('.cell')].map(el=>{
     const box=el.getBoundingClientRect();return {el,u:local(box.left+box.width/2-origin.left,box.top+box.height/2-origin.top)[0]};
   }).sort((a,b)=>a.u-b.u);
-  const index=s.account===UPDATE_ID?0:cells.findIndex(a=>a.el===cell);
+  const index=s.account===UPDATE_ID||typeof FINISHED_ID!=='undefined'&&s.account===FINISHED_ID?0:cells.findIndex(a=>a.el===cell);
   const depth=edgeDepth(notchEdge), rootDepth=depth-SHAPE.corner, t=Math.max(0,s.t), grown=Math.min(1,t);
   let u0,u1,d;
   if(vertical){
@@ -186,7 +204,7 @@ function scrollSliver(s){
     {duration,iterations:Infinity,easing:'linear'});
   if(!slivHeld&&!s.test){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);placeUnreadDot();reportHot();if(!slivers.size)ringBell();if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
+function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -733,7 +751,7 @@ card.addEventListener('click',e=>{
 
 async function openNotifiedAlert(entry,account){
   clearSessionLinkError();
-  if(entry?.id&&['waiting','completion'].includes(entry.kind)&&providers().find(p=>p.id===account)?.base!=='gemini'){
+  if(entry?.id&&['waiting','completion'].includes(entry.kind)){
     try{if(await invoke('open_alert_session',{id:entry.id})){hideCard();return;}}catch(error){if(!logShowing())holdCard(account);showSessionLinkError(error.message||'VS Code could not be opened.');return;}
     if(!logShowing())holdCard(account);
     showSessionLinkError('This older alert has no session link and could not be matched uniquely.');return;

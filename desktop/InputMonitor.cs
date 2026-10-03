@@ -24,6 +24,8 @@ internal static class InputMonitor
                     if (++tick % 50 == 0 && owner.HasExited) return;
                     bool held = Down(key) && ((modifiers & 2) == 0 || Down(0x11))
                         && ((modifiers & 4) == 0 || Down(0x10)) && ((modifiers & 1) == 0 || Down(0x12));
+                    // Ctrl + Scroll Lock belongs to the session switcher, not the held reveal shortcut.
+                    if (key == 0x91 && modifiers == 0 && Down(0x11)) held = false;
                     // Reserve the middle bit for compatibility with the existing three-bit stream.
                     string value = (held ? "1" : "0") + "0" + (Down(1) ? "1" : "0");
                     if (value != previous) { Console.WriteLine(value); Console.Out.Flush(); previous = value; }
