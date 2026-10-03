@@ -3,7 +3,6 @@
 // spring draws its black; only the selection and small handoff accents animate on top of it.
 const SESSION_ID='__sessions',FINISHED_ID='__finished';
 const STAR_MARK='<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L2.2 7.7l5.4-.8Z"/></svg>';
-const FOCUS_MARK='<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="2"/></svg>';
 let sessionPins=new Set(),library=[],libraryLoaded=false,libraryLoading=false,libraryError='',libraryAt=0,libraryGeneration=0;
 let switcherPending=false,sessionQuery='',sessionAccount='',sessionIndex=0,sessionMatches=[],sessionRenderFrame=0,sessionListSignature='';
 let finishedSessions=[];
@@ -34,20 +33,22 @@ async function loadSessionLibrary(force=false){
 }
 function requestSessionSwitcher(on=true){
   if(!on){switcherPending=false;if(sessionSwitcherShowing())hideCard();return;}
-  if(sessionSwitcherShowing()){card.querySelector('.session-search')?.focus();return;}
+  if(sessionSwitcherShowing()){focusSessionSearch();return;}
   switcherPending=true;
   const attempt=()=>{
     if(!switcherPending)return;
     if(!shown||window.agentTracking||document.getElementById('root').classList.contains('placing'))return;
     switcherPending=false;hideCard();sessionQuery='';sessionAccount='';sessionIndex=0;sessionListSignature='';
     hoverId=SESSION_ID;cardHeld=true;card.classList.add('held');showCard();setFocusExpanded(true);
-    invoke('session_switcher_focus').catch(()=>{});loadSessionLibrary();
-    requestAnimationFrame(()=>card.querySelector('.session-search')?.focus({preventScroll:true}));
+    focusSessionSearch();loadSessionLibrary();
   };
   attempt();
 }
+function focusSessionSearch(){
+  invoke('session_switcher_focus').then(()=>{if(sessionSwitcherShowing())requestAnimationFrame(()=>card.querySelector('.session-search')?.focus({preventScroll:true}));}).catch(()=>{});
+}
 listen('session_switcher',e=>requestSessionSwitcher(e.payload!==false)).catch(()=>{});
-for(const name of ['appear','layout'])listen(name,()=>{if(switcherPending)requestAnimationFrame(()=>requestSessionSwitcher());}).catch(()=>{});
+for(const name of ['appear','layout','release'])listen(name,()=>{if(switcherPending)requestAnimationFrame(()=>requestSessionSwitcher());}).catch(()=>{});
 listen('disappear',()=>{switcherPending=false;clearResumeEffects();}).catch(()=>{});
 listen('monitor_stow',()=>clearResumeEffects()).catch(()=>{});
 function closeSessionTools(){
@@ -136,7 +137,6 @@ card.addEventListener('click',async e=>{
   if(e.target.closest('.session-reload')){loadSessionLibrary(true);return;}
   const open=e.target.closest('.session-open');if(open){resumeSwitcherSession(Number(open.dataset.index));return;}
   const finished=e.target.closest('.finished-session');if(finished){const s=finishedSessions[Number(finished.dataset.index)];if(s)openNotifiedAlert(s,s.account);return;}
-  const focus=e.target.closest('.focus-agent');if(focus){invoke('set_focus_account',{account:focusAccount===focus.dataset.account?null:focus.dataset.account}).catch(error=>notice(error.message));}
 });
 document.addEventListener('keydown',e=>{
   if(!isSessionToolsCard()||!card.classList.contains('show'))return;
@@ -151,51 +151,77 @@ function openCompletionStack(events){
   finishedSessions=events.slice(0,40);hoverId=FINISHED_ID;cardHeld=true;card.classList.add('held');showCard();setFocusExpanded(true);
 }
 
-// Focus contracts the actual layout and SVG outline together. It keeps the same cell nodes, and
-// runs one spring only while moving; live quota and activity readings continue behind the clipping.
-let focusAccount=null,focusExpanded=false,focusOpen=1,focusTarget=1,focusVelocity=0,focusFrame=0,focusLast=0,focusTimer=0;
-const focusMotion=matchMedia('(prefers-reduced-motion: reduce)');
-function focusButton(account){return `<button type="button" class="focus-agent" data-account="${esc(account)}" aria-pressed="${focusAccount===account}" aria-label="${focusAccount===account?'Exit focus mode':'Focus on this agent'}" title="${focusAccount===account?'Exit focus mode':'Focus on this agent'}">${FOCUS_MARK}</button>`;}
+// Each cell keeps its own position and velocity, so changing the selected group mid-flight
+// unfolds new members and takes old ones home without resetting the notch or clipping a gauge.
+let focusAccounts=new Set(),focusExpanded=false,focusFrame=0,focusLast=0,focusTimer=0;
+const focusCells=new Map(),focusMotion=matchMedia('(prefers-reduced-motion: reduce)');
+function focusWantsAll(){return !focusAccounts.size||focusExpanded||window.agentTracking||card.classList.contains('show')||slivering();}
 function applyFocusLayout(){
-  const cells=[...pill.querySelectorAll('.cell')],enabled=!!focusAccount&&cells.some(c=>c.dataset.p===focusAccount),vertical=edgeIsVertical(),p=enabled?Math.max(0,Math.min(1,focusOpen)):1;
-  if(!enabled){pill.style.removeProperty('gap');for(const cell of cells){cell.style.removeProperty('max-width');cell.style.removeProperty('max-height');cell.style.removeProperty('--focus-visibility');cell.classList.remove('focus-rest');cell.tabIndex=0;}return;}
-  pill.style.setProperty('--length',`${104+Math.max(0,cells.length-1)*82*p}px`);pill.style.gap=(vertical?14:38)*p+'px';
+  const cells=[...pill.querySelectorAll('.cell')],vertical=edgeIsVertical(),reversed=['bottom','left'].includes(notchEdge);
+  const enabled=cells.some(c=>focusAccounts.has(c.dataset.p)),all=!enabled||focusWantsAll();
   for(const cell of cells){
-    const other=cell.dataset.p!==focusAccount;cell.classList.toggle('focus-rest',other);
-    cell.style.maxWidth=other&&!vertical?44*p+'px':'';cell.style.maxHeight=other&&vertical?68*p+'px':'';
-    cell.style.setProperty('--focus-visibility',other?String(smooth(p)):'1');cell.tabIndex=other&&p<.15?-1:0;
+    let state=focusCells.get(cell.dataset.p);
+    if(!state){state={value:1,velocity:0,target:1};focusCells.set(cell.dataset.p,state);}
+    state.target=all||focusAccounts.has(cell.dataset.p)?1:0;
+    if(focusMotion.matches){state.value=state.target;state.velocity=0;}
   }
+  const weights=cells.map(c=>Math.max(0,Math.min(1,focusCells.get(c.dataset.p).value))),gap=vertical?14:38;
+  let after=weights.reduce((a,b)=>a+b,0),length=vertical?36:60;
+  pill.style.gap='0px';
+  for(let i=0;i<cells.length;i++){
+    const cell=cells[i],weight=weights[i];after-=weight;
+    const spacing=gap*weight*Math.min(1,Math.max(0,after));length+=(vertical?68:44)*weight+spacing;
+    cell.style.width=vertical?'':44*weight+'px';cell.style.height=vertical?68*weight+'px':'';
+    cell.style.maxWidth='';cell.style.maxHeight='';
+    for(const prop of ['marginTop','marginRight','marginBottom','marginLeft'])cell.style[prop]='';
+    cell.style[vertical?(reversed?'marginTop':'marginBottom'):(reversed?'marginLeft':'marginRight')]=spacing+'px';
+    cell.style.setProperty('--focus-visibility',String(smooth(weight)));
+    cell.style.setProperty('--focus-scale',String(.76+.24*smooth(weight)));
+    cell.classList.toggle('focus-rest',weight<.999);cell.tabIndex=weight<.15?-1:0;
+  }
+  pill.style.setProperty('--length',Math.max(104,length)+'px');
+  const ids=new Set(cells.map(c=>c.dataset.p));for(const id of focusCells.keys())if(!ids.has(id))focusCells.delete(id);
+  if(!focusMotion.matches)startFocusAnimation();
 }
 function setFocusExpanded(on){
-  clearTimeout(focusTimer);focusExpanded=on;
-  const next=!focusAccount||on||window.agentTracking||card.classList.contains('show')||slivering()?1:0;
-  if(next===focusTarget&&focusOpen===next)return;focusTarget=next;
-  if(focusMotion.matches){cancelAnimationFrame(focusFrame);focusFrame=0;focusVelocity=0;focusOpen=next;applyFocusLayout();aim(layout.edge,layout.along,true);return;}
-  if(focusFrame)return;focusLast=performance.now();
+  clearTimeout(focusTimer);focusExpanded=on;applyFocusLayout();
+  if(focusMotion.matches){
+    cancelAnimationFrame(focusFrame);focusFrame=0;
+    for(const state of focusCells.values()){state.value=state.target;state.velocity=0;}
+    applyFocusLayout();aim(layout.edge,layout.along,true);return;
+  }
+  startFocusAnimation();
+}
+function startFocusAnimation(){
+  if(focusFrame||[...focusCells.values()].every(s=>s.value===s.target&&s.velocity===0))return;
+  focusLast=performance.now();
   const step=now=>{
-    const dt=Math.min(.025,(now-focusLast)/1000);focusLast=now;const omega=2*Math.PI/.48;
-    focusVelocity+=(-omega*omega*(focusOpen-focusTarget)-2*.88*omega*focusVelocity)*dt;focusOpen+=focusVelocity*dt;
-    const settled=Math.abs(focusOpen-focusTarget)<.002&&Math.abs(focusVelocity)<.02;if(settled){focusOpen=focusTarget;focusVelocity=0;}
-    applyFocusLayout();aim(layout.edge,layout.along,!window.agentTracking);for(const s of slivers.values())drawSliver(s);
+    const elapsed=Math.min(.04,(now-focusLast)/1000);focusLast=now;
+    const steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps,omega=2*Math.PI/.54;
+    let settled=true;
+    for(const state of focusCells.values()){
+      for(let i=0;i<steps;i++){state.velocity+=(-omega*omega*(state.value-state.target)-2*.95*omega*state.velocity)*dt;state.value+=state.velocity*dt;}
+      if(Math.abs(state.value-state.target)<.001&&Math.abs(state.velocity)<.015){state.value=state.target;state.velocity=0;}else settled=false;
+    }
+    applyFocusLayout();aim(layout.edge,layout.along);for(const s of slivers.values())drawSliver(s);
     focusFrame=settled?0:requestAnimationFrame(step);
   };
   focusFrame=requestAnimationFrame(step);
 }
 function scheduleFocusRest(){clearTimeout(focusTimer);focusTimer=setTimeout(()=>{if(!pointerIn&&!card.classList.contains('show')&&!slivering())setFocusExpanded(false);},700);}
-function setFocusAccount(value){
-  focusAccount=typeof value==='string'?value:null;window.sessionFocusAccount=focusAccount;
-  const all=originalProviders(),index=all.findIndex(a=>a.id===focusAccount),capacity=Math.max(1,Math.floor((edgeIsVertical()?innerHeight-150:innerWidth-150)/90));
-  if(index>=0&&(index<accountOffset||index>=accountOffset+capacity))accountOffset=index;
-  renderRing();setFocusExpanded(pointerIn||card.classList.contains('show'));if(card.classList.contains('show'))renderCard();
+function setFocusAccounts(value){
+  focusAccounts=new Set(Array.isArray(value)?value:[]);window.sessionFocusAccounts=[...focusAccounts];
+  const all=originalProviders(),index=all.findIndex(a=>focusAccounts.has(a.id)),capacity=Math.max(1,Math.floor((edgeIsVertical()?innerHeight-150:innerWidth-150)/90));
+  if(index>=0&&!all.slice(accountOffset,accountOffset+capacity).some(a=>focusAccounts.has(a.id)))accountOffset=index;
+  renderRing();setFocusExpanded(pointerIn||card.classList.contains('show'));
 }
-invoke('get_focus_account').then(setFocusAccount).catch(()=>{});listen('focus_account',e=>setFocusAccount(e.payload)).catch(()=>{});
+invoke('get_focus_accounts').then(setFocusAccounts).catch(()=>{});listen('focus_accounts',e=>setFocusAccounts(e.payload)).catch(()=>{});
 listen('notch_pointer',e=>{if(e.payload)setFocusExpanded(true);else scheduleFocusRest();}).catch(()=>{});
 listen('edge_cursor',()=>setFocusExpanded(true)).catch(()=>{});
 listen('release',()=>scheduleFocusRest()).catch(()=>{});
-listen('activity',()=>{if(focusAccount&&!focusExpanded)scheduleFocusRest();}).catch(()=>{});
+listen('activity',()=>{if(focusAccounts.size&&!focusExpanded)scheduleFocusRest();}).catch(()=>{});
 pill.addEventListener('mouseenter',()=>setFocusExpanded(true));pill.addEventListener('mouseleave',()=>scheduleFocusRest());
-pill.addEventListener('focusin',()=>setFocusExpanded(true));
-card.addEventListener('mouseenter',()=>setFocusExpanded(true));
+pill.addEventListener('focusin',()=>setFocusExpanded(true));card.addEventListener('mouseenter',()=>setFocusExpanded(true));
 focusMotion.addEventListener('change',()=>setFocusExpanded(focusExpanded));
 
 // All session entry points share the same acknowledgement-based effect, including alert-log links.

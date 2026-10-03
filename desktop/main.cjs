@@ -40,10 +40,20 @@ let visible = false, held = false, mouseDown = false, carrying = false, dismisse
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
-let switcherRequested=false,switcherFocused=false;
+let switcherRequested=false,switcherFocused=false,sessionKeyHeld=false,sessionShortcutAt=0,sessionShortcutSource='';
 const SESSION_SHORTCUT='Ctrl+Scrolllock';
 function registerSessionShortcut(){
-  return globalShortcut.register(SESSION_SHORTCUT,()=>{if(switcherFocused){send('session_switcher',false);releaseSwitcherFocus();return;}openSessionSwitcher();});
+  return globalShortcut.register(SESSION_SHORTCUT,()=>triggerSessionShortcut('electron'));
+}
+function triggerSessionShortcut(source){
+  const now=Date.now();
+  // The native monitor also catches this key when Windows refuses Electron's registration.
+  // Coalesce those two reports and ignore the OS's repeat while the physical key stays down.
+  if(source==='electron'&&sessionKeyHeld||source!==sessionShortcutSource&&now-sessionShortcutAt<150)return;
+  sessionShortcutAt=now;sessionShortcutSource=source;
+  diagnose('sessions shortcut '+source+' '+(switcherFocused||switcherRequested?'close':'open'));
+  if(switcherFocused||switcherRequested){switcherRequested=false;send('session_switcher',false);releaseSwitcherFocus();return;}
+  openSessionSwitcher();
 }
 function focusSwitcher(){
   if(!win||win.isDestroyed())return;
@@ -84,7 +94,7 @@ const accounts = () => {
 const broadcast = (name, payload) => { for (const w of [win, settings]) if (w && !w.isDestroyed()) w.webContents.send('event', name, payload); };
 const send = (name, payload) => { if (win && !win.isDestroyed()) win.webContents.send('event', name, payload); };
 // One line per placement (and per press that missed every control), so a placement that lands somewhere else can be read
-// back from a real Windows session. Capped; never holds anything but geometry.
+// back from a real Windows session. Capped; holds only geometry and shortcut actions.
 function diagnose(line) {
   try {
     const file = path.join(path.dirname(configPath), 'notch-diagnostics.log');
@@ -128,7 +138,8 @@ async function start() {
   config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false, alerts: config.buttons?.alerts !== false };
   config.alertLog = alertLog(config.alertLog);
   config.sessionPins=normalizePins(config.sessionPins);
-  config.focusAccount=typeof config.focusAccount==='string'?config.focusAccount.slice(0,120):null;
+  config.focusAccounts=normalizeFocusAccounts(config.focusAccounts??(config.focusAccount?[config.focusAccount]:[]));
+  delete config.focusAccount;
   if (!shortcuts[config.shortcut]) config.shortcut = 'Scrolllock';
   if (!['left','right','top','bottom'].includes(config.edge)) config.edge = 'right';
   config.scale = [0.8, 1, 1.25].includes(config.scale) ? config.scale : 1;
@@ -168,7 +179,7 @@ async function start() {
   updates.start();
   restartCollector();
   try { registerShortcut(config.shortcut); } catch (error) { hotkeyProblem = error.message; }
-  if(!registerSessionShortcut())broadcast('notice','Ctrl + Scroll Lock is already in use. Open Sessions from the notch menu.');
+  if(!registerSessionShortcut()&&process.platform!=='win32')broadcast('notice','Ctrl + Scroll Lock is already in use. Open Sessions from the notch menu.');
   configureTray();
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!config.autostart, path: process.execPath });
   nativeTheme.on('updated', () => broadcast('theme_resolved', theme()));
@@ -298,7 +309,7 @@ function overNotch(point) {
 function registerShortcut(value) {
   if (!shortcuts[value]) throw new Error('Unsupported shortcut');
   if (config.shortcut !== value || !globalShortcut.isRegistered(value)) {
-    if (!globalShortcut.register(value, () => reveal())) throw new Error(`${value} is already in use. Choose another shortcut.`);
+    if (!globalShortcut.register(value, () => reveal())&&process.platform!=='win32') throw new Error(`${value} is already in use. Choose another shortcut.`);
     if (config.shortcut !== value) globalShortcut.unregister(config.shortcut);
   }
   config.shortcut = value;
@@ -313,15 +324,28 @@ function registerShortcut(value) {
     while ((at = buffer.indexOf('\n')) >= 0) {
       const value = buffer.slice(0, at).trim(); buffer = buffer.slice(at + 1);
       if (!/^[01]{3}$/.test(value)) continue;
-      const previous = held, previousMouse = mouseDown;
-      held = value[0] === '1'&&!switcherFocused; mouseDown = value[2] === '1';
-      if (held && !previous) { dismissed = false; lastCursor=''; reveal(); }
-      if (!held && previous) { visibleUntil = Date.now() + 1800; send('release'); broadcast('ui_flags', flags()); save(); }
-      if (mouseDown && !previousMouse && visible && !held && !carrying) physicalPress(screen.getCursorScreenPoint());
-      if (!mouseDown && previousMouse) physicalRelease(screen.getCursorScreenPoint());
+      inputLine(value);
     }
   });
   input.on('error', () => { hotkeyProblem = 'Held-key helper could not start. Reinstall this build. Shortcut taps can still reveal the notch.'; broadcast('notice', hotkeyProblem); });
+}
+function inputLine(value){
+  if(!/^[01]{3}$/.test(value))return;
+  const previous=held,previousMouse=mouseDown,previousSession=sessionKeyHeld;
+  sessionKeyHeld=value[1]==='1';
+  if(sessionKeyHeld&&!previousSession)triggerSessionShortcut('native');
+  held=value[0]==='1'&&!switcherFocused&&!sessionKeyHeld;mouseDown=value[2]==='1';
+  if(held&&!previous){dismissed=false;lastCursor='';reveal();}
+  if(!held&&previous){visibleUntil=Date.now()+1800;send('release');broadcast('ui_flags',flags());save();}
+  if(mouseDown&&!previousMouse&&visible&&!held&&!carrying)physicalPress(screen.getCursorScreenPoint());
+  if(!mouseDown&&previousMouse)physicalRelease(screen.getCursorScreenPoint());
+}
+function normalizeFocusAccounts(value){return Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&id.length<=120))].slice(0,40):[];}
+function setFocusAccounts(value){
+  if(!Array.isArray(value)||value.length>40||value.some(id=>!accounts().some(a=>a.id!=='collector'&&a.id===id)))throw new Error('Choose available agent accounts to focus.');
+  const selected=normalizeFocusAccounts(value);
+  if(config.slots?.length){for(const id of selected)if(!config.slots.some(s=>s.provider===id))config.slots.push({provider:id});broadcast('notch_slots',config.slots);}
+  config.focusAccounts=selected;save();broadcast('focus_accounts',selected);return selected;
 }
 // The helper sees every physical left press. On a control it is that control's. Elsewhere on the notch the page should
 // get the click itself, but on some first opens Windows never delivers it (hover still arrives as forwarded moves, so
@@ -439,13 +463,12 @@ function showAlerts(events) {
     level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, target: logged[i]?.target || null, took: Number.isFinite(e.took) ? e.took : null,
     title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
-function contextMenu(provider=null) {
-  const focus=accounts().find(a=>a.id===provider)||accounts().find(a=>a.id===config.focusAccount);
+function contextMenu() {
   menuOpen = true;
   return new Promise(resolve => Menu.buildFromTemplate([
     { label: 'Pin here', type: 'checkbox', checked: pinned, click: item => setPinned(item.checked) },
     { label: 'Sessions…   Ctrl + Scroll Lock', click:openSessionSwitcher },
-    ...(focus?[{label:'Focus on '+focus.name,type:'checkbox',checked:config.focusAccount===focus.id,click:item=>{config.focusAccount=item.checked?focus.id:null;save();broadcast('focus_account',config.focusAccount);}}]:[]),
+    {label:'Focus accounts…',click:()=>openSettings('accounts')},
     { label: 'Refresh usage', click: requestRefresh },
     { label: 'Settings…', click: () => openSettings() },
     { label: updates?.get().status === 'ready' ? 'Restart to update' : updates?.get().status === 'available' ? 'Update available' : 'Check for updates', click: () => { openSettings('general'); if(updates?.get().status==='ready')updates.install();else if(updates?.get().status==='available')void updates.download();else void updates?.check(); } }, { type: 'separator' },
@@ -491,7 +514,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       replacements = 0; lastPlacedAt = Date.now();
       pendingPlacement = null; pendingPlacementEdge = null; pendingPlacementStage = null; pendingPlacementAtPointer = false;
       phase = visible ? 'shown' : 'hidden';
-      win.setOpacity(1);if(switcherRequested)send('session_switcher',true);return true;
+      win.setOpacity(1);if(switcherRequested)send('session_switcher',true);else if(switcherFocused)win.focus();return true;
     }
     case 'stage_bounds': stage = { x: Number(args.x) || 0, y: Number(args.y) || 0 }; return null;
     case 'set_hot': {
@@ -522,14 +545,10 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       config.sessionPins=changePin(config.sessionPins,saved,args.on);save();broadcast('session_pins',currentSessionPins());return args.on;
     }
     case 'open_session_switcher':openSessionSwitcher();return null;
-    case 'session_switcher_focus':if(event.sender!==win?.webContents||!visible)return false;switcherRequested=false;focusSwitcher();return true;
+    case 'session_switcher_focus':if(event.sender!==win?.webContents||!visible||pendingPlacement!==null)return false;switcherRequested=false;focusSwitcher();return true;
     case 'close_session_switcher':switcherRequested=false;releaseSwitcherFocus();return null;
-    case 'get_focus_account':return config.focusAccount;
-    case 'set_focus_account':{
-      if(args.account!==null&&!accounts().some(a=>a.id===args.account))throw new Error('This agent account is no longer available.');
-      if(args.account&&config.slots?.length&&!config.slots.some(s=>s.provider===args.account)){config.slots.push({provider:args.account});broadcast('notch_slots',config.slots);}
-      config.focusAccount=args.account;save();broadcast('focus_account',config.focusAccount);return config.focusAccount;
-    }
+    case 'get_focus_accounts':return config.focusAccounts||[];
+    case 'set_focus_accounts':return setFocusAccounts(args.accounts);
     case 'open_history_session': {
       // Identity only from the renderer: launch metadata must come from this collector's saved snapshot.
       const saved=(await sessionLibrary()).find(s=>s.account===args.account&&s.id===args.id);
@@ -663,7 +682,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'open_settings': openSettings(); return null;
     case 'close_settings': settings?.close(); return null;
     case 'refresh_ring': requestRefresh(); return false;
-    case 'show_notch_menu': return contextMenu(args.provider);
+    case 'show_notch_menu': return contextMenu();
     case 'begin_move': case 'drag_begin': beginMove(); return null;
     case 'open_data_dir': await shell.openPath(app.getPath('userData')); return null;
     case 'quit_app': app.quit(); return null;

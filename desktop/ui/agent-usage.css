@@ -134,21 +134,16 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 #notification-rim{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:visible;pointer-events:none}
 #notification-rim *{pointer-events:none}
 #notification-rim[hidden],#root:not(.visible) #notification-rim,#root.placing #notification-rim,#root.carrying #notification-rim{display:none}
-.rim-sweep{transform-origin:0 0;background:conic-gradient(from var(--rim-turn,-90deg),
-  transparent 0deg 258deg,color-mix(in srgb,var(--rim-color,#fff) 5%,transparent) 278deg,
-  color-mix(in srgb,var(--rim-color,#fff) 28%,transparent) 314deg,
-  var(--rim-color,#fff) 348deg,#fff 358deg,transparent 360deg)}
-#notification-rim[data-still="true"] .rim-sweep{background:var(--rim-color,#fff)}
+.rim-sweep,.rim-tip{pointer-events:none}
 
 /* Session tools share the notch's lobe: quiet labels, generous rows and one fluid selection surface. */
 .h-entry{display:flex;align-items:center;gap:2px}.h-entry .h-item{min-width:0;flex:1}
-.session-pin,.focus-agent,.session-close,.session-reload{appearance:none;border:0;background:transparent;color:#999;font:inherit;cursor:pointer;padding:6px;border-radius:10px;flex-shrink:0}
+.session-pin,.session-close,.session-reload{appearance:none;border:0;background:transparent;color:#999;font:inherit;cursor:pointer;padding:6px;border-radius:10px;flex-shrink:0}
 .session-pin{width:28px;height:28px;display:grid;place-items:center}
-.session-pin svg,.focus-agent svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round}
+.session-pin svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round}
 .session-pin.pinned{color:var(--update-blue)}.session-pin.pinned svg{fill:var(--update-blue);stroke:var(--update-blue)}
-.session-pin:hover,.focus-agent:hover,.session-close:hover,.session-reload:hover{background:#202020;color:#fff}
-.session-pin:focus-visible,.focus-agent:focus-visible,.session-close:focus-visible,.session-reload:focus-visible{outline:1px solid var(--update-blue);outline-offset:1px}
-.focus-agent{display:grid;place-items:center;margin-left:auto}.focus-agent[aria-pressed="true"]{color:var(--update-blue)}
+.session-pin:hover,.session-close:hover,.session-reload:hover{background:#202020;color:#fff}
+.session-pin:focus-visible,.session-close:focus-visible,.session-reload:focus-visible{outline:1px solid var(--update-blue);outline-offset:1px}
 #card.session-card{padding:14px 16px;overflow:hidden}
 .session-head{display:flex;align-items:center;gap:12px;font-size:15px;font-weight:650;margin-bottom:10px}
 .session-head kbd{margin-left:auto;font:inherit;font-size:10px;font-weight:400;color:#999}
@@ -178,7 +173,10 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 .session-workspace{font-size:10px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .session-status{font-size:10px;color:#999;line-height:1.4;padding:9px 4px 0;min-height:14px}.session-status.error{color:#ffb7a6}
 .finished-session:hover{background:#181818}
-.focus-rest{overflow:clip}
+#pill .cell{scale:var(--focus-scale,1);overflow:visible;justify-content:center}
+#pill .ringwrap{flex-shrink:0}
+#pill .pct{white-space:nowrap}
+.focus-rest[tabindex="-1"] .activity-layer.running{animation-play-state:paused;will-change:auto}
 #pill .cell{opacity:calc((min(1, var(--open,1) * 2.6 - 1.55) - var(--bend,0)) * var(--focus-visibility,1))}
 .focus-rest[tabindex="-1"]{pointer-events:none}
 .session-handoff{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;z-index:7;pointer-events:none;color:var(--update-blue)}

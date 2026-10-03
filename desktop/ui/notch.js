@@ -1006,7 +1006,7 @@ function renderCard(){
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
   const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
-  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':(typeof focusButton==='function'?focusButton(p.id):'')+refresh}</div>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':refresh}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -1339,7 +1339,7 @@ document.addEventListener('pointerdown',()=>{invoke('page_pressed').catch(()=>{}
 // A press anywhere outside the notch puts a held card away (main sees it through its input helper)
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
 card.addEventListener('click',async e=>{
-  if(e.target.closest('.session-pin,.focus-agent,.session-tool-action'))return;
+  if(e.target.closest('.session-pin,.session-tool-action'))return;
   const history=e.target.closest('.history-session');
   if(history){
     clearSessionLinkError();history.disabled=true;

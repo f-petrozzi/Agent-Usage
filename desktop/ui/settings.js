@@ -2,13 +2,21 @@
 const api=window.agentUsage, $=id=>document.getElementById(id);
 let flags={},slots=[],accounts=[],glyphs={},alertPrefs={muted:[]},colorTransition='hard_step',activeTab='';
 let notificationTestAccount=null;
-let focusAccount=null;
-function renderFocusChoice(){
-  const select=$('focus-agent');if(!select)return;
-  select.replaceChildren(new Option('All agents',''),...accounts.map(a=>new Option(a.name,a.id)));select.value=focusAccount||'';
+let focusAccounts=[],focusPending=0,focusRevision=0,focusSave=Promise.resolve();
+api.invoke('get_focus_accounts').then(value=>{if(focusRevision)return;focusAccounts=Array.isArray(value)?value:[];renderAccounts();}).catch(()=>{});
+api.on('focus_accounts',value=>{if(focusPending)return;focusAccounts=Array.isArray(value)?value:[];renderAccounts();});
+function changeFocusSelection(next){
+  const before=focusAccounts;focusAccounts=next;focusPending++;focusRevision++;renderAccounts();
+  // Paint immediately, then save in click order. A late response cannot undo a newer group.
+  const task=focusSave.catch(()=>{}).then(()=>call('set_focus_accounts',{accounts:next}));focusSave=task;
+  return task.then(async value=>{
+    if(--focusPending)return;
+    focusAccounts=value;slots=await call('get_notch_slots');renderAccounts();
+  },async failure=>{
+    if(!--focusPending){focusAccounts=await api.invoke('get_focus_accounts').catch(()=>before);renderAccounts();}
+    throw failure;
+  });
 }
-api.invoke('get_focus_account').then(value=>{focusAccount=value;renderFocusChoice();}).catch(()=>{});
-api.on('focus_account',value=>{focusAccount=value;renderFocusChoice();});
 function error(e){$('strip').hidden=false;$('strip').textContent=String(e.message||e);}
 async function call(cmd,args){try{return await api.invoke(cmd,args);}catch(e){error(e);throw e;}}
 function action(fn){return ()=>Promise.resolve().then(fn).catch(()=>{});}
@@ -102,10 +110,10 @@ function createRow(id){
   el.setAttribute('role','listitem');el.setAttribute('aria-keyshortcuts','Alt+ArrowUp Alt+ArrowDown');
   el.innerHTML=`<span class="acct-mark"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"></svg><span class="glyph" aria-hidden="true"></span></span>
     <span class="acct-text"><span class="acct-name"></span><span class="acct-detail" hidden></span></span>
-    <button class="notification-test" type="button" aria-pressed="false">Test notification</button>
+    <span class="acct-actions"><button class="account-focus" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg><span>Focus</span></button><button class="notification-test" type="button" aria-pressed="false">Test notification</button></span>
     <button class="bell" role="switch" aria-label="Usage warnings">${BELL}</button><button class="switch" role="switch" aria-label="Show in notch"></button>`;
   const r={id,el,ringEl:el.querySelector('svg.ring'),glyph:el.querySelector('.glyph'),name:el.querySelector('.acct-name'),
-    detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),bell:el.querySelector('.bell'),sw:el.querySelector('.switch'),ringKey:''};
+    detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),focus:el.querySelector('.account-focus'),bell:el.querySelector('.bell'),sw:el.querySelector('.switch'),ringKey:''};
   const paint=()=>paintRow(r);
   r.y=spring(0,paint,.08);r.x=spring(0,paint,.08);r.tilt=spring(0,paint,.004);r.lift=spring(0,paint,.002);
   r.lift.done=()=>{if(!r.lift.x&&drag?.r!==r)el.classList.remove('settling');};
@@ -126,6 +134,10 @@ function createRow(id){
   r.test.onclick=action(async()=>{
     notificationTestAccount=await call('set_notification_test',{account:id,on:notificationTestAccount!==id});renderAccounts();
   });
+  r.focus.onclick=action(async()=>{
+    const available=focusAccounts.filter(x=>accounts.some(a=>a.id===x)),next=available.includes(id)?available.filter(x=>x!==id):[...available,id];
+    await changeFocusSelection(next);
+  });
   el.addEventListener('pointerdown',e=>press(r,e));
   el.addEventListener('keydown',e=>{if(e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')){e.preventDefault();nudge(id,e.key==='ArrowUp'?-1:1);}});
   rows.set(id,r);return r;
@@ -141,12 +153,14 @@ function updateRow(r,a,on){
   r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
   r.bell.setAttribute('aria-checked',String(!muted));r.bell.setAttribute('aria-label',`Usage warnings for ${a.name}`);
   r.test.setAttribute('aria-pressed',String(notificationTestAccount===a.id));r.test.setAttribute('aria-label',`Test notification for ${a.name}`);
+  r.focus.setAttribute('aria-pressed',String(focusAccounts.includes(a.id)));r.focus.setAttribute('aria-label',`Focus ${a.name}`);
+  r.focus.disabled=a.id==='collector';
   // A healthy account needs no status line; a stale or failed one says what went wrong
   const problem=a.snap.status==='ok'?'':a.snap.note||(a.snap.status==='stale'?'Showing the last reading':a.snap.status==='loading'?'Reading usage…':'Usage could not be read');
   r.detail.hidden=!problem;if(r.detail.textContent!==problem){r.detail.textContent=problem;}
 }
 function renderAccounts(){
-  renderFocusChoice();
+  $('clear-focus').disabled=!focusAccounts.length;
   const ids=accounts.map(a=>a.id), on=enabledIds();
   for(const [id,r] of rows)if(!ids.includes(id)){r.el.remove();rows.delete(id);for(const s of [r.x,r.y,r.tilt,r.lift])live.delete(s);}
   for(const a of accounts)updateRow(rows.get(a.id)||createRow(a.id),a,on);
@@ -365,7 +379,7 @@ $('btn-data').onclick=action(()=>call('open_data_dir'));
 $('btn-recentre').onclick=action(()=>call('reset_notch_position'));
 $('save-collector').onclick=action(async()=>{await call('set_collector',{source:$('source').value,sshTarget:$('ssh').value.trim()});$('strip').hidden=false;$('strip').textContent='Collector saved; refreshing…';});
 $('shortcut').onchange=action(async()=>{try{await call('set_shortcut',{shortcut:$('shortcut').value});}finally{const c=await call('get_collector');$('shortcut').value=c.shortcut;}});
-$('focus-agent').onchange=action(async()=>{focusAccount=await call('set_focus_account',{account:$('focus-agent').value||null});renderFocusChoice();});
+$('clear-focus').onclick=action(()=>changeFocusSelection([]));
 $('seg-show').onclick=event=>{const b=event.target.closest('button');if(!b)return;action(async()=>renderFlags(await call('set_ui_flags',{notchVisible:b.dataset.v!=='hide',notchOnHover:b.dataset.v!=='show'})))();};
 $('sw-tray').onclick=action(async()=>renderFlags(await call('set_ui_flags',{trayVisible:!$('sw-tray').classList.contains('on')})));
 // The colour transition also recolours the rings on this page, so its value is kept as well as shown

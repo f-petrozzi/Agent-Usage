@@ -10,8 +10,9 @@ let detailReading=1;
 let detailArm=0,detailArmVelocity=0;
 function changeDetailAccount(){
   setExtraShown(false,true);
-  if(!reducedDetails())detailVelocity-=1.1;
-  detailReading=reducedDetails()?1:.65;card.style.setProperty('--detail-reading',detailReading);
+  // Keep the lobe's momentum. Switching readings must not kick an already open notch shut.
+  detailReading=1;card.style.setProperty('--detail-reading',1);
+  if(!reducedDetails()&&detailOpen>.985)card.animate([{opacity:.55},{opacity:1}],{duration:180,easing:'cubic-bezier(.22,1,.36,1)'});
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
 
@@ -51,6 +52,7 @@ function drawDetails(){
   // There is no second rectangle or narrow connector beneath the original notch.
   const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
   detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
+  detailPath.rimPart=[u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare,-SHAPE.bleed];
   // While it grows or draws back in, the lobe is liquid: blurred and cut back, so its corners round and it swells
   // like a drop leaving the notch. Settled, it is sharp again.
   // The log grows and shrinks with what it holds (an alert in, Clear); it is liquid through that too
@@ -62,6 +64,7 @@ function drawDetails(){
     detailPath.setAttribute('filter','url(#detail-goo)');
   }else detailPath.removeAttribute('filter');
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
+  if(typeof notificationRim!=='undefined')notificationRim.refresh();
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
 function detailHotRect(){

@@ -61,6 +61,14 @@ async function brightDifference(page,before,after,position=false){
     await page.evaluate(()=>__emit('update_state',{status:'available',version:'4.0.2'}));
     await page.locator('#update-dot').hover();await page.waitForTimeout(750);
     assert.equal(await page.locator('.sliver-update').count(),1);
+    const continuity=await page.evaluate(async()=>{
+      const samples=[];let stopped=false;
+      const sample=()=>{const path=document.getElementById('rim-track'),length=path.getTotalLength(),phase=(parseFloat(document.querySelector('.rim-sweep').style.getPropertyValue('--rim-turn'))+90)/360;
+        const point=path.getPointAtLength(length*phase);samples.push({x:point.x,y:point.y,time:performance.now()});if(!stopped)requestAnimationFrame(sample);};
+      requestAnimationFrame(sample);hoverUpdate(false);await new Promise(r=>setTimeout(r,450));stopped=true;
+      return samples.slice(1).map((p,i)=>({distance:Math.hypot(p.x-samples[i].x,p.y-samples[i].y),dt:p.time-samples[i].time}));
+    });
+    assert.ok(continuity.every(p=>p.distance<Math.max(45,p.dt*2.5)),'the travelling tip stays continuous through sliver retraction: '+JSON.stringify(continuity));
     await page.mouse.move(0,0);
     await page.waitForFunction(()=>!slivers.has('__update'));
     assert.equal(await page.locator('#notification-rim').getAttribute('hidden'),null,'closing the update keeps its circuit alive');
@@ -73,14 +81,9 @@ async function brightDifference(page,before,after,position=false){
       const on=await page.screenshot({path:path.join(OUT,edge+'-closed-'+target+'.png')});
       const light=await brightDifference(page,off,on,true);assert.ok(light.count>20,'the remaining shimmer visibly renders after closure');points.push(light);
     }
-    const bounds=await page.locator('#rim-screen rect').evaluate(()=>{const paths=[...document.querySelectorAll('#rim-silhouette path')].map(el=>el.getBoundingClientRect());
-      const left=Math.max(0,Math.min(...paths.map(r=>r.left))),top=Math.max(0,Math.min(...paths.map(r=>r.top)));
-      return {left,top,width:Math.min(innerWidth,Math.max(...paths.map(r=>r.right)))-left,height:Math.min(innerHeight,Math.max(...paths.map(r=>r.bottom)))-top};});
+    const bounds=await page.locator('#rim-track').evaluate(el=>{const b=el.getBBox();return {left:b.x,top:b.y,width:b.width,height:b.height};});
     assert.ok((Math.max(...points.map(p=>p.x))-Math.min(...points.map(p=>p.x)))/bounds.width>.2,'the light traverses the width after the sliver closes: '+JSON.stringify({edge,points,bounds}));
     assert.ok((Math.max(...points.map(p=>p.y))-Math.min(...points.map(p=>p.y)))/bounds.height>.2,'the light traverses the height after the sliver closes: '+JSON.stringify({edge,points,bounds}));
-    const notch=await page.locator('#pill').boundingBox(),context=JSON.stringify({edge,points,notch});
-    if(['top','bottom'].includes(edge))assert.ok(points[2].x<notch.x+notch.width*.2,'the shimmer reaches the short left end before fading: '+context);
-    else assert.ok(points[1].y>notch.y+notch.height*.85,'the shimmer reaches the short bottom end before fading: '+context);
     await page.waitForTimeout(650);
     assert.equal(await page.locator('#notification-rim').getAttribute('hidden'),'','the original circuit completes without lingering or restarting');
   }

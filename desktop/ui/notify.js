@@ -175,6 +175,8 @@ function drawSliver(s){
   if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;return;}
   const inkDepth=d+depth-rootDepth;
   s.path.setAttribute('d',notificationRectPath(u0,u1,inkDepth));
+  const rimRadius=Math.min(SHAPE.corner,(u1-u0)/2,inkDepth);
+  s.path.rimPart=[u0,u1,inkDepth,rimRadius,0,rimRadius,0,-SHAPE.bleed];
   s.path.setAttribute('transform',`matrix(${matrix.join(' ')}) translate(0 ${n(rootDepth)})`);
   // Liquid while it moves, sharp at rest
   const goo=matchMedia('(prefers-reduced-motion: reduce)').matches?0:4.4*Math.sin(Math.PI*grown)*(s.t===s.to?0:1);
@@ -189,6 +191,7 @@ function drawSliver(s){
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
   if(s.to&&s.t===s.to)scrollSliver(s);
+  if(typeof notificationRim!=='undefined')notificationRim.refresh();
 }
 function scrollSliver(s){
   const clip=s.el.querySelector('.s-text'), text=clip?.querySelector('.s-scroll');

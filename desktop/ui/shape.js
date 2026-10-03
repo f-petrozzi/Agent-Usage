@@ -123,7 +123,7 @@ function setGoo(blur,x,y,w,h){
   if(blur>0.3) shapeBody.setAttribute('filter','url(#goo)'); else shapeBody.removeAttribute('filter');
 }
 
-function drawShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof placeUnreadDot==='function')placeUnreadDot(); }
+function drawShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof placeUnreadDot==='function')placeUnreadDot(); if(typeof notificationRim!=='undefined')notificationRim.refresh(); }
 
 /* On an edge: one part the length of the pill, and an arm off each end. At 0 an arm lies a full stroke
    past its flare, inside the black; going out it swells from the flare on a neck of goo and lets go. */
@@ -141,6 +141,7 @@ function drawStraight(){
   // to their parent, otherwise left/bottom parts rotate or reflect a second time after a corner.
   partA.removeAttribute('transform');partB.removeAttribute('transform');
   partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
+  partA.rimPart=[u0,u1,d,r,F,r,F,-SHAPE.bleed];
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
   const detailRetreat=typeof detailArm==='number'?1-smooth(Math.max(0,Math.min(1,detailArm))):1;
   const mergingAll=absorbing||(typeof detailTarget==='number'&&detailTarget===1&&detailRetreat<1);

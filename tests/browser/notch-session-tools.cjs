@@ -7,10 +7,10 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
  try{
   const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{
-   const listeners={},now=Date.now();window.__calls=[];window.__pins=[];window.__focus=null;
-   const accounts=['codex_a','claude_b','gemini_c'].map((id,i)=>({id,base:['codex','claude','gemini'][i],name:['Codex a','Claude b','AGY c'][i],glyph:['Cx','Cl','A'][i],snap:{status:'ok',windows:[{id:'session',label:'Five hours',used:.35,resets_at:now+3600e3}],fetched_at:now,details:[],note:''}}));
+   const listeners={},now=Date.now();window.__calls=[];window.__pins=[];window.__focus=[];
+   const accounts=['codex_a','claude_b','gemini_c'].map((id,i)=>({id,base:['codex','claude','gemini'][i],name:['Codex a','Claude b','AGY c'][i],glyph:['Cx','Cl','A'][i],snap:{status:'ok',windows:[{id:'session',label:'Five hours',used:.35,resets_at:now+3600e3},{id:'secondary',label:'Weekly',used:.45,resets_at:now+7*86400e3}],fetched_at:now,details:[],note:''}}));
    window.__library=accounts.flatMap((a,index)=>Array.from({length:32},(_,i)=>({id:a.id+'-'+i,account:a.id,accountName:a.name,provider:['codex','claude','antigravity'][index],name:i===0?['Agent Usage','Orbit planning','Homelab maintenance'][index]:a.name+' session '+i,workspace:'/srv/'+['agent-usage','orbit','homelab'][index],since:now-i*3600e3-index*1000,live:i===1,state:'busy',canOpen:i!==31,pinned:false})));
-   const answers={get_agent_accounts:accounts,get_state:{sessions:[],agg:'idle',counts:{},lang_resolved:'en'},get_activity:[],get_notch_slots:[],get_notch_edge:'top',get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true},get_update_state:{status:'current'}};
+   const answers={get_agent_accounts:accounts,get_state:{sessions:[],agg:'idle',counts:{},lang_resolved:'en'},get_activity:[],get_notch_slots:[],get_notch_edge:'top',get_weekly_ring:'outside',get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true},get_update_state:{status:'current'}};
    window.__emit=(name,payload)=>(listeners[name]||[]).forEach(fn=>fn(payload));
    window.agentUsage={on:(name,fn)=>{(listeners[name]??=[]).push(fn);return()=>{};},invoke:async(name,args={})=>{
     __calls.push([name,args]);
@@ -18,8 +18,8 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
     if(name==='get_session_history')return __library.filter(s=>s.account===args.account).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.since-a.since);
     if(name==='get_session_pins')return __pins;
     if(name==='set_session_pin'){__pins=__pins.filter(s=>s.id!==args.id||s.account!==args.account);if(args.on)__pins.push({id:args.id,account:args.account});__library=__library.map(s=>({...s,pinned:__pins.some(p=>p.id===s.id&&p.account===s.account)}));__emit('session_pins',__pins);return args.on;}
-    if(name==='get_focus_account')return __focus;
-    if(name==='set_focus_account'){__focus=args.account;__emit('focus_account',__focus);return __focus;}
+    if(name==='get_focus_accounts')return __focus;
+    if(name==='set_focus_accounts'){__focus=args.accounts;__emit('focus_accounts',__focus);return __focus;}
     if(name.startsWith('open_')&&name.endsWith('_session'))return new Promise((resolve,reject)=>{window.__completeResume=resolve;window.__failResume=reject;});
     return answers[name]??null;
    }};
@@ -47,14 +47,25 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    assert.equal(await page.locator('#card').evaluate(el=>el.classList.contains('show')),false);
    assert.ok(await page.evaluate(()=>__calls.some(c=>c[0]==='close_session_switcher')),'keyboard focus is released on close');
    await page.waitForTimeout(950);
-   await page.evaluate(()=>__emit('focus_account','codex_a'));await page.waitForTimeout(1300);
+   await page.evaluate(()=>__emit('focus_accounts',['codex_a']));await page.waitForTimeout(1300);
    const small=await page.locator('#pill').boundingBox();assert.ok((['top','bottom'].includes(edge)?small.width:small.height)<120,'focus contracts to a single agent');
    const cellsBefore=await page.locator('.cell').count();
    await page.evaluate(()=>__emit('notch_pointer',true));await page.waitForTimeout(1000);
    const full=await page.locator('#pill').boundingBox();assert.ok((['top','bottom'].includes(edge)?full.width:full.height)>small[['top','bottom'].includes(edge)?'width':'height']+100,'hover restores all agents');
    assert.equal(await page.locator('.cell').count(),cellsBefore,'focus retains the live ring nodes');
    await page.screenshot({path:path.join(OUT,edge+'-focus-open.png')});
-   await page.evaluate(()=>{__emit('notch_pointer',false);__emit('focus_account',null);notificationRim.clear();__emit('alert',{events:[{id:'done-1',kind:'completion',account:'codex_a',session:'Agent Usage',target:{},took:120000},{id:'done-2',kind:'completion',account:'claude_b',session:'Orbit planning',target:{},took:60000}],hold:6000,sound:false});});await page.waitForTimeout(1200);
+   assert.equal(await page.locator('.cell').evaluateAll(els=>els.every(el=>getComputedStyle(el).overflow==='visible')),true,'expanded weekly rings are never clipped by the cell');
+   await page.evaluate(()=>{__emit('notch_pointer',false);__emit('focus_accounts',['codex_a','gemini_c']);});await page.waitForTimeout(1200);
+   const group=await page.locator('#pill').boundingBox();assert.ok((['top','bottom'].includes(edge)?group.width:group.height)>180&&(['top','bottom'].includes(edge)?group.width:group.height)<200,'two focus accounts stay unfolded at rest');
+   assert.equal(await page.locator('.cell[data-p="gemini_c"]').getAttribute('tabindex'),'0');assert.equal(await page.locator('.cell[data-p="claude_b"]').getAttribute('tabindex'),'-1');
+   const movement=await page.evaluate(async()=>{
+    const lengths=[];let ended=false;const sample=()=>{const box=pill.getBoundingClientRect();lengths.push(edgeIsVertical()?box.height:box.width);if(!ended)requestAnimationFrame(sample);};requestAnimationFrame(sample);
+    __emit('focus_accounts',['claude_b']);await new Promise(r=>setTimeout(r,100));__emit('focus_accounts',['codex_a','claude_b']);await new Promise(r=>setTimeout(r,100));setFocusExpanded(true);await new Promise(r=>setTimeout(r,1000));ended=true;
+    return Math.max(...lengths.slice(1).map((n,i)=>Math.abs(n-lengths[i])));
+   });assert.ok(movement<25,'changing focused groups mid-flight never snaps the notch: '+movement);
+   await page.evaluate(()=>__emit('notch_pointer',true));
+
+   await page.evaluate(()=>{__emit('notch_pointer',false);__emit('focus_accounts',[]);notificationRim.clear();__emit('alert',{events:[{id:'done-1',kind:'completion',account:'codex_a',session:'Agent Usage',target:{},took:120000},{id:'done-2',kind:'completion',account:'claude_b',session:'Orbit planning',target:{},took:60000}],hold:6000,sound:false});});await page.waitForTimeout(1200);
    assert.equal(await page.locator('.sliver-stack').count(),1);assert.match(await page.locator('.sliver-stack').innerText(),/2 finished/);
    await page.evaluate(()=>__emit('alert',{events:[{id:'done-3',kind:'completion',account:'gemini_c',session:'Homelab maintenance',target:{}}],hold:6000,sound:false}));await page.waitForTimeout(250);
    assert.match(await page.locator('.sliver-stack').innerText(),/3 finished/,'a later completion joins the existing stack');
@@ -79,6 +90,10 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   await page.evaluate(()=>__libraryLoads[0]([{...__library[0],name:'Old host chat'}]));await page.waitForTimeout(100);
   assert.match(await page.locator('.session-open').first().innerText(),/New host chat/,'late previous-host results cannot replace the current session list');
   await page.evaluate(()=>{window.__deferLibrary=false;});await page.keyboard.press('Escape');
+  await page.evaluate(()=>{window.__savedAccounts=agentAccounts.slice();__emit('notch_pointer',false);__emit('focus_accounts',['claude_b']);__emit('agent_accounts',__savedAccounts.slice(0,1));});await page.waitForTimeout(300);
+  await page.evaluate(()=>__emit('agent_accounts',__savedAccounts));await page.waitForTimeout(1300);
+  const restored=await page.locator('#pill').boundingBox();assert.ok(restored.height<120,'a saved focus group contracts when its accounts arrive, without requiring a hover');
+  assert.equal(await page.locator('.cell[data-p="claude_b"]').getAttribute('tabindex'),'0');
   await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:360,height:300});
   for(const edge of ['top','right','bottom','left']){
    await page.evaluate(edge=>{__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false});__emit('session_switcher',true);},edge);await page.waitForTimeout(150);

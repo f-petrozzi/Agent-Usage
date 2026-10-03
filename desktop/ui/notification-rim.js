@@ -1,87 +1,65 @@
 'use strict';
-// A single sweep of light around the merged black silhouette. Subtracting its eroded alpha from its
-// dilated alpha keeps the border outside the notch and alert together, with no seam where they overlap.
+// One light travels by distance on the union's actual contour. Its filter surface only grows during
+// a circuit: retracting a sliver changes the vector outline, never rescales a gradient or blur texture.
 const notificationRim=(()=>{
   const root=document.getElementById('root'),svg=document.createElementNS(SVG_NS,'svg');
   svg.id='notification-rim';svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');svg.setAttribute('hidden','');
-  svg.innerHTML=`<defs>
-    <clipPath id="rim-screen"><rect/></clipPath>
-    <filter id="rim-outline" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feMorphology in="SourceAlpha" operator="dilate" radius="1.35" result="outer"/>
-      <feMorphology in="SourceAlpha" operator="erode" radius=".8" result="inner"/>
-      <feComposite in="outer" in2="inner" operator="out"/>
-      <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0"/>
-    </filter>
-    <mask id="rim-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" style="mask-type:alpha">
-      <g filter="url(#rim-outline)"><g id="rim-silhouette" clip-path="url(#rim-screen)" fill="#fff"/></g>
-    </mask>
-    <filter id="rim-halo" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="4"/></filter>
-    <filter id="rim-soft" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.2"/></filter>
-  </defs>
-  ${[['rim-halo',.8],['rim-soft',.85],['',.95]].map(([filter,opacity])=>`<g ${filter?`filter="url(#${filter})"`:''} opacity="${opacity}">
-    <g mask="url(#rim-mask)"><foreignObject><div xmlns="http://www.w3.org/1999/xhtml" class="rim-sweep"></div></foreignObject></g></g>`).join('')}`;
+  const tail=Array.from({length:18},(_,i)=>({lag:i*10,length:12,alpha:Math.pow(1-i/18,2)}));
+  svg.innerHTML=`<defs><g id="rim-silhouette"/><path id="rim-track" pathLength="1000"/>
+    <filter id="rim-halo" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="3.2"/></filter>
+    <filter id="rim-soft" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation=".85"/></filter></defs>
+    ${[['rim-halo',5,.55],['rim-soft',2.6,.65],['',1.6,1]].map(([filter,width,opacity])=>`<g ${filter?`filter="url(#${filter})"`:''} opacity="${opacity}" fill="none" stroke="var(--rim-color,#fff)" stroke-width="${width}" stroke-linejoin="round" stroke-linecap="round">${tail.map(({length,alpha},i)=>`<use href="#rim-track" class="rim-sweep" data-tail="${i}" stroke-dasharray="${length} ${1000-length}" opacity="${alpha}"/>`).join('')}</g>`).join('')}
+    <use href="#rim-track" class="rim-tip" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 997"/>`;
   root.append(svg);
-  const silhouette=svg.querySelector('#rim-silhouette'),screenClip=svg.querySelector('#rim-screen rect');
-  const sweeps=[...svg.querySelectorAll('.rim-sweep')],foreigns=[...svg.querySelectorAll('foreignObject')];
-  const regions=[...svg.querySelectorAll('filter'),svg.querySelector('mask')];
-  const clones=new Map(),motion=matchMedia('(prefers-reduced-motion: reduce)');
-  let frame=0,queued=false,started=0,still=false,signature='';
-  function clear(){cancelAnimationFrame(frame);frame=0;queued=false;started=0;svg.setAttribute('hidden','');clones.clear();silhouette.replaceChildren();signature='';}
+  const silhouette=svg.querySelector('#rim-silhouette'),track=svg.querySelector('#rim-track'),tip=svg.querySelector('.rim-tip');
+  const sweeps=[...svg.querySelectorAll('.rim-sweep')],regions=[...svg.querySelectorAll('filter')],clones=new Map(),motion=matchMedia('(prefers-reduced-motion: reduce)');
+  let frame=0,queued=false,started=0,still=false,signature='',region=null;
+  function clear(){cancelAnimationFrame(frame);frame=0;queued=false;started=0;svg.setAttribute('hidden','');clones.clear();silhouette.replaceChildren();track.removeAttribute('d');signature='';region=null;}
   function geometry(){
-    const origin=root.getBoundingClientRect(),sources=[partA,partB,...[...slivers.values()].map(s=>s.path)].filter(el=>el.getAttribute('d'));
+    if(passage)return false;
+    const origin=root.getBoundingClientRect(),sources=[partA,...[...slivers.values()].map(s=>s.path),...(typeof detailPath!=='undefined'?[detailPath]:[])].filter(el=>el.getAttribute('d')&&el.rimPart);
     for(const [source,clone] of clones)if(!sources.includes(source)){clone.remove();clones.delete(source);}
-    let left=innerWidth,top=innerHeight,right=0,bottom=0;
+    const shapes=[],keys=[];
     for(const source of sources){
-      const matrix=source.getScreenCTM();if(!matrix)continue;
+      const m=source.getScreenCTM();if(!m)continue;
+      const matrix=[m.a,m.b,m.c,m.d,m.e-origin.left,m.f-origin.top],d=source.getAttribute('d');
+      shapes.push({part:source.rimPart,matrix});keys.push(d,...matrix);
       let clone=clones.get(source);if(!clone){clone=document.createElementNS(SVG_NS,'path');clones.set(source,clone);silhouette.append(clone);}
-      const d=source.getAttribute('d'),transform=`matrix(${[matrix.a,matrix.b,matrix.c,matrix.d,matrix.e-origin.left,matrix.f-origin.top].map(n).join(' ')})`;
-      if(clone.getAttribute('d')!==d)clone.setAttribute('d',d);
-      if(clone.getAttribute('transform')!==transform)clone.setAttribute('transform',transform);
-      const r=source.getBoundingClientRect();left=Math.min(left,r.left-origin.left);top=Math.min(top,r.top-origin.top);
-      right=Math.max(right,r.right-origin.left);bottom=Math.max(bottom,r.bottom-origin.top);
+      clone.setAttribute('d',d);clone.setAttribute('transform',`matrix(${matrix.join(' ')})`);
     }
-    // Close the perimeter just inside the bezel, rather than tracing the paths' off-screen bleed.
-    left=Math.max(1,left);top=Math.max(1,top);right=Math.min(innerWidth-1,right);bottom=Math.min(innerHeight-1,bottom);
-    if(right<=left||bottom<=top)return false;
-    const bounds=[left,top,right-left,bottom-top].map(n),next=bounds.join(',')+','+innerWidth+','+innerHeight;
-    if(signature!==next){
-      signature=next;
-      for(const [name,value] of Object.entries({x:1,y:1,width:innerWidth-2,height:innerHeight-2}))screenClip.setAttribute(name,value);
-      for(const el of regions)for(const [name,value] of Object.entries({x:bounds[0]-18,y:bounds[1]-18,width:bounds[2]+36,height:bounds[3]+36}))el.setAttribute(name,value);
-      for(const foreign of foreigns)for(const [name,value] of Object.entries({x:bounds[0]-18,y:bounds[1]-18,width:bounds[2]+36,height:bounds[3]+36}))foreign.setAttribute(name,value);
-      // Draw the sweep in a square, then fit it to the live outline. An unscaled conic gradient spends
-      // almost its whole turn on one long edge when the sliver closes into a thin notch. Keeping both
-      // axes normalized lets the light finish all four sides while the spring changes the silhouette.
-      const width=bounds[2]+36,height=bounds[3]+36,size=Math.max(width,height);
-      for(const sweep of sweeps)Object.assign(sweep.style,{width:size+'px',height:size+'px',transform:`scale(${width/size},${height/size})`});
-    }
+    const next=[notchEdge,innerWidth,innerHeight,...keys].join('|');if(next===signature)return !!track.getAttribute('d');
+    const points=rimGeometry.contour(shapes,notchEdge,innerWidth,innerHeight);if(points.length<3)return false;signature=next;
+    track.setAttribute('d',points.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(3)} ${y.toFixed(3)}`).join('')+'Z');
+    const bounds=[Math.min(...points.map(p=>p[0]))-14,Math.min(...points.map(p=>p[1]))-14,Math.max(...points.map(p=>p[0]))+14,Math.max(...points.map(p=>p[1]))+14];
+    region=region?region.map((value,i)=>i<2?Math.min(value,bounds[i]):Math.max(value,bounds[i])):bounds;
+    for(const el of regions)for(const [name,value] of Object.entries({x:region[0],y:region[1],width:region[2]-region[0],height:region[3]-region[1]}))el.setAttribute(name,value);
     return true;
   }
   function paint(progress){
     if(!geometry())return;
-    for(const sweep of sweeps)sweep.style.setProperty('--rim-turn',(-90+360*progress).toFixed(2)+'deg');
-    const fade=still?.4:smooth(progress/.065)*smooth((1-progress)/.16);
-    svg.style.opacity=String(fade);
+    for(const sweep of sweeps){
+      const segment=tail[Number(sweep.dataset.tail)];
+      sweep.style.setProperty('--rim-turn',(-90+360*progress).toFixed(2)+'deg');
+      sweep.setAttribute('stroke-dasharray',still?'1000 0':`${segment.length} ${1000-segment.length}`);
+      sweep.setAttribute('stroke-dashoffset',still?0:-(1000*progress-segment.lag-segment.length));
+      sweep.style.display=still&&sweep.dataset.tail!=='0'?'none':'';
+    }
+    tip.style.display=still?'none':'';tip.setAttribute('stroke-dashoffset',-(1000*progress-3));
+    svg.style.opacity=String(still?.4:smooth(progress/.065)*smooth((1-progress)/.16));
   }
+  function refresh(){if(started&&!queued&&!svg.hasAttribute('hidden'))geometry();}
   function step(now){
     frame=0;
     if(carrying||window.agentTracking){clear();return;}
-    // A release notice may arrive before the native window has appeared. Let its arrival finish first.
-    if(!shown||root.classList.contains('placing')||openness<.9||performance.now()-shownAt<420){
-      if(!queued){clear();return;}frame=requestAnimationFrame(step);return;
-    }
+    if(!shown||root.classList.contains('placing')||openness<.9||performance.now()-shownAt<420){if(!queued){clear();return;}frame=requestAnimationFrame(step);return;}
     if(!started){started=now;queued=false;svg.removeAttribute('hidden');still=motion.matches;svg.dataset.still=String(still);}
-    const duration=still?1100:3200,progress=Math.min(1,(now-started)/duration);
-    paint(progress);
-    if(progress===1){clear();return;}
-    frame=requestAnimationFrame(step);
+    const progress=Math.min(1,(now-started)/(still?1100:3200));paint(progress);
+    if(progress===1){clear();return;}frame=requestAnimationFrame(step);
   }
   function start(colour){
-    // Coalesce a notification burst into its current circuit; progress changes do not call this.
-    svg.style.setProperty('--rim-color',colour||INK);
-    if(frame)return;
+    svg.style.setProperty('--rim-color',colour||INK);if(frame)return;
     queued=true;started=0;frame=requestAnimationFrame(step);
   }
   motion.addEventListener('change',()=>{if(frame){still=motion.matches;svg.dataset.still=String(still);if(started)started=performance.now();}});
-  return {start,clear};
+  return {start,clear,refresh};
 })();
