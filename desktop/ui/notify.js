@@ -7,6 +7,9 @@
 const SLIVER={flat:54,flatMin:128,flatMax:160,pad:14,max:228,grace:1600};
 const alertQueue=[], slivers=new Map();
 let pumpTimer=0, slivHeld=false, sliverSerial=0;
+const UPDATE_ID='__update';
+let updateState={status:'idle'}, updatePending=false, updateAction=false;
+const updateActionable=()=>['available','ready','error'].includes(updateState.status);
 const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
 pill.before(sliverSvg);
 const slivering=()=>slivers.size>0;
@@ -24,12 +27,15 @@ listen('notification_test',e=>{
   renderRing();
   if(window.notificationTestAccount){hideCard();retractSlivers(true);queueNotificationTest();}else pumpAlert();
 }).catch(()=>{});
-listen('appear',()=>queueNotificationTest()).catch(()=>{});
+listen('appear',()=>{queueNotificationTest();if(updateActionable()&&!slivers.has(UPDATE_ID)){updatePending=true;pumpAlert();}}).catch(()=>{});
 listen('layout',()=>queueNotificationTest()).catch(()=>{});
 listen('alert',e=>{
   const p=e.payload;if(!p||!Array.isArray(p.events)||!p.events.length)return;
   // Already reading the log: the alert is there at the top of it, so it does not open a second time
   if(logShowing()){if(p.sound)chime(p.events[0].kind);ringBell();return;}
+  // Session alerts get the space first; an update can wait until they have been read.
+  const update=slivers.get(UPDATE_ID);
+  if(update){updatePending=updateActionable();retract(update);}
   alertQueue.push(p);pumpAlert();
 }).catch(()=>{});
 // Not over something the person is doing: while the notch is arriving, carried, tracking or showing a card
@@ -38,7 +44,7 @@ function alertWaits(){
 }
 function pumpAlert(){
   clearTimeout(pumpTimer);
-  if(!alertQueue.length)return;
+  if(!alertQueue.length){pumpUpdate();return;}
   if(alertWaits()||(!edgeIsVertical()&&slivering())){pumpTimer=setTimeout(pumpAlert,200);return;}
   while(alertQueue.length){
     const p=alertQueue.shift(), byAccount=new Map();
@@ -58,6 +64,7 @@ function pumpAlert(){
 // The words an alert gets: a word in the colour of what it reports, then the reading or the session
 const ALERT_RANK={quota100:0,waiting:1,quota80:2,completion:3};
 function sliverLine(events){
+  if(events[0]?.kind==='update')return updateLine();
   const kick=ui().kick||UI.en.kick;
   const e=[...events].sort((a,b)=>ALERT_RANK[a.kind==='quota'?'quota'+(a.level===100?100:80):a.kind]-ALERT_RANK[b.kind==='quota'?'quota'+(b.level===100?100:80):b.kind])[0];
   const acct=providers().find(x=>x.id===e.account);
@@ -82,12 +89,12 @@ function showSliver(account,events,hold){
     card.parentElement.append(el);
     s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);placeUnreadDot();
     el.setAttribute('role','button');el.tabIndex=0;
-    const activate=()=>{markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
+    const activate=()=>{if(s.account===UPDATE_ID){activateUpdate();return;}markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
     el.addEventListener('click',activate);
     el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}});
   }
   s.test=events.every(e=>e.test===true);
-  s.events=[...events,...s.events.filter(e=>!e.test)].slice(0,6);s.to=1;s.seen=false;
+  s.events=account===UPDATE_ID?events:[...events,...s.events.filter(e=>!e.test)].slice(0,6);s.to=1;s.seen=false;
   s.scroll?.cancel();s.scroll=null;s.scrollDistance=null;
   s.el.innerHTML=sliverLine(s.events);
   // Only as long as the line: measured laid out on one line, then the sliver is cut to it
@@ -123,7 +130,7 @@ function drawSliver(s){
   const origin=document.getElementById('root').getBoundingClientRect(), W=innerWidth, H=innerHeight;
   const matrix=edgeMatrix(notchEdge,W,H), local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
   const screen=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
-  const cell=s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
+  const cell=s.account===UPDATE_ID?pill.querySelector('.cell'):s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
   const notch=pill.getBoundingClientRect(), [start]=local(notch.left-origin.left,notch.top-origin.top);
   const length=vertical?notch.height:notch.width, end=start+length;
   const cells=[...pill.querySelectorAll('.cell')].map(el=>{
@@ -175,7 +182,7 @@ function scrollSliver(s){
     {duration,iterations:Infinity,easing:'linear'});
   if(!slivHeld&&!s.test){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);placeUnreadDot();reportHot();if(!slivers.size)ringBell();if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);}
+function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);placeUnreadDot();reportHot();if(!slivers.size)ringBell();if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -199,6 +206,60 @@ function markSeen(s){
   s.seen=true;invoke('mark_alerts_read',{ids}).catch(()=>{});
 }
 addEventListener('resize',()=>{for(const s of slivers.values())drawSliver(s);});
+
+// Updates use the same ink, spring and notification space as a finished turn. The words are the action:
+// download only after a click, then offer restart only once the updater has verified the download.
+function updateCopy(){
+  const version=updateState.version?'v'+String(updateState.version).replace(/^v/,''):'';
+  const percent=Math.max(0,Math.min(100,Math.floor(Number(updateState.percent)||0)));
+  if(updateState.status==='ready')return ['Update ready',['Restart',version].filter(Boolean).join(' · ')];
+  if(updateState.status==='downloading')return ['Downloading',`${percent}%${version?' · '+version:''}`];
+  if(updateState.status==='installing')return ['Restarting','Installing update'];
+  if(updateState.status==='error')return ['Update failed','Check again'];
+  return ['Update available',['Download',version].filter(Boolean).join(' · ')];
+}
+function updateLine(){
+  const [word,text]=updateCopy();
+  return `<span class="s-word" style="color:${WATCH}">${esc(word)}</span><span class="s-text"><span class="s-scroll">${esc(text)}</span></span>`;
+}
+function renderUpdate(){
+  showSliver(UPDATE_ID,[{kind:'update'}],9000);
+  const s=slivers.get(UPDATE_ID), [word,text]=updateCopy();
+  s.el.classList.add('sliver-update');
+  s.el.dataset.status=updateState.status;
+  s.el.setAttribute('aria-label',`${word}: ${text}`);
+  s.el.setAttribute('aria-disabled',String(!updateActionable()));
+  s.el.setAttribute('aria-busy',String(['downloading','installing'].includes(updateState.status)));
+  s.el.title=updateState.status==='error'?String(updateState.error||'Check for updates again'):`${word}: ${text}`;
+  s.el.style.setProperty('--update-fraction',Math.max(0,Math.min(100,Number(updateState.percent)||0))/100);
+}
+function pumpUpdate(){
+  if(!updatePending)return;
+  if(alertWaits()||slivering()||window.notificationTestAccount){pumpTimer=setTimeout(pumpAlert,200);return;}
+  updatePending=false;
+  if(updateActionable())renderUpdate();
+}
+function showUpdate(state){
+  if(!state||typeof state.status!=='string')return;
+  const changed=state.status!==updateState.status||state.version!==updateState.version;
+  updateState=state;
+  const s=slivers.get(UPDATE_ID);
+  if(!['available','downloading','ready','installing','error'].includes(state.status)){
+    updatePending=false;if(s)retract(s);return;
+  }
+  if(s?.to){renderUpdate();updatePending=false;}
+  else if(changed&&updateActionable()){updatePending=true;pumpAlert();}
+}
+async function activateUpdate(){
+  if(updateAction||!updateActionable())return;
+  const command=updateState.status==='ready'?'install_update':updateState.status==='available'?'download_update':'check_for_update';
+  updateAction=true;
+  try{await invoke(command);}
+  catch(error){showUpdate({...updateState,status:'error',error:String(error)});}
+  finally{updateAction=false;}
+}
+listen('update_state',e=>showUpdate(e.payload)).catch(()=>{});
+invoke('get_update_state').then(showUpdate).catch(()=>{});
 
 // A short glass chime, made here rather than shipped as a file: two sine partials a step apart,
 // rising for someone waiting, falling for a warning, a fifth for a finished turn

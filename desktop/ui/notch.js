@@ -1593,11 +1593,3 @@ setInterval(renderRing,30_000); // stale state and reset copy move with time
 
 
 listen('refresh_started',()=>{for(const p of providers())turnReading(p.id);}).catch(()=>{});
-
-function showUpdateBadge(state){
-  const available=['available','downloading','ready','installing'].includes(state.status);
-  orb.classList.toggle('update-available',available);
-  orb.setAttribute('aria-label',state.status==='ready'?'Restart to update':available?'Update available':'Settings');
-}
-listen('update_state',event=>showUpdateBadge(event.payload)).catch(()=>{});
-invoke('get_update_state').then(showUpdateBadge).catch(()=>{});

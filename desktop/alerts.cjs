@@ -92,9 +92,8 @@ function sessionUrl(raw) {
   const target = sessionTarget(raw);
   if (!target) return null;
   if (target.terminalPids?.length) {
-    const query = new URLSearchParams({ provider: target.provider, session: target.sessionId, pids: target.terminalPids.join(',') });
-    if (target.cwd) query.set('cwd', target.cwd);
-    return `vscode://f-petrozzi.agent-usage-link/open?${query}`;
+    const payload = { provider: target.provider, sessionId: target.sessionId, pids: target.terminalPids, ...(target.cwd ? { cwd: target.cwd } : {}) };
+    return `vscode://f-petrozzi.agent-usage-link/open?target=${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
   }
   return target.provider === 'claude' ? `vscode://anthropic.claude-code/open?session=${target.sessionId}`
     : `vscode://openai.chatgpt/local/${target.sessionId}`;

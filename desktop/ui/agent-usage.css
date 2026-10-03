@@ -83,7 +83,6 @@ body[data-edge="top"] #card,body[data-edge="bottom"] #card{max-height:calc(100vh
 .extra-row{font-size:calc(12px * var(--tz,1));line-height:1.5;color:#b8b8bb;padding:2px 0}
 svg.reading{transform-origin:50% 50%}
 
-#orb.update-available::after{content:"";position:absolute;right:3px;top:3px;width:6px;height:6px;border:2px solid #000;border-radius:50%;background:#8bafff;pointer-events:none}
 
 /* The gear: eight identical teeth, corners eased by a hairline of its own colour, so it turns evenly */
 .h-glyph.gear path{stroke:var(--ink-2);stroke-width:.9;stroke-linejoin:round}

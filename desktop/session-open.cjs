@@ -2,18 +2,49 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, execFile } = require('node:child_process');
+const http = require('node:http');
+const { randomBytes } = require('node:crypto');
 const { sessionUrl } = require('./alerts.cjs');
 const { validHost, validLinuxPath } = require('./collector.cjs');
-function resumeUrl(target) {
+function resumeUrl(target, reply) {
   if (!target || !['claude', 'codex', 'antigravity'].includes(target.provider) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.sessionId || '')
     || !validLinuxPath(target.cwd) || !validLinuxPath(target.agentHome)) return null;
   const remote = target.source === 'ssh' && validHost(target.sshTarget) ? 'ssh-remote+' + target.sshTarget
     : target.source === 'wsl' && /^[A-Za-z0-9._-]{1,120}$/.test(target.wslDistro || '') ? 'wsl+' + target.wslDistro : '';
   if (!remote) return null;
-  const query = new URLSearchParams({ provider: target.provider, session: target.sessionId, cwd: target.cwd, home: target.agentHome, remote });
   const pids = (target.terminalPids || []).filter(n => Number.isInteger(n) && n > 1 && n <= 2147483647).slice(0, 16);
-  if (pids.length) query.set('pids', pids.join(','));
-  return `vscode://f-petrozzi.agent-usage-link/resume?${query}`;
+  // VS Code percent-decodes URI.query and reserves `session` for its own chats. An opaque URL-safe payload
+  // survives both steps without corrupting '+' SSH authorities or '&'/'%' in paths.
+  const payload = { provider: target.provider, sessionId: target.sessionId, cwd: target.cwd, home: target.agentHome, remote, pids,
+    ...(reply ? { reply } : {}) };
+  return `vscode://f-petrozzi.agent-usage-link/resume?target=${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
+}
+async function createReceipt({ initialMs = 25000, receivedMs = 120000 } = {}) {
+  const token = randomBytes(24).toString('hex');
+  let resolve, reject, timer, done = false, received = false;
+  const result = new Promise((yes, no) => { resolve = yes; reject = no; });
+  result.catch(() => {}); // A launch error can dispose it before the caller starts awaiting it.
+  const close = () => { clearTimeout(timer); server.close(); server.closeAllConnections(); };
+  const finish = error => { if (done) return; done = true; error ? reject(error) : resolve(true); close(); };
+  const arm = ms => { clearTimeout(timer); timer = setTimeout(() => finish(new Error(received
+    ? 'VS Code received the session link but did not finish opening it. Check its connection or workspace trust prompt, then try again.'
+    : 'VS Code did not respond to the session link. Run Developer: Reload Window in VS Code, then try again. Check that Agent Usage Link is enabled.')), ms); };
+  const server = http.createServer((request, response) => {
+    if (request.method !== 'POST' || request.url !== '/' + token || request.headers.origin) { response.writeHead(404).end(); return; }
+    let body = '';
+    request.on('data', chunk => { body += chunk; if (body.length > 4096) request.destroy(); });
+    request.on('end', () => {
+      let message; try { message = JSON.parse(body); } catch { response.writeHead(400).end(); return; }
+      if (!['received', 'opened', 'error'].includes(message?.status)) { response.writeHead(400).end(); return; }
+      response.writeHead(204).end();
+      if (message.status === 'received') { if (!received) { received = true; arm(receivedMs); } }
+      else if (message.status === 'opened') finish();
+      else finish(new Error(String(message.message || 'VS Code could not open the session.').replace(/[\x00-\x1f\x7f]/g, '').slice(0, 600)));
+    });
+  });
+  await new Promise((yes, no) => { server.once('error', no); server.listen(0, '127.0.0.1', yes); });
+  arm(initialMs);
+  return { reply: { port: server.address().port, token }, result, close: () => { done = true; resolve(false); close(); } };
 }
 function codeLocations(env = process.env) {
   return [env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
@@ -41,13 +72,14 @@ function installFailure(error, stdout, stderr) {
   return new Error('The VS Code terminal helper could not be installed. ' + detail);
 }
 // The bundled helper's identity; tests keep it equal to vscode-link/package.json.
-const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.0' };
+const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.1' };
 // Installed only when VS Code lacks this version. Reinstalling it on every launch (as --force did) replaced the helper
 // under a running VS Code window, which then dropped the first link until a new window was opened.
 async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
   if (!exists(helper)) throw new Error('The bundled VS Code helper is missing. Reinstall the latest Agent Usage update.');
   const cli = codeCli(executable, { exists, read });
   const key = executable + ':' + helper;
+  const first = !installed.has(key);
   if (!installed.has(key)) {
     const options = { windowsHide: true, timeout: 60000, maxBuffer: 1 << 20, env: { ...env, VSCODE_DEV: '', ELECTRON_RUN_AS_NODE: '1' } };
     const code = args => new Promise((resolve, reject) => run(executable, [cli, ...args, ...extraArgs], options,
@@ -55,25 +87,33 @@ async function installHelper(executable, helper, run = execFile, { exists = fs.e
     const wanted = `${HELPER.id}@${HELPER.version}`.toLowerCase();
     // A listing that fails only means installing anyway, as before
     const promise = code(['--list-extensions', '--show-versions']).catch(() => '')
-      .then(list => list.split(/\r?\n/).some(line => line.trim().toLowerCase() === wanted) ? undefined
-        : code(['--install-extension', helper, '--force']).then(() => undefined, error => { throw installFailure(error, error.stdout, error.stderr); }));
+      .then(list => list.split(/\r?\n/).some(line => line.trim().toLowerCase() === wanted) ? false
+        : code(['--install-extension', helper, '--force']).then(() => true, error => { throw installFailure(error, error.stdout, error.stderr); }));
     installed.set(key, promise); promise.catch(() => installed.delete(key));
   }
-  return installed.get(key);
+  const changed = await installed.get(key);
+  return first && changed;
 }
 async function openSession(target, shell, { locations = codeLocations(), exists = fs.existsSync, launch = spawn,
-  protocolName = () => '', helper = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'agent-usage-link.vsix'), ensureHelper = installHelper } = {}) {
-  const url = target?.resume ? resumeUrl(target) : sessionUrl(target);
+  protocolName = () => '', helper = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'agent-usage-link.vsix'), ensureHelper = installHelper, receiptFactory = createReceipt } = {}) {
+  let url = target?.resume ? resumeUrl(target) : sessionUrl(target);
   if (!url) return false;
   const executable = locations.find(exists);
   if (executable) {
-    if (target.resume || target.terminalPids?.length) await ensureHelper(executable, helper);
+    const changed = target.resume || target.terminalPids?.length ? await ensureHelper(executable, helper) : false;
+    const receipt = target.resume ? await receiptFactory() : null;
+    if (receipt) url = resumeUrl(target, receipt.reply);
+    // A running window can still have the previous helper loaded after CLI installation. One fresh window loads
+    // the update immediately; later clicks reuse the normal handler and existing session terminals.
+    if (target.resume && changed) url += '&windowId=_blank';
     // Fixed executable paths and validated session UUIDs; never pass a shell command or prompt.
-    await new Promise((resolve, reject) => {
+    try { await new Promise((resolve, reject) => {
       const child = launch(executable, ['--open-url', '--', url], { windowsHide: true, detached: true, stdio: 'ignore' });
       child.once('error', () => reject(new Error('VS Code could not be started.')));
       child.once('spawn', () => { child.unref(); resolve(); });
     });
+    if (receipt) await receipt.result;
+    } finally { receipt?.close(); }
   } else {
     if (target.resume) throw new Error('Install the standard Windows VS Code build so Agent Usage can install its session helper.');
     if (!protocolName(url)) throw new Error('VS Code was not found. Install VS Code or register its vscode: links.');
@@ -81,4 +121,4 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
   }
   return true;
 }
-module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper, resumeUrl };
+module.exports = { HELPER, codeLocations, codeCli, openSession, installHelper, resumeUrl, createReceipt };

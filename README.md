@@ -36,8 +36,7 @@ The installer is unsigned, so SmartScreen may ask you to confirm it.
 
 ## Update
 
-A dot on the Settings button marks a new release. Choose **Update** in
-Settings → General, then **Restart**. On the collector machine, run
+A yellow **Update available** notification grows out of the notch in the same space as agent notifications. Click it to download; **Update ready** offers a separate click to restart once the download is verified. Settings → General → **Update** → **Restart** remains available. On the collector machine, run
 `git pull --ff-only && scripts/install-agent-usage.sh --force`.
 
 Claude reads are cached, and HTTP 429 responses trigger a shared cooldown.
@@ -237,3 +236,11 @@ Click a session to launch VS Code, even when it is closed. The bundled helper fo
 Update the collector with `scripts/install-agent-usage.sh --force`. `agent-usage --session-history --compact` reads bounded saved metadata without exporting message bodies or credentials. Desktop history queries are cached for one minute and reset when the collector host changes. Missing workspace metadata remains visible with an explanation instead of launching a different chat.
 
 Validation: collector history checks for closed sessions, account homes, saved names, subagents, limits and Antigravity workspaces; desktop checks for safe resume arguments, remote window handoff, existing terminal focus and trust; browser checks for all four edges, scrolling, account switching, keyboard activation, small viewports and reduced motion. Actual Windows window activation and remote reconnection need a device check.
+
+## Reliable session links and notch updates (3.3.8)
+
+History links now preserve SSH/WSL addresses and session identity through VS Code's URI decoding and protocol routing. The 0.2.1 helper loads in a fresh window on its first upgrade, then reuses normal routing. The app waits for confirmation that the helper has focused or created the session terminal; connection, trust and missing-helper failures show an explanation instead of reporting success when Code merely starts.
+
+Updates use the existing notification's fluid spring and shape, with yellow status text, a download action and a small progress line. A verified download offers Restart; it never restarts automatically. Agent notifications take priority, and updates wait while an account card or alert is open. Prompts return when the notch is next shown until acted on. A failed update offers Check again. The old Settings dot is removed.
+
+Validation: 64 desktop checks including real VS Code URI parsing and loopback acknowledgements; browser checks for download/restart actions, progress, notification priority, all four edges, keyboard access and reduced motion. Actual Windows activation and SSH/WSL reconnection still need a device trial.

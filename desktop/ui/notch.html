@@ -212,6 +212,12 @@
   .s-text{color:var(--ink-3);min-width:0;overflow:hidden;text-overflow:ellipsis}
   .s-scroll{display:inline-block;white-space:nowrap}
   .s-more{color:var(--ink-dim);font-size:calc(11px * var(--tz,1))}
+  .sliver-update{outline:none;font-variant-numeric:tabular-nums}
+  .sliver-update[aria-disabled="false"]:focus-visible{outline:1px solid var(--watch);outline-offset:-4px;border-radius:12px}
+  .sliver-update[aria-disabled="true"]{cursor:default}
+  .sliver-update[data-status="downloading"]::after{content:'';position:absolute;left:12px;bottom:2px;height:2px;
+    width:calc((100% - 24px) * var(--update-fraction,0));background:var(--watch);border-radius:2px;opacity:.65;transition:width .25s ease}
+  @media (prefers-reduced-motion: reduce){.sliver-update::after{transition:none}}
   /* Refresh lives on the card's title row: a ring click holds its card instead */
   .c-head .c-refresh{margin-left:auto;flex:none;appearance:none;border:0;background:transparent;width:26px;height:26px;border-radius:13px;display:grid;place-items:center;
     color:var(--ink-dim);cursor:pointer;transition:background-color .15s ease,color .15s ease}

@@ -125,7 +125,12 @@ async function start() {
   place(); win.showInactive(); // its one show happens parked, off every screen
   updates = createUpdates({ app, updater: require('electron-updater').autoUpdater,
     installed: process.platform === 'win32' && app.isPackaged && fs.existsSync(resource('installer-managed')),
-    onChange: state => broadcast('update_state', state),
+    onChange: state => {
+      if(['available','ready','error'].includes(state.status)){
+        reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+2500);
+      }
+      broadcast('update_state',state);
+    },
     beforeInstall: () => { save(); }
   });
   updates.start();

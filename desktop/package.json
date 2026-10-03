@@ -1,6 +1,6 @@
 {
   "name": "agent-usage-desktop",
-  "version": "3.3.7",
+  "version": "3.3.8",
   "private": true,
   "description": "Agent Usage with the CodeNotch Windows frontend",
   "author": "Agent Usage contributors",
@@ -65,7 +65,8 @@
   },
   "devDependencies": {
     "electron": "44.4.5",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "vscode-uri": "3.2.0"
   },
   "dependencies": {
     "electron-updater": "6.8.10"

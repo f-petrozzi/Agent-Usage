@@ -2,14 +2,15 @@
 const { test } = require('node:test'), assert = require('node:assert/strict'), { EventEmitter } = require('node:events');
 const { HELPER, openSession, installHelper, codeCli } = require('../desktop/session-open.cjs');
 const { sessionTarget, sessionUrl, historicalTarget } = require('../desktop/alerts.cjs');
-const { handleLink } = require('../vscode-link/extension.js');
+const { handleLink, parseLink } = require('../vscode-link/extension.js');
+const { URI } = require('../desktop/node_modules/vscode-uri');
 const id = '12345678-1234-5678-abcd-123456789012';
 const target = { provider: 'claude', sessionId: id, terminalPids: [90, 80, 50], cwd: '/srv/project' };
 test('session targets retain only validated terminal identity and workspace metadata', () => {
   assert.deepEqual(sessionTarget({...target,terminalPids:[90,90,-1,'80',80,Infinity],cwd:'/srv/project\n'}), {provider:'claude',sessionId:id,terminalPids:[90,80]});
   const url = new URL(sessionUrl(target));
-  assert.equal(url.hostname,'f-petrozzi.agent-usage-link'); assert.equal(url.searchParams.get('pids'),'90,80,50');
-  assert.equal(url.searchParams.get('cwd'),'/srv/project');
+  assert.equal(url.hostname,'f-petrozzi.agent-usage-link');
+  const link=parseLink(URI.parse(url.href));assert.deepEqual(link.pids,[90,80,50]);assert.equal(link.cwd,'/srv/project');
 });
 test('old completions restore only a unique account, name and recorded completion time', () => {
   const entry = {kind:'completion',account:'codex-a',session:'project',at:100000};
@@ -56,16 +57,16 @@ test('installer follows the installed CLI wrapper and reports the actual failure
 test('VS Code helper focuses the matching terminal without sending text or starting a new terminal',async()=>{
   let shown=0,external=0;
   const vscode={workspace:{workspaceFolders:[{uri:{path:'/srv/project'}}]},window:{terminals:[{processId:Promise.resolve(80),show:focus=>{assert.equal(focus,false);shown++;}}],showInformationMessage:()=>{}},env:{openExternal:()=>{external++;}},Uri:{parse:x=>x}};
-  const url=new URL(sessionUrl(target));await handleLink(vscode,{path:url.pathname,query:url.search.slice(1)});
+  const url=URI.parse(sessionUrl(target));await handleLink(vscode,url);
   assert.equal(shown,1);assert.equal(external,0);
   vscode.workspace.workspaceFolders=[{uri:{path:'/symlink/workspace'}}];
-  await handleLink(vscode,{path:url.pathname,query:url.search.slice(1)});assert.equal(shown,2,'a matching terminal pid also works when cwd is a symlink alias');
+  await handleLink(vscode,url);assert.equal(shown,2,'a matching terminal pid also works when cwd is a symlink alias');
   vscode.workspace.workspaceFolders=[{uri:{path:'/srv/project'}}];
-  vscode.window.terminals=[];await handleLink(vscode,{path:url.pathname,query:url.search.slice(1)});assert.equal(external,1);
+  vscode.window.terminals=[];await handleLink(vscode,url);assert.equal(external,1);
   await handleLink(vscode,{path:'/open',query:'provider=claude&session=bad&pids=80'});assert.equal(external,1);
 });
 test('a link that wakes VS Code waits for its restored terminals before falling back',async()=>{
-  const url=new URL(sessionUrl(target)),uri={path:url.pathname,query:url.search.slice(1)};
+  const uri=URI.parse(sessionUrl(target));
   let shown=0,external=0;const listeners=new Set();
   const vscode={workspace:{workspaceFolders:[{uri:{path:'/srv/project'}}]},window:{terminals:[],showInformationMessage:()=>{},
     onDidOpenTerminal:cb=>{listeners.add(cb);return {dispose:()=>listeners.delete(cb)};}},env:{openExternal:()=>{external++;}},Uri:{parse:x=>x}};
