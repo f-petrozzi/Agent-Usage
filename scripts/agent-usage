@@ -1049,9 +1049,10 @@ def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list
             except OSError:
                 continue
             active = status in {"CASCADE_RUN_STATUS_RUNNING", "CASCADE_RUN_STATUS_BUSY"} or (status == "CASCADE_RUN_STATUS_IDLE" and background)
-            if not active and not (include_terminal and status == "CASCADE_RUN_STATUS_IDLE"):
+            waiting = status == "CASCADE_RUN_STATUS_WAITING"
+            if not active and not waiting and status != "CASCADE_RUN_STATUS_IDLE":
                 continue
-            state, reason = ("busy" if active else "idle"), None
+            state, reason = ("waiting", "input needed") if waiting else (("busy" if active else "idle"), None)
             transcript = data_dir / "brain" / identity / ".system_generated" / "logs" / "transcript.jsonl"
             try:
                 with transcript.open("rb") as handle:
@@ -1066,11 +1067,16 @@ def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list
                         continue
                     calls = step.get("tool_calls")
                     question = isinstance(calls, list) and any(isinstance(call, dict) and call.get("name") in {"ask_question", "ask_permission"} for call in calls)
-                    if active and (step.get("status") == "WAITING" or question):
+                    # AGY can mark the conversation idle while a question is still
+                    # pending. Inspect input requests before treating idle as a
+                    # completed turn, including in the activity-only feed.
+                    if step.get("status") == "WAITING" or question:
                         state, reason = "waiting", "input needed"
                     break
             except OSError:
                 pass
+            if state == "idle" and not include_terminal:
+                continue
             sessions.append({"provider": "antigravity", "account": "antigravity", "id": identity,
                              "name": _short(title or "Antigravity"), "state": state,
                              "waitingFor": reason, "since": _parse_iso(modified) if isinstance(modified, str) else None})

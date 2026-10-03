@@ -171,6 +171,44 @@ class CodexSessionTests(unittest.TestCase):
 
 
 class AntigravitySessionTests(unittest.TestCase):
+    def test_idle_input_requests_remain_waiting_until_the_next_step(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'presence').mkdir()
+            transcript = root / 'brain/question/.system_generated/logs/transcript.jsonl'
+            transcript.parent.mkdir(parents=True)
+            with sqlite3.connect(root / 'conversation_summaries.db') as conn:
+                conn.execute('CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, status TEXT, not_fully_idle INTEGER, killed INTEGER, last_modified_time TEXT)')
+                conn.execute('INSERT INTO conversation_summaries VALUES (?,?,?,?,?,?)',
+                             ('question', 'Question', 'CASCADE_RUN_STATUS_RUNNING', 0, 0, '2026-10-02T19:00:00Z'))
+                conn.commit()
+                with (root / 'presence/question.lock').open('wb') as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.assertEqual(usage.antigravity_sessions(root, include_terminal=True)[0]['state'], 'busy')
+                    conn.execute("UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_IDLE'")
+                    conn.commit()
+                    for step in [
+                        {'type': 'TOOL', 'status': 'WAITING'},
+                        {'type': 'PLANNER_RESPONSE', 'status': 'DONE', 'tool_calls': [{'name': 'ask_question'}]},
+                        {'type': 'PLANNER_RESPONSE', 'status': 'DONE', 'tool_calls': [{'name': 'ask_permission'}]},
+                    ]:
+                        with self.subTest(step=step):
+                            transcript.write_text(json.dumps(step) + '\n{"partial":')
+                            for include_terminal in (False, True):
+                                got = usage.antigravity_sessions(root, include_terminal=include_terminal)
+                                self.assertEqual(got[0]['state'], 'waiting')
+                                self.assertEqual(got[0]['waitingFor'], 'input needed')
+                            # An answer/new step clears the old request; it must
+                            # not keep an idle conversation waiting forever.
+                            transcript.write_text(json.dumps(step) + '\n' + json.dumps({'type': 'USER_INPUT', 'status': 'DONE'}) + '\n')
+                            self.assertEqual(usage.antigravity_sessions(root), [])
+                            self.assertEqual(usage.antigravity_sessions(root, include_terminal=True)[0]['state'], 'idle')
+                    transcript.unlink()
+                    conn.execute("UPDATE conversation_summaries SET status = 'CASCADE_RUN_STATUS_WAITING'")
+                    conn.commit()
+                    for include_terminal in (False, True):
+                        self.assertEqual(usage.antigravity_sessions(root, include_terminal=include_terminal)[0]['state'], 'waiting')
+
     def test_live_status_waiting_idle_background_and_crashes(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

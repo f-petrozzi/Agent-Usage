@@ -69,6 +69,20 @@ test('cancel, disconnect, newly discovered sessions and disabled preferences nev
   alerts.update([session('busy')],prefs);
   assert.deepEqual(alerts.update([session('idle')],alertPreferences({completion:false})),[],'turned off, it stays quiet');
 });
+test('AGY input requests never trigger completion, including with waiting alerts off',()=>{
+  for (const waiting of [false, true]) {
+    const alerts = new SessionAlerts();
+    const preferences = alertPreferences({ waiting, completion: true });
+    const agy = (state, since) => ({ ...session(state, 'question', 'gemini'), provider: 'antigravity', since });
+    alerts.update([agy('busy', 1000)], preferences, 1000);
+    const events = alerts.update([agy('waiting', 61000)], preferences, 61000);
+    assert.deepEqual(events.map(e => e.kind), waiting ? ['waiting'] : []);
+    assert.deepEqual(alerts.update([agy('waiting', 61000)], preferences, 62000), []);
+    assert.deepEqual(alerts.update([agy('idle', 63000)], preferences, 63000), []);
+    alerts.update([agy('busy', 64000)], preferences, 64000);
+    assert.equal(alerts.update([agy('idle', 125000)], preferences, 125000)[0].kind, 'completion');
+  }
+});
 test('session identity includes its account and missing identities cannot cause alerts',()=>{
   const alerts=new SessionAlerts();alerts.update([session('busy')],prefs);
   assert.deepEqual(alerts.update([session('idle','one','claude'),session('idle','')],prefs),[]);

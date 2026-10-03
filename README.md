@@ -111,7 +111,7 @@ Use `--no-antigravity` to skip it. Update the collector alongside the Windows ap
 While reading one account, the other gauges become small account glyphs. Hover
 a glyph or focus it with the keyboard to switch; leaving restores all gauges.
 
-AGY CLI activity uses its live presence lock and local conversation status database. Active work spins the inner arc; explicit pending questions and reported waiting steps pulse yellow. Idle, canceled, killed, and disconnected conversations clear the indicator. Approval waits that AGY does not expose in its transcript cannot be distinguished from active work.
+AGY CLI activity uses its live presence lock and local conversation status database. Active work spins the inner arc; explicit pending questions and reported waiting steps pulse yellow, including when AGY reports the conversation as idle. Idle conversations without pending input, canceled, killed, and disconnected conversations clear the indicator. Approval waits that AGY does not expose in its transcript cannot be distinguished from active work.
 
 Claude shows available free limit resets and the soonest expiry instead of the subscription name, as a row of the usage card on every edge (Codex banked resets use the same row). Point at the row and it opens to each reset against its own date and time and how long is left, soonest first, so you can see which to use by when. The collector requests the `cedar_ember` grant block with the newest Claude CLI on the host as its version, since the endpoint only returns resets to a current CLI: over non-interactive SSH, PATH alone found an old npm global in `/usr/bin` and the resets never arrived. It counts usable unpaused grants and never forwards redemption handles. Unsupported or ineligible responses leave the count unknown. Redeem resets in Claude itself.
 
@@ -212,3 +212,9 @@ The switches' goo now has smooth, anti-aliased edges while it moves, instead of 
 Small mode keeps the notch small but draws card, log and alert text at about medium size, with the card widened to fit.
 
 Validation: 50 desktop checks, including relayed and delivered presses, and every browser suite plus a new small-mode suite.
+
+## AGY input requests (3.3.5)
+
+Pending AGY questions and permission requests now take priority over its idle status, so asking for input shows Waiting instead of triggering a finished-working notification. An explicit conversation WAITING status also shows Waiting when the transcript is unavailable. Waiting notifications still follow the existing alert setting.
+
+Update the collector alongside the Windows app. Validation covers idle questions, permission requests, partial transcript writes, answers clearing old requests, and completion alerts after work resumes.
