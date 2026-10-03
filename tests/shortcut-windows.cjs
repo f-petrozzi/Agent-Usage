@@ -56,8 +56,8 @@ public static class ShortcutKeys {
 [Console]::WriteLine('ready')
 while ($null -ne ($line = [Console]::ReadLine())) {
   $parts = $line.Split(' ')
-  if ($parts[0] -eq 'hotkey') { [ShortcutKeys]::Hotkey([uint]$parts[1]) }
-  else { [ShortcutKeys]::Send([ushort]$parts[0], $parts[1] -eq 'up') }
+  if ($parts[0] -eq 'hotkey') { [ShortcutKeys]::Hotkey([System.UInt32]$parts[1]) }
+  else { [ShortcutKeys]::Send([System.UInt16]$parts[0], $parts[1] -eq 'up') }
   [Console]::WriteLine('sent ' + $line)
 }
 `);
