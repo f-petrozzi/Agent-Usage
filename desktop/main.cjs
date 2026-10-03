@@ -323,7 +323,7 @@ function registerShortcut(value) {
   const helper=input;let statusBuffer='';
   helper.stderr.on('data',data=>{
     statusBuffer+=data.toString();let end;
-    while((end=statusBuffer.indexOf('\n'))>=0){const line=statusBuffer.slice(0,end).trim();statusBuffer=statusBuffer.slice(end+1);if(/^sessions-ready hotkey=[01] hook=[01] thread=\d+$/.test(line))diagnose(line);}
+    while((end=statusBuffer.indexOf('\n'))>=0){const line=statusBuffer.slice(0,end).trim();statusBuffer=statusBuffer.slice(end+1);if(/^sessions-ready hotkey=[01] hook=[01] thread=\d+$/.test(line)||/^sessions-event (hotkey|detected)$/.test(line))diagnose(line);}
   });
   let buffer = '';
   input.stdout.on('data', data => {

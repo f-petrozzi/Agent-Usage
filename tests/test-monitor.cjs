@@ -27,8 +27,8 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const settings = { isDestroyed: () => false, webContents: { send() {} } };
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
-    __dirname: path.dirname(main), process, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, inputLine, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+    __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, inputLine, setInput(value){input=value;}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
@@ -66,6 +66,11 @@ test('Ctrl + Scroll Lock opens the switcher, enables keyboard focus only for it,
  assert.deepEqual(s.calls.slice(-2),[['focusable',true],['focus']]);
  registration[2]();assert.deepEqual(s.calls.slice(-3),[['session_switcher',false],['blur'],['focusable',false]]);
 });
+test('Windows leaves session hotkey ownership with the native helper',t=>{
+ const s=setup(t,true,{platform:'win32'});s.test.setInput({});
+ assert.equal(s.test.registerSessionShortcut(),true);assert.equal(s.calls.some(c=>c[0]==='shortcut'),false);
+ s.test.inputLine('010');assert.deepEqual(s.calls.at(-1),['session_switcher',true]);
+});
 test('switcher pins and resume commands resolve trusted saved metadata, including chats outside recent history',async t=>{
  const {accountId}=require('../desktop/collector.cjs'),account=accountId('codex','a'),opened=[];
  const saved={id:'chat',account,provider:'codex',name:'Agent Usage',since:1700000000000,state:'idle',live:false,
@@ -102,6 +107,15 @@ test('focus groups persist multiple known accounts, retain visibility and clear 
  assert.deepEqual(Array.from(await s.command('set_focus_accounts',{accounts:['codex-a','claude-b','codex-a']})),['codex-a','claude-b']);
  assert.equal(s.config.slots.some(slot=>slot.provider==='codex-a'),true);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(s.root,'settings.json'))).focusAccounts,['codex-a','claude-b']);
  assert.deepEqual(Array.from(await s.command('get_focus_accounts')),['codex-a','claude-b']);assert.deepEqual(Array.from(await s.command('set_focus_accounts',{accounts:[]})),[]);
+});
+test('automatic session refresh bypasses the history cache without launching overlapping reads',async t=>{
+ let reads=0,rows=[{id:'chat',account:'codex-a',provider:'codex',name:'Before',since:1700000000000,state:'idle',sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project'}];
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>{reads++;return {sessions:rows};}}});
+ assert.equal((await s.command('get_session_library'))[0].name,'Before');
+ rows=[{...rows[0],name:'After'}];
+ assert.equal((await s.command('get_session_library'))[0].name,'Before');assert.equal(reads,1);
+ const [first,second]=await Promise.all([s.command('get_session_library',{refresh:true}),s.command('get_session_library',{refresh:true})]);
+ assert.equal(first[0].name,'After');assert.equal(second[0].name,'After');assert.equal(reads,2);
 });
 test('stale and settings acknowledgments cannot move or unmask a newer monitor transfer', async t => {
   const s = setup(t);

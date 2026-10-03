@@ -70,7 +70,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
   const thread=helperStatus.match(/thread=(\d+)/)[1];
   async function hotkey(){const token='hotkey '+thread,offset=output.length;injector.stdin.write(token+'\n');await until(()=>output.slice(offset).includes('sent '+token),'Native message injection failed: '+errors);}
   main.hide();await wait(600);await hotkey();
-  await until(showing,'Native WM_HOTKEY did not open and focus Sessions from a hidden notch');
+  try{await until(showing,'Native WM_HOTKEY did not open and focus Sessions from a hidden notch');}catch(error){nativeLog();console.log('Native status:',helperStatus);console.log(await main.window.webContents.executeJavaScript('({shown,tracking:window.agentTracking,pending:switcherPending,placing,card:card.className})'));throw error;}
   await wait(500);assert.equal(await showing(),true,'one native hotkey must open exactly once');
   await hotkey();await until(async()=>!await main.window.webContents.executeJavaScript('sessionSwitcherShowing()'),'Second native hotkey did not close Sessions');
   assert.match(helperLines.join(''),/010/,'the compiled helper must report the native session chord');

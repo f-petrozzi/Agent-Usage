@@ -56,7 +56,10 @@ internal static class InputMonitor
         try {
             Message message;
             while (GetMessage(out message, IntPtr.Zero, 0, 0) > 0) {
-                if (message.id == 0x312 && message.word.ToUInt64() == 1) Interlocked.Increment(ref sessionPresses);
+                if (message.id == 0x312 && message.word.ToUInt64() == 1) {
+                    Interlocked.Increment(ref sessionPresses);
+                    Console.Error.WriteLine("sessions-event hotkey"); Console.Error.Flush();
+                }
                 TranslateMessage(ref message); DispatchMessage(ref message);
             }
         }
@@ -82,6 +85,7 @@ internal static class InputMonitor
                 {
                     if (++tick % 50 == 0 && owner.HasExited) return;
                     bool tapped = Interlocked.Exchange(ref sessionPresses, 0) > 0;
+                    if (tapped) { Console.Error.WriteLine("sessions-event detected"); Console.Error.Flush(); }
                     long now = Stopwatch.GetTimestamp();
                     if (tapped) sessionUntil = now + Stopwatch.Frequency * 9 / 100;
                     bool control = ControlDown(), scroll = Down(0x91), sessions = (control && scroll) || now < sessionUntil;
