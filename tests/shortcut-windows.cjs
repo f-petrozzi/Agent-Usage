@@ -32,6 +32,7 @@ app.whenReady().then(async()=>{
   subject._compile(fs.readFileSync(source,'utf8')+'\nmodule.exports={start,hide,get window(){return win;},get input(){return input;},get phase(){return phase;}};',source);
   main=subject.exports;await main.start();
   const helperLines=[];main.input.stdout.on('data',data=>helperLines.push(data.toString()));
+  main.input.on('exit',(code,signal)=>console.log('Native helper exit:',code,signal));
   const injectorPath=path.join(temporary,'keys.ps1');
   fs.writeFileSync(injectorPath,`Add-Type -TypeDefinition @'
 using System;
@@ -60,11 +61,15 @@ while ($null -ne ($line = [Console]::ReadLine())) {
   await until(()=>output.includes('ready'),'Windows input injector did not start: '+errors);
   async function key(code,up=false){const token=`${code} ${up?'up':'down'}`,offset=output.length;injector.stdin.write(token+'\n');await until(()=>output.slice(offset).includes('sent '+token),'Input injection failed: '+errors);}
   const showing=()=>main.window.webContents.executeJavaScript('sessionSwitcherShowing() && document.activeElement === card.querySelector(".session-search")');
+  const nativeLog=()=>console.log('Native reports:',JSON.stringify(helperLines.join('')));
   await wait(300);
+  await key(0x91);
+  try{await until(()=>helperLines.join('').includes('100'),'Windows runner did not deliver a plain Scroll Lock press to the helper');}catch(error){nativeLog();throw error;}
+  await key(0x91,true);await wait(300);console.log('PASS: Windows runner delivers real Scroll Lock input');
   for(const control of [0xa2,0xa3]){
     main.hide();await wait(600);
     await key(control);await key(0x91);
-    await until(showing,'Ctrl + Scroll Lock did not open and focus Sessions from a hidden notch');
+    try{await until(showing,'Ctrl + Scroll Lock did not open and focus Sessions from a hidden notch');}catch(error){nativeLog();console.log(await main.window.webContents.executeJavaScript('({shown,tracking:window.agentTracking,pending:switcherPending,placing,card:card.className})'));throw error;}
     await wait(500);assert.equal(await showing(),true,'holding the chord must not close Sessions');
     await key(0x91,true);await key(control,true);await wait(200);
     await key(control);await key(0x91);await key(0x91,true);await key(control,true);
