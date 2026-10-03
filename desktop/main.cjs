@@ -24,8 +24,8 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
 let trayTimer;
 let historyCache = null, historyPending = null, historyAt = 0, historyGeneration = 0;
-async function recentHistory() {
-  if (historyCache && Date.now() - historyAt < 60000) return historyCache;
+async function recentHistory(refresh = false) {
+  if (!refresh && historyCache && Date.now() - historyAt < 60000) return historyCache;
   if (historyPending) return historyPending;
   const generation = historyGeneration;
   const pending = readSessionHistory({ ...config }).then(value => {
@@ -43,6 +43,9 @@ let notificationTestAccount = null;
 let switcherRequested=false,switcherFocused=false,sessionKeyHeld=false,sessionShortcutAt=0,sessionShortcutSource='';
 const SESSION_SHORTCUT='Ctrl+Scrolllock';
 function registerSessionShortcut(){
+  // Windows owns this chord in InputMonitor's native message loop. Registering it twice
+  // makes the helper lose WM_HOTKEY ownership and depend entirely on sampled key state.
+  if(process.platform==='win32')return !!input;
   return globalShortcut.register(SESSION_SHORTCUT,()=>triggerSessionShortcut('electron'));
 }
 function triggerSessionShortcut(source){
@@ -67,9 +70,9 @@ function openSessionSwitcher(){
   switcherRequested=true;reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+3000);
   send('session_switcher',true);
 }
-async function sessionLibrary(){
+async function sessionLibrary(refresh=false){
   let history;
-  try{history=await recentHistory();if(config.source==='wsl'&&history.wslDistro!==config.lastWslDistro){config.lastWslDistro=history.wslDistro;save();broadcast('session_pins',currentSessionPins());}}
+  try{history=await recentHistory(refresh);if(config.source==='wsl'&&history.wslDistro!==config.lastWslDistro){config.lastWslDistro=history.wslDistro;save();broadcast('session_pins',currentSessionPins());}}
   catch(error){
     history=historyCache||{sessions:[],wslDistro:config.lastWslDistro};
     if(!libraryRows(history,config.sessionPins,config).length)throw error;
@@ -316,7 +319,12 @@ function registerShortcut(value) {
   input?.kill();
   if (process.platform !== 'win32') return; // development preview only
   const [key, mods] = shortcuts[value];
-  input = spawn(resource('InputMonitor.exe'), [String(process.pid), String(key), String(mods)], { windowsHide: true, stdio: ['ignore','pipe','ignore'] });
+  input = spawn(resource('InputMonitor.exe'), [String(process.pid), String(key), String(mods)], { windowsHide: true, stdio: ['ignore','pipe','pipe'] });
+  const helper=input;let statusBuffer='';
+  helper.stderr.on('data',data=>{
+    statusBuffer+=data.toString();let end;
+    while((end=statusBuffer.indexOf('\n'))>=0){const line=statusBuffer.slice(0,end).trim();statusBuffer=statusBuffer.slice(end+1);if(/^sessions-ready hotkey=[01] hook=[01] thread=\d+$/.test(line))diagnose(line);}
+  });
   let buffer = '';
   input.stdout.on('data', data => {
     buffer += data.toString();
@@ -327,7 +335,8 @@ function registerShortcut(value) {
       inputLine(value);
     }
   });
-  input.on('error', () => { hotkeyProblem = 'Held-key helper could not start. Reinstall this build. Shortcut taps can still reveal the notch.'; broadcast('notice', hotkeyProblem); });
+  helper.on('error', error => { diagnose('sessions helper start failed '+error.code);hotkeyProblem = 'Keyboard helper could not start. Reinstall this build.'; broadcast('notice', hotkeyProblem); });
+  helper.on('exit',(code,signal)=>{if(input===helper){sessionKeyHeld=false;diagnose('sessions helper stopped code='+code+' signal='+signal);}});
 }
 function inputLine(value){
   if(!/^[01]{3}$/.test(value))return;
@@ -536,7 +545,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       const rows=await sessionLibrary();
       return rows.filter(s=>s.account===args.account).map(s=>publicRow(s,accounts().find(a=>a.id===s.account)));
     }
-    case 'get_session_library':return (await sessionLibrary()).map(s=>publicRow(s,accounts().find(a=>a.id===s.account)));
+    case 'get_session_library':return (await sessionLibrary(args.refresh===true)).map(s=>publicRow(s,accounts().find(a=>a.id===s.account)));
     case 'get_session_pins':return currentSessionPins();
     case 'set_session_pin':{
       if(typeof args.on!=='boolean')throw new Error('Choose whether to pin this chat.');
