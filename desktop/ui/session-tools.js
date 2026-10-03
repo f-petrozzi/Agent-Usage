@@ -6,6 +6,12 @@ const STAR_MARK='<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 2.4 
 let sessionPins=new Set(),library=[],libraryLoaded=false,libraryLoading=false,libraryError='',libraryAt=0,libraryGeneration=0;
 let switcherPending=false,sessionQuery='',sessionAccount='',sessionIndex=0,sessionMatches=[],sessionRenderFrame=0,sessionListSignature='';
 let finishedSessions=[];
+let sessionRefreshTimer=0,sessionActivitySignature='';
+function scheduleSessionRefresh(delay=30000){
+  clearTimeout(sessionRefreshTimer);sessionRefreshTimer=0;
+  if(!sessionSwitcherShowing())return;
+  sessionRefreshTimer=setTimeout(()=>{sessionRefreshTimer=0;if(sessionSwitcherShowing())loadSessionLibrary(true);},delay);
+}
 const sessionKey=(account,id)=>account+':'+id;
 const isSessionPinned=(account,id)=>sessionPins.has(sessionKey(account,id));
 const sessionSwitcherShowing=()=>card.classList.contains('show')&&hoverId===SESSION_ID;
@@ -27,9 +33,9 @@ listen('session_history_reset',()=>{libraryGeneration++;library=[];libraryAt=0;l
 async function loadSessionLibrary(force=false){
   if(libraryLoading||!force&&libraryLoaded&&Date.now()-libraryAt<60000)return;
   const generation=libraryGeneration;libraryLoading=true;libraryError='';updateSessionList();
-  try{const rows=await invoke('get_session_library');if(generation!==libraryGeneration)return;if(!Array.isArray(rows))throw new Error('Update the collector to load saved sessions.');library=rows;libraryLoaded=true;libraryAt=Date.now();}
+  try{const rows=await invoke('get_session_library',{refresh:force});if(generation!==libraryGeneration)return;if(!Array.isArray(rows))throw new Error('Update the collector to load saved sessions.');library=rows;libraryLoaded=true;libraryAt=Date.now();}
   catch(error){if(generation===libraryGeneration)libraryError=error.message||'Saved sessions could not be loaded.';}
-  finally{if(generation===libraryGeneration){libraryLoading=false;updateSessionList();}}
+  finally{if(generation===libraryGeneration){libraryLoading=false;updateSessionList();scheduleSessionRefresh();}}
 }
 function requestSessionSwitcher(on=true){
   if(!on){switcherPending=false;if(sessionSwitcherShowing())hideCard();return;}
@@ -38,9 +44,9 @@ function requestSessionSwitcher(on=true){
   const attempt=()=>{
     if(!switcherPending)return;
     if(!shown||window.agentTracking||document.getElementById('root').classList.contains('placing'))return;
-    switcherPending=false;hideCard();sessionQuery='';sessionAccount='';sessionIndex=0;sessionListSignature='';
+    switcherPending=false;hideCard();sessionListSignature='';
     hoverId=SESSION_ID;cardHeld=true;card.classList.add('held');showCard();setFocusExpanded(true);
-    focusSessionSearch();loadSessionLibrary();
+    focusSessionSearch();loadSessionLibrary(true);scheduleSessionRefresh();
   };
   attempt();
 }
@@ -52,7 +58,7 @@ for(const name of ['appear','layout','release'])listen(name,()=>{if(switcherPend
 listen('disappear',()=>{switcherPending=false;clearResumeEffects();}).catch(()=>{});
 listen('monitor_stow',()=>clearResumeEffects()).catch(()=>{});
 function closeSessionTools(){
-  if(sessionSwitcherShowing()){switcherPending=false;invoke('close_session_switcher').catch(()=>{});}
+  if(sessionSwitcherShowing()){clearTimeout(sessionRefreshTimer);sessionRefreshTimer=0;switcherPending=false;invoke('close_session_switcher').catch(()=>{});}
   scheduleFocusRest();
 }
 function sessionOptions(){
@@ -65,9 +71,9 @@ function renderSessionToolsCard(){
   card.classList.add('session-card');setExtraContent([],[]);
   if(hoverId===SESSION_ID){
     if(switched||!card.querySelector('.session-search')){
-      card.innerHTML=`<div class="session-head"><span>Sessions</span><kbd>Ctrl + ScrLk</kbd><button type="button" class="session-close session-tool-action" aria-label="Close sessions">×</button></div>
+      card.innerHTML=`<div class="session-head"><span>Sessions</span><button type="button" class="session-close session-tool-action" aria-label="Close sessions">×</button></div>
         <div class="session-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.2 4.2"/></svg><input class="session-search" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" placeholder="Find a chat or workspace" aria-label="Find a chat or workspace" aria-controls="session-results" autocomplete="off" spellcheck="false"></div>
-        <div class="session-filter-row"><select class="session-account" aria-label="Filter sessions by agent">${sessionOptions()}</select><button type="button" class="session-reload session-tool-action" aria-label="Reload saved sessions">Reload</button></div>
+        <div class="session-filter-row"><select class="session-account" aria-label="Filter sessions by agent">${sessionOptions()}</select></div>
         <div class="session-results" id="session-results" role="listbox" aria-label="Saved sessions"></div><div class="session-status" role="status" aria-live="polite"></div>`;
       const search=card.querySelector('.session-search');search.value=sessionQuery;
       search.addEventListener('input',()=>{sessionQuery=search.value;sessionIndex=0;queueSessionRender();});
@@ -106,7 +112,7 @@ function updateSessionList(){
     }).join('');list.scrollTop=scroll;
   }
   status.textContent=libraryError||(!rows.length?(libraryLoading?'Loading saved sessions…':sessionQuery?'No matching chats.':'No saved chats yet.'):
-    sessionMatches.length>120?'Showing 120 chats. Search or choose an agent to narrow the list.':libraryLoading?'Refreshing sessions…':`${sessionMatches.length} ${sessionMatches.length===1?'chat':'chats'} · ↑ ↓ to choose · Enter to resume`);
+    sessionMatches.length>120?'Showing 120 chats. Search to see more.':!libraryLoaded&&libraryLoading?'Loading sessions…':`${sessionMatches.length} ${sessionMatches.length===1?'chat':'chats'}`);
   status.classList.toggle('error',!!libraryError);paintSessionSelection();placeCard();
 }
 function paintSessionSelection(scroll=false){
@@ -134,14 +140,13 @@ card.addEventListener('click',async e=>{
     finally{pinPending.delete(key);pin.disabled=false;}return;
   }
   if(e.target.closest('.session-close')){hideCard();return;}
-  if(e.target.closest('.session-reload')){loadSessionLibrary(true);return;}
   const open=e.target.closest('.session-open');if(open){resumeSwitcherSession(Number(open.dataset.index));return;}
   const finished=e.target.closest('.finished-session');if(finished){const s=finishedSessions[Number(finished.dataset.index)];if(s)openNotifiedAlert(s,s.account);return;}
 });
 document.addEventListener('keydown',e=>{
   if(!isSessionToolsCard()||!card.classList.contains('show'))return;
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();hideCard();return;}
-  if(!sessionSwitcherShowing()||e.target.matches('select,.session-pin,.session-close,.session-reload'))return;
+  if(!sessionSwitcherShowing()||e.target.matches('select,.session-pin,.session-close'))return;
   if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
     e.preventDefault();sessionIndex=e.key==='Home'?0:e.key==='End'?Math.min(119,sessionMatches.length-1):Math.max(0,Math.min(119,sessionMatches.length-1,sessionIndex+(e.key==='ArrowDown'?1:-1)));paintSessionSelection(true);
   }else if(e.key==='Enter'&&e.target.classList.contains('session-search')){e.preventDefault();resumeSwitcherSession(sessionIndex);}
@@ -155,7 +160,7 @@ function openCompletionStack(events){
 // unfolds new members and takes old ones home without resetting the notch or clipping a gauge.
 let focusAccounts=new Set(),focusExpanded=false,focusFrame=0,focusLast=0,focusTimer=0;
 const focusCells=new Map(),focusMotion=matchMedia('(prefers-reduced-motion: reduce)');
-function focusWantsAll(){return !focusAccounts.size||focusExpanded||window.agentTracking||card.classList.contains('show')||slivering();}
+function focusWantsAll(){return !focusAccounts.size||!window.agentTracking&&(focusExpanded||card.classList.contains('show')||slivering());}
 function applyFocusLayout(){
   const cells=[...pill.querySelectorAll('.cell')],vertical=edgeIsVertical(),reversed=['bottom','left'].includes(notchEdge);
   const enabled=cells.some(c=>focusAccounts.has(c.dataset.p)),all=!enabled||focusWantsAll();
@@ -217,9 +222,16 @@ function setFocusAccounts(value){
 }
 invoke('get_focus_accounts').then(setFocusAccounts).catch(()=>{});listen('focus_accounts',e=>setFocusAccounts(e.payload)).catch(()=>{});
 listen('notch_pointer',e=>{if(e.payload)setFocusExpanded(true);else scheduleFocusRest();}).catch(()=>{});
-listen('edge_cursor',()=>setFocusExpanded(true)).catch(()=>{});
+listen('edge_cursor',()=>setFocusExpanded(false)).catch(()=>{});
+listen('move_begin',()=>setFocusExpanded(false)).catch(()=>{});
 listen('release',()=>scheduleFocusRest()).catch(()=>{});
 listen('activity',()=>{if(focusAccounts.size&&!focusExpanded)scheduleFocusRest();}).catch(()=>{});
+listen('activity',e=>{
+  const signature=JSON.stringify((Array.isArray(e.payload)?e.payload:[]).map(s=>[s.account,s.id,s.sessionId,s.state]));
+  if(signature===sessionActivitySignature)return;sessionActivitySignature=signature;
+  if(sessionSwitcherShowing())scheduleSessionRefresh(1000);else libraryAt=0;
+}).catch(()=>{});
+window.addEventListener('focus',()=>{if(sessionSwitcherShowing())loadSessionLibrary(true);});
 pill.addEventListener('mouseenter',()=>setFocusExpanded(true));pill.addEventListener('mouseleave',()=>scheduleFocusRest());
 pill.addEventListener('focusin',()=>setFocusExpanded(true));card.addEventListener('mouseenter',()=>setFocusExpanded(true));
 focusMotion.addEventListener('change',()=>setFocusExpanded(focusExpanded));

@@ -4,12 +4,15 @@
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),assert=require('node:assert/strict');
 const {spawn,spawnSync}=require('node:child_process');
 if(!process.versions.electron){
-  const result=spawnSync(require('../desktop/node_modules/electron'),[__filename],{stdio:'inherit',timeout:90000});
+  const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'agent-usage-shortcut-'));
+  const result=spawnSync(require('../desktop/node_modules/electron'),[__filename,temporary],{stdio:'inherit',timeout:90000});
   if(result.error)console.error(result.error.message);
+  // Chromium keeps its profile files open until Electron exits.
+  fs.rmSync(temporary,{recursive:true,force:true,maxRetries:5,retryDelay:200});
   process.exit(result.status??1);
 }
 const electron=require('electron'),{app}=electron,{Module}=require('node:module'),{EventEmitter}=require('node:events');
-const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'agent-usage-shortcut-'));
+const temporary=process.argv[2];
 app.setPath('appData',temporary);
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let injector,main;
@@ -92,7 +95,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     await until(async()=>!await main.window.webContents.executeJavaScript('sessionSwitcherShowing()'),'Second chord did not close Sessions');
     console.log('PASS: '+(control===0xa2?'left':'right')+' Ctrl + Scroll Lock opens hidden Sessions, focuses search, ignores repeats and closes');
   }
-  injector.kill();app.emit('before-quit');fs.rmSync(temporary,{recursive:true,force:true});app.exit(0);
+  injector.kill();app.emit('before-quit');app.exit(0);
 }).catch(error=>{
   console.error(error);injector?.kill();app.emit('before-quit');app.exit(1);
 });

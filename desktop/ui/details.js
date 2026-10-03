@@ -18,7 +18,7 @@ function changeDetailAccount(){
 
 function detailGeometry(){
   const origin=document.getElementById('root').getBoundingClientRect(),r=pill.getBoundingClientRect();
-  const horizontal=!edgeIsVertical(),box={x:card.offsetLeft,y:card.offsetTop,w:card.offsetWidth,h:card.offsetHeight};
+  const horizontal=!edgeIsVertical(),box={x:parseFloat(card.style.left)||0,y:parseFloat(card.style.top)||0,w:card.offsetWidth,h:card.offsetHeight};
   const matrix=edgeMatrix(notchEdge,innerWidth,innerHeight);
   // Invert the edge's orthogonal matrix; these are root-local coordinates, so the hide slide cancels.
   const local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
@@ -36,8 +36,9 @@ function drawDetails(){
   const matrix=edgeMatrix(detailBox.edge,innerWidth,innerHeight);
   const point=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
   const first=point(detailBox.u0,detailBox.v0),last=point(detailBox.u1,detailBox.v1);
-  card.style.setProperty('--detail-offset-x',`${Math.min(first[0],last[0])-card.offsetLeft}px`);
-  card.style.setProperty('--detail-offset-y',`${Math.min(first[1],last[1])-card.offsetTop}px`);
+  const offsetX=Math.min(first[0],last[0])-(parseFloat(card.style.left)||0),offsetY=Math.min(first[1],last[1])-(parseFloat(card.style.top)||0);
+  card.style.setProperty('--detail-offset-x',`${Math.abs(offsetX)<.001?0:offsetX}px`);
+  card.style.setProperty('--detail-offset-y',`${Math.abs(offsetY)<.001?0:offsetY}px`);
   // Search results can change the lobe's height while its spring is still catching up. Keep the
   // footer inside the live ink instead of showing its words below the rounded outline mid-resize.
   if(typeof isSessionToolsCard==='function'&&isSessionToolsCard()){

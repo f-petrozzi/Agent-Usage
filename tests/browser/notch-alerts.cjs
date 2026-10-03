@@ -260,6 +260,18 @@ const sideSection = (page, id) => page.evaluate(id => {
       assert.deepEqual(long.errors,[]);await long.page.close();
     }
 
+    for(const edge of ['top','right','bottom','left']){
+      const dragged=await open(browser,edge);
+      await arrive(dragged.page,{events:[quota],hold:10000},edge);await dragged.page.waitForTimeout(1400);
+      assert.equal(await dragged.page.evaluate(()=>slivers.size),1);
+      await dragged.page.evaluate(()=>__emit('edge_cursor',{edge:layout.edge,x:300,y:300}));
+      assert.equal(await dragged.page.locator('.sliver,.sliver-ink').count(),0,'held dragging leaves no detached notification text or ink on '+edge);
+      assert.equal(await dragged.page.locator('#notification-rim').getAttribute('hidden'),'','dragging cancels the glow in the same frame');
+      await dragged.page.evaluate(()=>{__emit('release');showSliver('claude',[{kind:'waiting',account:'claude',session:'Follow-up'}],10000);});await dragged.page.waitForTimeout(1100);
+      await dragged.page.evaluate(()=>__emit('move_begin'));
+      assert.equal(await dragged.page.locator('.sliver,.sliver-ink').count(),0,'mouse dragging also removes notification ink immediately');
+      assert.deepEqual(dragged.errors,[]);await dragged.page.close();
+    }
     const reduced = await open(browser, 'right', 'reduce');
     await arrive(reduced.page, { events: [quota], sound: false, hold: 2000 });
     await reduced.page.waitForTimeout(600);

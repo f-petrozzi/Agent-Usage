@@ -1076,7 +1076,7 @@ function placeCard(){
     const tz=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tz'))||1;
     card.style.setProperty('--card-width',Math.min((innerWidth-16)/tz,Math.max(minimum/tz,edgeIsVertical()?228:r.width))+'px');
   }
-  else if(tools)card.style.setProperty('--card-width',Math.min(360,innerWidth-16)+'px');
+  else if(tools){const tz=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--tz'))||1;card.style.setProperty('--card-width',Math.min(400,(innerWidth-16)/tz)+'px');}
   else card.style.removeProperty('--card-width');
   const cr=r, w=card.offsetWidth, h=card.offsetHeight;
   let x=cr.left+cr.width/2-w/2, y=cr.top+cr.height/2-h/2;
@@ -1088,7 +1088,8 @@ function placeCard(){
   if(hoverId===ALERTS_ID){
     if(edgeIsVertical())y=r.top-12; // retain the top alignment on side edges; flat edges center on the notch
   }
-  x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x)));y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y)));
+  const pixelRatio=devicePixelRatio||1;
+  x=Math.round(Math.max(8,Math.min(innerWidth-w-8,x))*pixelRatio)/pixelRatio;y=Math.round(Math.max(8,Math.min(innerHeight-h-8,y))*pixelRatio)/pixelRatio;
   card.style.cssText+=`;transform:none;right:auto;bottom:auto;left:${x-o.left}px;top:${y-o.top}px`;
   // The transparent bridge only supplies hit testing; details.js draws the connected ink.
   const rr=(cell.querySelector('.ringwrap')||cell).getBoundingClientRect();

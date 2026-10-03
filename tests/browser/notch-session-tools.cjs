@@ -5,7 +5,7 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
 (async()=>{
  const browser=await chromium.launch();
  try{
-  const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const page=await browser.newPage({viewport:{width:1280,height:800},deviceScaleFactor:1.25}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{
    const listeners={},now=Date.now();window.__calls=[];window.__pins=[];window.__focus=[];
    const accounts=['codex_a','claude_b','gemini_c'].map((id,i)=>({id,base:['codex','claude','gemini'][i],name:['Codex a','Claude b','AGY c'][i],glyph:['Cx','Cl','A'][i],snap:{status:'ok',windows:[{id:'session',label:'Five hours',used:.35,resets_at:now+3600e3},{id:'secondary',label:'Weekly',used:.45,resets_at:now+7*86400e3}],fetched_at:now,details:[],note:''}}));
@@ -29,8 +29,10 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    await page.mouse.move(0,0);await page.evaluate(edge=>{hideCard();__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false});__emit('appear',{edge});},edge);await page.waitForTimeout(900);
    await page.evaluate(()=>__emit('session_switcher',true));await page.waitForTimeout(1200);
    assert.equal(await page.locator('.session-search').evaluate(el=>el===document.activeElement),true,'shortcut focuses the search input');
+   assert.equal(await page.locator('.session-head kbd,.session-reload').count(),0,'Sessions has no shortcut badge or reload control');
    assert.equal(await page.locator('.session-result').count(),96);
    const box=await page.locator('#card').boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=1280.5&&box.y+box.height<=800.5,'switcher fits '+edge);
+   assert.ok(Math.abs(box.x*1.25-Math.round(box.x*1.25))<.02&&Math.abs(box.y*1.25-Math.round(box.y*1.25))<.02,'settled Sessions lands on the device pixel grid');
    assert.ok(await page.locator('.session-results').evaluate(el=>el.scrollHeight>el.clientHeight),'sessions scroll in a bounded lobe');
    await page.locator('.session-search').fill('Orbit');await page.waitForTimeout(100);assert.equal(await page.locator('.session-result').count(),32);
    await page.locator('.session-search').fill('planning');await page.waitForTimeout(100);assert.equal(await page.locator('.session-result').count(),1);
@@ -58,6 +60,15 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    await page.evaluate(()=>{__emit('notch_pointer',false);__emit('focus_accounts',['codex_a','gemini_c']);});await page.waitForTimeout(1200);
    const group=await page.locator('#pill').boundingBox();assert.ok((['top','bottom'].includes(edge)?group.width:group.height)>180&&(['top','bottom'].includes(edge)?group.width:group.height)<200,'two focus accounts stay unfolded at rest');
    assert.equal(await page.locator('.cell[data-p="gemini_c"]').getAttribute('tabindex'),'0');assert.equal(await page.locator('.cell[data-p="claude_b"]').getAttribute('tabindex'),'-1');
+   for(const selection of [['codex_a'],['codex_a','gemini_c']]){
+    await page.evaluate(selection=>{__emit('focus_accounts',selection);__emit('edge_cursor',{edge:layout.edge,x:innerWidth/2,y:innerHeight/2});__emit('notch_pointer',true);},selection);await page.waitForTimeout(1000);
+    assert.equal(await page.locator('.cell[data-p="claude_b"]').getAttribute('tabindex'),'-1','held dragging keeps unfocused accounts folded');
+    assert.equal(await page.locator('.cell[data-p="gemini_c"]').getAttribute('tabindex'),selection.length===2?'0':'-1','dragging preserves the selected focus group');
+    await page.evaluate(()=>{__emit('release');__emit('notch_pointer',false);});await page.waitForTimeout(800);
+    await page.evaluate(()=>__emit('move_begin'));await page.waitForTimeout(800);
+    assert.equal(await page.locator('.cell[data-p="claude_b"]').getAttribute('tabindex'),'-1','mouse dragging also preserves the focus group');
+    await page.evaluate(()=>{__emit('move_end');__emit('notch_pointer',false);});await page.waitForTimeout(800);
+   }
    const movement=await page.evaluate(async()=>{
     const lengths=[];let ended=false;const sample=()=>{const box=pill.getBoundingClientRect();lengths.push(edgeIsVertical()?box.height:box.width);if(!ended)requestAnimationFrame(sample);};requestAnimationFrame(sample);
     __emit('focus_accounts',['claude_b']);await new Promise(r=>setTimeout(r,100));__emit('focus_accounts',['codex_a','claude_b']);await new Promise(r=>setTimeout(r,100));setFocusExpanded(true);await new Promise(r=>setTimeout(r,1000));ended=true;
@@ -80,6 +91,19 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   await page.keyboard.press('Enter');await page.waitForTimeout(50);await page.evaluate(()=>__failResume(new Error('VS Code connection failed')));await page.waitForTimeout(100);
   assert.match(await page.locator('.session-status').innerText(),/connection failed/);assert.equal(await page.locator('.session-handoff[data-status="opened"]').count(),0);
   await page.keyboard.press('Escape');assert.equal(await page.locator('#card').evaluate(el=>el.classList.contains('show')),false);
+  assert.equal(await page.evaluate(()=>sessionRefreshTimer),0,'automatic refresh stops when Sessions closes');
+  await page.evaluate(()=>__emit('session_switcher',true));await page.waitForTimeout(1000);
+  assert.equal(await page.locator('.session-search').inputValue(),'planning','reopening keeps the last search and the matching results in sync');
+  await page.locator('.session-search').fill('codex');await page.waitForTimeout(100);await page.keyboard.press('ArrowDown');
+  const selection=await page.evaluate(()=>sessionMatches[sessionIndex].id);
+  await page.locator('.session-results').evaluate(el=>el.scrollTop=80);
+  await page.evaluate(()=>{__library=__library.map(s=>({...s,name:s.name+' updated'}));__emit('activity',[{id:'fresh',account:'codex_a',state:'busy'}]);});await page.waitForTimeout(1250);
+  assert.equal(await page.locator('.session-search').inputValue(),'codex','automatic refresh preserves search');
+  assert.equal(await page.evaluate(()=>sessionMatches[sessionIndex].id),selection,'automatic refresh preserves selection');
+  assert.equal(await page.locator('.session-results').evaluate(el=>el.scrollTop),80,'automatic refresh preserves scroll');
+  assert.ok(await page.evaluate(()=>__calls.some(c=>c[0]==='get_session_library'&&c[1].refresh===true)),'automatic refresh requests fresh collector history');
+  assert.match(await page.locator('.session-open').first().innerText(),/updated/);
+  await page.keyboard.press('Escape');
   await page.evaluate(()=>{__emit('disappear');__emit('session_switcher',true);hideCard();});
   assert.equal(await page.evaluate(()=>switcherPending),true,'a closed card cannot cancel a shortcut queued while hidden');
   await page.evaluate(()=>{__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge:'top',along:.5,visible:true,tracking:false,pinned:false});__emit('appear',{edge:'top'});});await page.waitForTimeout(1100);
@@ -94,6 +118,10 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   await page.evaluate(()=>__emit('agent_accounts',__savedAccounts));await page.waitForTimeout(1300);
   const restored=await page.locator('#pill').boundingBox();assert.ok(restored.height<120,'a saved focus group contracts when its accounts arrive, without requiring a hover');
   assert.equal(await page.locator('.cell[data-p="claude_b"]').getAttribute('tabindex'),'0');
+  await page.evaluate(()=>{__emit('layout',{width:innerWidth,height:innerHeight,scale:.8,edge:'top',along:.5,visible:true,tracking:false,pinned:false});__emit('session_switcher',true);});await page.waitForTimeout(1200);
+  assert.equal(await page.locator('.session-name').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)*.8),14,'Small keeps session titles at readable physical size');
+  assert.equal(await page.locator('.session-meta').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)*.8),12,'Small keeps account labels readable');
+  await page.screenshot({path:path.join(OUT,'small-sessions.png')});await page.keyboard.press('Escape');
   await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:360,height:300});
   for(const edge of ['top','right','bottom','left']){
    await page.evaluate(edge=>{__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false});__emit('session_switcher',true);},edge);await page.waitForTimeout(150);

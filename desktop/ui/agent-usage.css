@@ -138,28 +138,26 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 
 /* Session tools share the notch's lobe: quiet labels, generous rows and one fluid selection surface. */
 .h-entry{display:flex;align-items:center;gap:2px}.h-entry .h-item{min-width:0;flex:1}
-.session-pin,.session-close,.session-reload{appearance:none;border:0;background:transparent;color:#999;font:inherit;cursor:pointer;padding:6px;border-radius:10px;flex-shrink:0}
+.session-pin,.session-close{appearance:none;border:0;background:transparent;color:#b8b8bb;font:inherit;cursor:pointer;padding:6px;border-radius:10px;flex-shrink:0}
 .session-pin{width:28px;height:28px;display:grid;place-items:center}
 .session-pin svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round}
 .session-pin.pinned{color:var(--update-blue)}.session-pin.pinned svg{fill:var(--update-blue);stroke:var(--update-blue)}
-.session-pin:hover,.session-close:hover,.session-reload:hover{background:#202020;color:#fff}
-.session-pin:focus-visible,.session-close:focus-visible,.session-reload:focus-visible{outline:1px solid var(--update-blue);outline-offset:1px}
-#card.session-card{padding:14px 16px;overflow:hidden}
-.session-head{display:flex;align-items:center;gap:12px;font-size:15px;font-weight:650;margin-bottom:10px}
-.session-head kbd{margin-left:auto;font:inherit;font-size:10px;font-weight:400;color:#999}
-.session-close{font-size:20px;line-height:20px;padding:2px 7px}.session-head>.session-close:last-child{margin-left:auto}.session-head kbd+.session-close{margin-left:0}
-.session-search-row{display:flex;align-items:center;gap:9px;padding:9px 11px;background:#181818;border-radius:14px}
+.session-pin:hover,.session-close:hover{background:#202020;color:#fff}
+.session-pin:focus-visible,.session-close:focus-visible{outline:1px solid var(--update-blue);outline-offset:1px}
+#card.session-card{padding:calc(16px * var(--tz,1));overflow:hidden;max-width:calc(100vw - 16px)!important}
+.session-head{display:flex;align-items:center;gap:12px;font-size:calc(17px * var(--tz,1));font-weight:600;line-height:1.4;margin-bottom:12px}
+.session-close{font-size:calc(22px * var(--tz,1));line-height:1;padding:4px 7px;margin-left:auto}
+.session-search-row{display:flex;align-items:center;gap:9px;padding:calc(10px * var(--tz,1)) 12px;background:#181818;border-radius:14px}
 .session-search-row:focus-within{box-shadow:inset 0 0 0 1px #8bafff77}
-.session-search-row>svg{width:16px;height:16px;fill:none;stroke:#999;stroke-width:1.4;flex-shrink:0}
-.session-search{width:100%;min-width:0;background:transparent;border:0;outline:none;color:#fff;font:inherit;font-size:12px;appearance:none}
-.session-search::placeholder{color:#999}.session-search::-webkit-search-cancel-button{display:none}
+.session-search-row>svg{width:calc(18px * var(--tz,1));height:calc(18px * var(--tz,1));fill:none;stroke:#b8b8bb;stroke-width:1.4;flex-shrink:0}
+.session-search{width:100%;min-width:0;background:transparent;border:0;outline:none;color:#fff;font:inherit;font-size:calc(14px * var(--tz,1));line-height:1.5;appearance:none}
+.session-search::placeholder{color:#b8b8bb}.session-search::-webkit-search-cancel-button{display:none}
 .session-filter-row{display:flex;align-items:center;justify-content:space-between;margin:6px 0 2px;gap:12px}
-.session-account{appearance:auto;background:#000;border:0;border-radius:8px;padding:4px 0;color:#b8b8bb;font:inherit;font-size:11px;max-width:75%;outline-offset:2px}
-.session-reload{font-size:10px;color:#aaa}
-.session-results,.finished-results{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#444 transparent;max-height:min(268px,calc(100vh - 260px));min-height:0}
+.session-account{appearance:auto;background:#000;border:0;border-radius:8px;padding:6px 0;color:#c8c8cc;font:inherit;font-size:calc(12px * var(--tz,1));line-height:1.5;max-width:100%;outline-offset:2px}
+.session-results,.finished-results{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#444 transparent;max-height:min(calc(300px * var(--tz,1)),calc(100vh - 260px));min-height:0}
 .finished-results{max-height:min(280px,calc(100vh - 200px))}
-.session-section{padding:8px 9px 5px;color:#999;font-size:10px}
-.session-result{position:relative;display:flex;align-items:center;border-radius:16px;min-height:62px}
+.session-section{padding:12px 10px 6px;color:#b8b8bb;font-size:calc(12px * var(--tz,1));line-height:1.5}
+.session-result{position:relative;display:flex;align-items:center;border-radius:16px;min-height:calc(76px * var(--tz,1))}
 .session-results{position:relative}
 .session-selection{position:absolute;left:0;top:0;width:100%;border-radius:16px;background:#181818;pointer-events:none;transition:transform .32s cubic-bezier(.22,1,.36,1);will-change:transform}
 .session-open,.finished-session{display:flex;align-items:center;gap:11px;width:100%;min-width:0;text-align:left;color:#fff;appearance:none;font:inherit;border:0;background:transparent;padding:9px;border-radius:16px;cursor:pointer}
@@ -168,10 +166,10 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 .session-mark{width:24px;height:24px;display:grid;place-items:center;flex-shrink:0;color:#ccc}
 .session-mark .glyph{position:static;width:22px;height:22px;margin:0;transform:none}.session-mark svg,.session-mark img{width:22px;height:22px}
 .session-row-copy{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
-.session-name{font-size:12px;color:#f4f4f4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.session-meta{font-size:10px;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.session-workspace{font-size:10px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.session-status{font-size:10px;color:#999;line-height:1.4;padding:9px 4px 0;min-height:14px}.session-status.error{color:#ffb7a6}
+.session-name{font-size:calc(14px * var(--tz,1));font-weight:500;line-height:1.4;color:#f4f4f4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-meta{font-size:calc(12px * var(--tz,1));line-height:1.4;color:#c8c8cc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-workspace{font-size:calc(12px * var(--tz,1));line-height:1.4;color:#aaa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-status{font-size:calc(12px * var(--tz,1));color:#b8b8bb;line-height:1.5;padding:10px 4px 0;min-height:18px}.session-status.error{color:#ffb7a6}
 .finished-session:hover{background:#181818}
 #pill .cell{scale:var(--focus-scale,1);overflow:visible;justify-content:center}
 #pill .ringwrap{flex-shrink:0}

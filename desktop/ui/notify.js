@@ -211,6 +211,15 @@ function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTim
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
+function stowTrackingNotifications(){
+  updateHovered=false;updatePending=false;slivHeld=false;
+  retractSlivers(true);if(typeof notificationRim!=='undefined')notificationRim.clear();
+}
+// A settled sliver has no running spring. Clear it before the notch moves so neither its
+// words nor its ink can remain at the old position while the pointer carries the notch away.
+listen('edge_cursor',stowTrackingNotifications).catch(()=>{});
+listen('move_begin',stowTrackingNotifications).catch(()=>{});
+listen('layout',e=>{if(e.payload.tracking)stowTrackingNotifications();}).catch(()=>{});
 // Only the part of a sliver outside the notch is the sliver: its root overlaps the notch, and the ring it came
 // from has to stay a ring under the pointer
 function sliverAt(x,y){

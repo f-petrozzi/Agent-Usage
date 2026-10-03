@@ -126,7 +126,7 @@ window.agentUsage.on('layout',value=>{
   const revision=++placementRevision;
   layout=value;window.agentTracking=value.tracking;
   // Small draws the whole page at 0.8: text on cards and alerts is scaled back up to about medium so it stays legible
-  document.documentElement.style.setProperty('--tz',String(Math.max(1,.96/(Number(value.scale)||1))));
+  document.documentElement.style.setProperty('--tz',String(Math.max(1,1/(Number(value.scale)||1))));
   if(Number.isInteger(value.placement)){
     // Main has moved a cleared surface. Open and paint the new position while native opacity is still zero.
     stowPlacement();aim(value.edge,value.along,true);

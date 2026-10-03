@@ -296,3 +296,13 @@ Focus controls now live under **Settings → Accounts**, with a labeled bracket 
 The shimmer now travels along the merged notch and notification contour. It keeps one continuous circuit when an update sliver retracts, with a soft tail and a stable glow surface. Available and ready-to-restart updates use blue; reduced motion retains a brief stationary outline. Animations stop when they settle or finish.
 
 Validation includes 91 desktop checks; browser checks cover focus groups, interrupted switching, unclipped weekly rings, restored preferences after collector arrival, minimum-width Settings in light/dark themes, actual rendered shimmer and continuity through update-sliver closure, update priority, account cards and monitor transfers. A combined Chromium sample measured 16.7 ms median frames on all four edges, p95 at most 16.8 ms, no frames over 34 ms, and stopped focus/shimmer animations afterward. Physical Windows keyboard activation remains a device check after updating and restarting the app.
+
+## Native Sessions activation and clearer reading (4.1.2)
+
+Windows now gives **Ctrl + Scroll Lock** to the input helper's own native hotkey message loop, with repeat suppression and key-monitor fallbacks. Modifier detection tracks both Ctrl keys and short macro sequences. Diagnostics record helper registration and session actions without typed text. The Windows workflow exercises native registration, the compiled helper pipe, actual left/right Ctrl chords, hidden-window reveal, search focus and toggle-close through the real Electron window.
+
+Dragging with Scroll Lock or the mouse keeps the selected focus group. Notification text, ink and shimmer clear immediately when movement starts, so no detached sliver remains behind; unread events remain in the alert log and update availability remains on its dot.
+
+Sessions uses a larger, brighter type hierarchy on the existing fluid black surface. Small keeps titles at a 14px screen size and supporting text at 12px; card positions snap to the device pixel grid and settle without fractional translation. The shortcut badge, keyboard hints and reload control are removed from the Sessions panel. History refreshes on opening, activity changes and every 30 seconds while the panel is open, preserving search, selected chat and scroll position. Closing cancels the refresh timer. Collector cache refreshes are explicit and concurrent reads share one operation.
+
+Validation includes 93 desktop checks and browser checks for one/two-agent dragging, immediate notification cleanup on every edge, automatic refresh, reopening search state, fractional display scaling, small viewports, reduced motion, account cards, updater priority and shimmer continuity.
