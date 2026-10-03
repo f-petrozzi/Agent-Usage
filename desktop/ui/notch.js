@@ -1189,6 +1189,8 @@ function flushHot(){
   // The bell drawn out of the unread dot is a second way to the log; while it is out, a press there is the log's
   const sproutBox=typeof sproutRect==='function'?sproutRect():null;
   if(sproutBox){rects.push(sproutBox);if(hovered==='sprout')controls.alerts=sproutBox;}
+  const updateBox=typeof updateDotRect==='function'?updateDotRect():null;
+  if(updateBox){rects.push(updateBox);controls.update=updateBox;}
   if(typeof sliverRects==='function')rects.push(...sliverRects());
   const data={rects,controls,expanded:open,alerting:typeof slivering==='function'&&slivering()};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
@@ -1453,9 +1455,9 @@ function placeHandles(){
 }
 function near(at,x,y){return !!at&&Math.abs(x-at.x)<=at.reach&&Math.abs(y-at.y)<=at.reach;}
 // The unread dot's bell comes first: it sits in the notch's corner, inside the pin's reach on some edges
-function onHandle(x,y){return typeof sproutHit==='function'&&sproutHit(x,y)?'sprout':near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;}
+function onHandle(x,y){return typeof updateDotHit==='function'&&updateDotHit(x,y)?'update':typeof sproutHit==='function'&&sproutHit(x,y)?'sprout':near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;}
 function setHovered(which){
-  const was=hovered;hovered=which;orb.classList.toggle('hover',which==='orb');pinHandle.classList.toggle('hover',which==='pin');
+  const was=hovered;hovered=which;if(was!==which&&typeof hoverUpdate==='function')hoverUpdate(which==='update');orb.classList.toggle('hover',which==='orb');pinHandle.classList.toggle('hover',which==='pin');
   if(was!==which&&typeof morphHandles==='function') morphHandles();
   if(was!==which&&(was==='sprout'||which==='sprout'))reportHot();
 }
@@ -1539,7 +1541,7 @@ function setShown(on,edge){
 // Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
 document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });
 function applyUiFlags(f){ scheduleFold(); if(f){ pinnedNow=f.notch_on_hover===false&&f.notch_visible!==false; renderRing(); } }
-listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else { scheduleFold(); leaveCard(); if(typeof holdSlivers==='function')holdSlivers(false); } }).catch(()=>{});
+listen('notch_pointer',e=>{ pointerIn=e.payload===true; if(pointerIn) unfold(); else { scheduleFold(); leaveCard(); if(typeof hoverUpdate==='function')hoverUpdate(false); if(typeof holdSlivers==='function')holdSlivers(false); } }).catch(()=>{});
 listen('ui_flags',e=>applyUiFlags(e.payload)).catch(()=>{});
 listen('pill_backdrop',e=>{
   if(e.payload==='dark'||e.payload==='light') document.body.dataset.behind=e.payload;

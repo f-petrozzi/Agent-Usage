@@ -28,7 +28,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
       - run: npm ci
         working-directory: desktop
-      - run: node --test tests/test-updates.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs tests/test-session-open.cjs tests/test-session-history.cjs tests/test-monitor.cjs
+      - run: node --test tests/test-updates.cjs tests/test-update-push.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs tests/test-session-open.cjs tests/test-session-history.cjs tests/test-monitor.cjs
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -65,6 +65,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v4
         with:
           name: AgentUsage-Windows
@@ -77,3 +81,8 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" release/* --verify-tag --draft --title "Agent Usage ${RELEASE_TAG#v}" --generate-notes
           gh release edit "$RELEASE_TAG" --draft=false --latest
+      - name: Push signed release notice
+        env:
+          AGENT_USAGE_RELEASE_PUSH_KEY: ${{ secrets.AGENT_USAGE_RELEASE_PUSH_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/publish-release-push.cjs

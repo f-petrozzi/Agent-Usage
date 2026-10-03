@@ -130,7 +130,7 @@ async function start() {
     installed: process.platform === 'win32' && app.isPackaged && fs.existsSync(resource('installer-managed')),
     onChange: state => {
       if(['available','ready','error'].includes(state.status)){
-        reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+2500);
+        reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+6500);
       }
       broadcast('update_state',state);
     },
@@ -348,7 +348,7 @@ function endMove() {
   carrying=false;send('release');send('move_end');send('drag_end');
   broadcast('ui_flags',flags());visibleUntil=Date.now()+1800;save();
 }
-const CONTROLS = ['settings', 'pin', 'refresh', 'alerts'];
+const CONTROLS = ['update', 'settings', 'pin', 'refresh', 'alerts'];
 function activateControl(name) {
   if(!visible||!CONTROLS.includes(name))return;
   const now=Date.now();if(lastControl.name===name&&now-lastControl.at<300)return;

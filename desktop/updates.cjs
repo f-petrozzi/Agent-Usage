@@ -1,8 +1,9 @@
 'use strict';
 // The updater owns its network session. Renderers remain local and network-blocked.
-function createUpdates({ app, updater, installed, onChange, beforeInstall = () => {} }) {
+function createUpdates({ app, updater, installed, onChange, beforeInstall = () => {},
+  pushFactory = require('./update-push.cjs').createReleasePush, schedule = setTimeout, cancel = clearTimeout, now = Date.now }) {
   let state = { status: installed ? 'idle' : 'unavailable', currentVersion: app.getVersion(), version: null, percent: 0 };
-  let timer, interval, operation;
+  let timer, operation, push, started = false, lastCatchup = 0;
   const set = patch => { state = { ...state, ...patch }; onChange({ ...state }); };
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
@@ -21,7 +22,7 @@ function createUpdates({ app, updater, installed, onChange, beforeInstall = () =
   updater.on('update-downloaded', info => set({ status: 'ready', version: info.version, percent: 100 }));
   updater.on('update-cancelled', () => set({ status: 'available', percent: 0 }));
   async function check() {
-    if (!installed || operation || ['ready', 'installing', 'available'].includes(state.status)) return;
+    if (!installed || operation || ['ready', 'installing', 'available', 'downloading'].includes(state.status)) return;
     operation = 'check';
     try { await updater.checkForUpdates(); } catch { fail(); } finally { operation = null; }
   }
@@ -36,12 +37,19 @@ function createUpdates({ app, updater, installed, onChange, beforeInstall = () =
     try { beforeInstall(); updater.quitAndInstall(true, true); } catch { fail(); }
   }
   function start() {
-    if (!installed) return;
-    timer = setTimeout(() => { void check(); }, 30000);
-    interval = setInterval(() => { if (['idle', 'current', 'error'].includes(state.status)) void check(); }, 6 * 60 * 60 * 1000);
-    timer.unref?.();interval.unref?.();
+    if (!installed || started) return;
+    started = true;
+    // One startup check catches releases missed while closed. Afterwards the relay triggers checks.
+    const catchup = () => { lastCatchup = now();void check(); };
+    timer = schedule(catchup, 30000);timer.unref?.();
+    push = pushFactory({ currentVersion: app.getVersion(), onRelease: () => { cancel(timer);catchup(); },
+      onReconnect: () => {
+        // A reconnect catches releases older than ntfy's cache, without repeated feed checks on a flapping network.
+        if (now() - lastCatchup >= 15 * 60 * 1000) { cancel(timer);catchup(); }
+      } });
+    push.start();
   }
   return { get: () => ({ ...state }), check, download, install, start,
-    close: () => { clearTimeout(timer);clearInterval(interval); } };
+    close: () => { cancel(timer);push?.close(); } };
 }
 module.exports = { createUpdates };

@@ -7,8 +7,8 @@ it no longer scales the C# prototype's bitmap. The notch stays solid black.
 Run **AgentUsage-Setup-3.0.0.exe** once to migrate the ZIP install in place.
 Settings and collector configuration are retained. The installer is per-user
 and does not request administrator access. Future published releases appear
-in Settings as **Update**, followed by **Restart** after download. A small dot
-on Settings indicates an available update when the notch is visible. No updates
+in Settings as **Update**, followed by **Restart** after download. A pulsing blue dot
+on the notch indicates an available update; hover it to reveal Download or Restart. No updates
 are downloaded or installed without those actions.
 
 Every launch starts invisible, without a taskbar button or tray icon by default.
@@ -118,8 +118,11 @@ unchanged pointer positions and hit regions no longer trigger redundant IPC.
 ## Release workflow
 
 `desktop/updates.cjs` uses pinned electron-updater with the public GitHub release
-feed for `f-petrozzi/Agent-Usage`. Checks run after 30 seconds, then every six
-hours. Prereleases, downgrades, web installers, automatic downloads, and automatic
+feed for `f-petrozzi/Agent-Usage`. A check runs after 30 seconds at startup. Afterwards, a persistent HTTPS
+JSON stream from ntfy.sh receives signed release notices and triggers a check
+of that same trusted feed. Reconnection catches missed releases, throttled to
+one catch-up check per 15 minutes when a connection flaps; there is no recurring
+release-feed polling. Prereleases, downgrades, web installers, automatic downloads, and automatic
 installation on quit are disabled. The Electron updater uses a separate network
 session; renderer network access remains blocked. The downloaded installer is
 checked against the SHA-512 in the release metadata. This preview is unsigned;
@@ -136,7 +139,14 @@ On Linux, NSIS needs system Wine: run `npm run pack:windows` inside the
 downloadable Wine 11 toolset ships without its PE DLLs and cannot start.
 The Windows workflow builds the same artifacts. A pushed `v<package version>`
 tag publishes the complete artifact set through a draft release, then makes it
-visible. Branch builds only create workflow artifacts. All update metadata must
+visible. The release job then signs its repository, stable version, tag and timestamp
+with the Ed25519 key stored in `AGENT_USAGE_RELEASE_PUSH_KEY` and posts them to
+ntfy.sh. The app embeds only the public verification key; unsigned, modified,
+other-repository, duplicate and older notices cannot trigger a release check.
+The relay receives release metadata only, never sessions, accounts or credentials.
+Notice URLs cannot override the updater feed. Keep the existing verification key
+when changing the publisher; replacing it requires a planned app migration.
+Branch builds only create workflow artifacts. All update metadata must
 come from the same build as the installer. Release files belong in GitHub Releases,
 not the source repository. The version starts at 3.0.0 to supersede the existing
 2.1.x public releases and the 0.2.x local Electron previews.

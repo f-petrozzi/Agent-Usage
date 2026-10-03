@@ -8,7 +8,9 @@ const SLIVER={flat:54,flatMin:128,flatMax:160,pad:14,max:228,grace:1600};
 const alertQueue=[], slivers=new Map();
 let pumpTimer=0, slivHeld=false, sliverSerial=0;
 const UPDATE_ID='__update';
-let updateState={status:'idle'}, updatePending=false, updateAction=false;
+let updateState={status:'idle'}, updatePending=false, updateAction=false, updateHovered=false, updateEscape=false;
+const updateVisible=()=>['available','downloading','ready','installing','error'].includes(updateState.status);
+const updateDot=document.getElementById('update-dot');
 const updateActionable=()=>['available','ready','error'].includes(updateState.status);
 const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
 pill.before(sliverSvg);
@@ -27,7 +29,7 @@ listen('notification_test',e=>{
   renderRing();
   if(window.notificationTestAccount){hideCard();retractSlivers(true);queueNotificationTest();}else pumpAlert();
 }).catch(()=>{});
-listen('appear',()=>{queueNotificationTest();if(updateActionable()&&!slivers.has(UPDATE_ID)){updatePending=true;pumpAlert();}}).catch(()=>{});
+listen('appear',()=>{queueNotificationTest();placeUpdateDot();}).catch(()=>{});
 listen('layout',()=>queueNotificationTest()).catch(()=>{});
 listen('alert',e=>{
   const p=e.payload;if(!p||!Array.isArray(p.events)||!p.events.length)return;
@@ -35,7 +37,7 @@ listen('alert',e=>{
   if(logShowing()){if(p.sound)chime(p.events[0].kind);ringBell();return;}
   // Session alerts get the space first; an update can wait until they have been read.
   const update=slivers.get(UPDATE_ID);
-  if(update){updatePending=updateActionable();retract(update);}
+  if(update){updatePending=updateHovered||document.activeElement===updateDot;retract(update);}
   alertQueue.push(p);pumpAlert();
 }).catch(()=>{});
 // Not over something the person is doing: while the notch is arriving, carried, tracking or showing a card
@@ -130,7 +132,7 @@ function drawSliver(s){
   const origin=document.getElementById('root').getBoundingClientRect(), W=innerWidth, H=innerHeight;
   const matrix=edgeMatrix(notchEdge,W,H), local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
   const screen=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
-  const cell=s.account===UPDATE_ID?pill.querySelector('.cell'):s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
+  const cell=s.account===UPDATE_ID?pill.querySelector('.cell:last-child'):s.account&&pill.querySelector(`.cell[data-p="${CSS.escape(s.account)}"]`), vertical=edgeIsVertical();
   const notch=pill.getBoundingClientRect(), [start]=local(notch.left-origin.left,notch.top-origin.top);
   const length=vertical?notch.height:notch.width, end=start+length;
   const cells=[...pill.querySelectorAll('.cell')].map(el=>{
@@ -209,6 +211,44 @@ addEventListener('resize',()=>{for(const s of slivers.values())drawSliver(s);});
 
 // Updates use the same ink, spring and notification space as a finished turn. The words are the action:
 // download only after a click, then offer restart only once the updater has verified the download.
+function placeUpdateDot(){
+  const previous=updateDot.hidden;
+  updateDot.hidden=!shown||folded||!updateVisible();
+  if(previous!==updateDot.hidden)reportHot();
+  if(updateDot.hidden)return;
+  const r=pill.getBoundingClientRect(),o=document.getElementById('root').getBoundingClientRect();
+  const m=edgeMatrix(notchEdge,innerWidth,innerHeight),x=r.left+r.width/2-o.left,y=r.top+r.height/2-o.top;
+  const center=m[0]*(x-m[4])+m[1]*(y-m[5]);
+  const u=center+(edgeIsVertical()?r.height:r.width)/2-11,v=edgeDepth(notchEdge)-11;
+  Object.assign(updateDot.style,{left:(m[0]*u+m[2]*v+m[4])+'px',top:(m[1]*u+m[3]*v+m[5])+'px'});
+  updateDot.dataset.status=updateState.status;
+  const [word,text]=updateCopy();updateDot.setAttribute('aria-label',`${word}: ${text}. Show update options`);
+  updateDot.setAttribute('aria-expanded',String(!!slivers.get(UPDATE_ID)?.to));
+}
+function updateDotRect(){if(updateDot.hidden)return null;const r=updateDot.getBoundingClientRect();return [r.left,r.top,r.width,r.height];}
+function updateDotHit(x,y){const r=updateDotRect();return !!r&&x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3];}
+function hoverUpdate(on){
+  updateHovered=on;
+  if(on){openUpdate();return;}
+  updatePending=false;if(document.activeElement!==updateDot)holdSlivers(false);
+}
+function openUpdate(){
+  if(!updateVisible())return;
+  hideCard();
+  const s=slivers.get(UPDATE_ID);
+  if(s?.to){holdSlivers(true);return;}
+  updatePending=true;pumpAlert();
+}
+updateDot.addEventListener('focus',()=>{if(!updateEscape)openUpdate();});
+updateDot.addEventListener('blur',()=>{if(!updateHovered)holdSlivers(false);});
+updateDot.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();callq('activate_control',{control:'update'}).catch(()=>{});});
+updateDot.addEventListener('click',e=>{if(e.detail===0)openUpdate();});
+listen('control_pressed',e=>{if(e.payload==='update')openUpdate();}).catch(()=>{});
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||!(slivers.has(UPDATE_ID)||document.activeElement===updateDot))return;
+  updatePending=false;updateHovered=false;const s=slivers.get(UPDATE_ID);if(s)retract(s);
+  updateEscape=true;updateDot.focus();updateEscape=false;e.preventDefault();
+});
 function updateCopy(){
   const version=updateState.version?'v'+String(updateState.version).replace(/^v/,''):'';
   const percent=Math.max(0,Math.min(100,Math.floor(Number(updateState.percent)||0)));
@@ -220,12 +260,15 @@ function updateCopy(){
 }
 function updateLine(){
   const [word,text]=updateCopy();
-  return `<span class="s-word" style="color:${WATCH}">${esc(word)}</span><span class="s-text"><span class="s-scroll">${esc(text)}</span></span>`;
+  return `<span class="s-word" style="color:var(--update-blue)">${esc(word)}</span><span class="s-text"><span class="s-scroll">${esc(text)}</span></span>`;
 }
 function renderUpdate(){
   showSliver(UPDATE_ID,[{kind:'update'}],9000);
   const s=slivers.get(UPDATE_ID), [word,text]=updateCopy();
-  s.el.classList.add('sliver-update');
+  s.el.classList.add('sliver-update');s.el.id='update-notification';
+  updateDot.setAttribute('aria-expanded','true');
+  if(updateHovered||s.el.contains(document.activeElement)||document.activeElement===updateDot)holdSlivers(true);
+  if(!s.focusBound){s.focusBound=true;s.el.addEventListener('focusin',()=>holdSlivers(true));s.el.addEventListener('focusout',()=>{if(!updateHovered)holdSlivers(false);});}
   s.el.dataset.status=updateState.status;
   s.el.setAttribute('aria-label',`${word}: ${text}`);
   s.el.setAttribute('aria-disabled',String(!updateActionable()));
@@ -237,18 +280,18 @@ function pumpUpdate(){
   if(!updatePending)return;
   if(alertWaits()||slivering()||window.notificationTestAccount){pumpTimer=setTimeout(pumpAlert,200);return;}
   updatePending=false;
-  if(updateActionable())renderUpdate();
+  if(updateVisible())renderUpdate();
 }
 function showUpdate(state){
   if(!state||typeof state.status!=='string')return;
-  const changed=state.status!==updateState.status||state.version!==updateState.version;
-  updateState=state;
+  updateState=state;placeUpdateDot();reportHot();
   const s=slivers.get(UPDATE_ID);
-  if(!['available','downloading','ready','installing','error'].includes(state.status)){
+  if(!updateVisible()){
     updatePending=false;if(s)retract(s);return;
   }
   if(s?.to){renderUpdate();updatePending=false;}
-  else if(changed&&updateActionable()){updatePending=true;pumpAlert();}
+  // A notice stays a quiet dot until the person asks to see its action.
+  else if(updateHovered||document.activeElement===updateDot){updatePending=true;pumpAlert();}
 }
 async function activateUpdate(){
   if(updateAction||!updateActionable())return;
@@ -307,6 +350,7 @@ function paintBell(){
 const SPROUT_BADGE=[.34,-.39]; // the bell's shoulder, in glyph sizes from its centre (where .bell-dot sits on the pocket's bell)
 const sproutButton=document.getElementById('alert-sprout');
 function placeUnreadDot(){
+  placeUpdateDot();
   const dot=document.getElementById('notch-dot');if(!dot)return;
   const unread=unreadCount()>0&&leadFaces.includes('alerts'), swapping=handles[0].swapping;
   // Leaving, it stays on a bell that is still out; a bell melting home after a swap does not pick it up on the way

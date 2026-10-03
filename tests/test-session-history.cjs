@@ -183,3 +183,16 @@ test('the SSH connector preserves quoted workspace/account paths through both re
   const output=execFileSync('/bin/bash',['--noprofile','--norc','-c',args[2]],{env:{...process.env,PATH:bin+path.delimiter+process.env.PATH}}).toString().split('\0');
   assert.deepEqual(output,[cwd,saved.agentHome,'resume',id,'']);
 });
+test('resumed terminal names use the agent and sanitized session title without changing shell commands',async()=>{
+  for(const [provider,label] of [['codex','Codex'],['claude','Claude'],['antigravity','AGY']]){
+    const f=fixture(),t={...target,provider,name:'  Agent\nUsage\u001b\u202e   $(echo title) '};
+    const parsed=parseResume(uri(t));assert.equal(parsed.title,'Agent Usage $(echo title)');
+    await handleResume(f.vscode,f.context,uri(t),0,windowsHost);
+    assert.equal(f.calls[0].name,label+' · Agent Usage $(echo title)');
+    assert.equal(f.calls[0].shellArgs[1],resumeCommand(parsed),'display metadata never becomes a shell argument');
+  }
+  const {terminalName}=require('../vscode-link/extension.js');
+  assert.equal(terminalName({provider:'codex',sessionId:id,cwd:'/srv/Agent-Usage'}),'Codex · Agent-Usage');
+  assert.equal(terminalName({provider:'claude',sessionId:id,cwd:'/'}),'Claude · 12345678');
+  assert.equal(terminalName({provider:'antigravity',sessionId:id,title:'a'.repeat(200)}).length,6+80);
+});

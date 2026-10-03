@@ -213,10 +213,10 @@
   .s-scroll{display:inline-block;white-space:nowrap}
   .s-more{color:var(--ink-dim);font-size:calc(11px * var(--tz,1))}
   .sliver-update{outline:none;font-variant-numeric:tabular-nums}
-  .sliver-update[aria-disabled="false"]:focus-visible{outline:1px solid var(--watch);outline-offset:-4px;border-radius:12px}
+  .sliver-update[aria-disabled="false"]:focus-visible{outline:1px solid var(--update-blue);outline-offset:-4px;border-radius:12px}
   .sliver-update[aria-disabled="true"]{cursor:default}
   .sliver-update[data-status="downloading"]::after{content:'';position:absolute;left:12px;bottom:2px;height:2px;
-    width:calc((100% - 24px) * var(--update-fraction,0));background:var(--watch);border-radius:2px;opacity:.65;transition:width .25s ease}
+    width:calc((100% - 24px) * var(--update-fraction,0));background:var(--update-blue);border-radius:2px;opacity:.65;transition:width .25s ease}
   @media (prefers-reduced-motion: reduce){.sliver-update::after{transition:none}}
   /* Refresh lives on the card's title row: a ring click holds its card instead */
   .c-head .c-refresh{margin-left:auto;flex:none;appearance:none;border:0;background:transparent;width:26px;height:26px;border-radius:13px;display:grid;place-items:center;
@@ -385,6 +385,7 @@
   <div id="card"></div>
   <div id="tail"></div>
   <span id="notch-dot" class="notch-dot" aria-hidden="true"></span>
+  <button id="update-dot" class="update-dot" type="button" aria-label="Updates" aria-expanded="false" aria-controls="update-notification" hidden><span aria-hidden="true"></span></button>
   <button id="pin-handle" class="handle" type="button" aria-label="Pin" aria-pressed="false">
     <svg class="h-rest" viewBox="-36 -36 72 72" aria-hidden="true">
       <circle class="h-ring" r="28.5" fill="none" stroke-width="8.8" stroke-linecap="round" stroke-dasharray="44.77 179.07"/>

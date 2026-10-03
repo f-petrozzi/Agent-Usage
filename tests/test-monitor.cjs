@@ -204,3 +204,12 @@ test('a press Windows does not deliver to the page is relayed into it, and one i
   assert.deepEqual(inputs(), []);
   assert.ok(s.calls.some(c => c[0] === 'control_pressed' && c[1] === 'pin') && s.calls.some(c => c[0] === 'outside_press'));
 });
+test('the blue update dot receives native presses before an overlapping settings handle',async t=>{
+  const s=setup(t);s.win.getBounds=()=>({...s.displays[0].bounds});
+  await s.command('set_notch_monitor',{id:'1'});await stow(s);
+  await s.command('monitor_placed',{placement:s.calls.filter(c=>c[0]==='layout').at(-1)[1].placement});
+  await s.command('set_hot',{rects:[[1100,400,100,100]],controls:{settings:[1100,400,100,100],update:[1120,420,24,24]}});
+  s.test.physicalPress({x:1130,y:430});
+  assert.deepEqual(s.calls.filter(c=>c[0]==='control_pressed'),[['control_pressed','update']]);
+  assert.equal(s.calls.some(c=>c[0]==='input'),false,'the dot opens its options without relaying another click');
+});

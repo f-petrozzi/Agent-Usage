@@ -70,7 +70,7 @@ function parseResume(uri) {
     || !/^(?:ssh-remote\+[A-Za-z0-9_][A-Za-z0-9._-]*(?:@[A-Za-z0-9_][A-Za-z0-9._-]*)?|wsl\+[A-Za-z0-9._-]{1,120})$/.test(remote || '')) return null;
   const reply = payload.reply;
   if (reply && (!Number.isInteger(reply.port) || reply.port < 1024 || reply.port > 65535 || !/^[a-f0-9]{48}$/.test(reply.token || ''))) return null;
-  return { ...link, home, remote, ...(reply ? { reply: { port: reply.port, token: reply.token } } : {}) };
+  return { ...link, home, remote, title: cleanTitle(payload.title), ...(reply ? { reply: { port: reply.port, token: reply.token } } : {}) };
 }
 async function sendReceipt(reply, status, message) {
   if (!reply) return;
@@ -80,6 +80,13 @@ async function sendReceipt(reply, status, message) {
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, response => { response.resume(); resolve(); });
     request.on('error', () => resolve()); request.setTimeout(2000, () => { request.destroy(); resolve(); }); request.end(body);
   });
+}
+// Terminal labels are display metadata only; they never enter a shell command.
+const cleanTitle = value => typeof value === 'string' ? value.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+function terminalName(target) {
+  const agent = {codex:'Codex',claude:'Claude',antigravity:'AGY'}[target.provider];
+  const title = cleanTitle(target.title) || cleanTitle(target.cwd?.split('/').filter(Boolean).at(-1)) || target.sessionId.slice(0, 8);
+  return `${agent} · ${title}`;
 }
 const quote = value => "'" + value.replace(/'/g, "'\\''") + "'";
 function resumeCommand(target) {
@@ -121,7 +128,7 @@ async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_
   if(options){
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace in VS Code before resuming its agent session.');
     const created = vscode.window.createTerminal({
-      name: `${{codex:'Codex',claude:'Claude',antigravity:'Antigravity'}[target.provider]} ${target.sessionId.slice(0, 8)}`,
+      name: terminalName(target),
       location: vscode.TerminalLocation?.Panel ?? 1, ...options });
     resumed.set(key, created); created.show(false); return true;
   }
@@ -161,4 +168,4 @@ function activate(context) {
     (uri.path === '/resume' ? dispatchResume(vscode, context, uri) : handleLink(vscode, uri)).catch(report) }));
   restoreResume(vscode, context).catch(report);
 }
-module.exports = { activate, parseLink, handleLink, parseResume, resumeCommand, localResumeOptions, handleResume, restoreResume, dispatchResume, sendReceipt };
+module.exports = { activate, parseLink, handleLink, parseResume, resumeCommand, localResumeOptions, handleResume, restoreResume, dispatchResume, sendReceipt, terminalName };

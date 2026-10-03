@@ -33,3 +33,17 @@ test('concurrent checks coalesce and manual builds cannot invoke the updater',as
   const unmanaged=createUpdates({app:{getVersion:()=> '3.0.0'},updater,installed:false,onChange:()=>{}});
   await unmanaged.check();await unmanaged.download();unmanaged.install();assert.equal(count,1);assert.equal(unmanaged.get().status,'unavailable');
 });
+test('installed apps check once at startup and on push/reconnect, with no recurring feed polling',async()=>{
+  const updater=new EventEmitter();let checks=0,callbacks,starts=0,closes=0,clock=1000000;
+  updater.checkForUpdates=async()=>{checks++;updater.emit('update-not-available');};
+  const timers=[];
+  const updates=createUpdates({app:{getVersion:()=> '3.3.9'},updater,installed:true,onChange:()=>{},now:()=>clock,
+    schedule:(fn,ms)=>{const t={fn,ms};timers.push(t);return t;},cancel:t=>{if(t)t.cancelled=true;},
+    pushFactory:args=>{callbacks=args;return{start:()=>starts++,close:()=>closes++};}});
+  updates.start();updates.start();assert.equal(starts,1);assert.equal(checks,0);assert.equal(timers.length,1);assert.equal(timers[0].ms,30000);
+  timers[0].fn();await Promise.resolve();assert.equal(checks,1);
+  callbacks.onRelease({version:'3.3.10'});await Promise.resolve();assert.equal(checks,2);assert.equal(timers[0].cancelled,true);
+  callbacks.onReconnect();await Promise.resolve();assert.equal(checks,2,'connection flapping cannot spam the feed');
+  clock+=16*60000;callbacks.onReconnect();await Promise.resolve();assert.equal(checks,3);assert.equal(timers.length,1,'there is no six-hour recurring timer');
+  updates.close();assert.equal(closes,1);
+});

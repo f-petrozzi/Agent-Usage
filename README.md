@@ -252,3 +252,13 @@ History clicks now prefer the active VS Code window and open a terminal tab ther
 The app no longer forces an empty VS Code window during helper upgrades. It prepares the bundled 0.2.2 helper on app startup, before the notch appears. After updating/restarting Agent Usage, run **Developer: Reload Window** once in an already-running VS Code window to load that helper, then click a history session. If Code is closed, launching it still opens a window for the session. Workspace trust and normal SSH/WSL authentication still apply.
 
 Validation: 68 desktop checks covering different folders, SSH aliases, local/empty windows, WSL selection, correct accounts, safe shell quoting, repeated/exited tabs, trust, helper preparation and acknowledgement errors; browser history checks on all four edges. Windows packaging also checks the real bundled VSIX installation. Actual window focus and SSH/WSL connections require the Windows device trial.
+
+## Named terminals and pushed update notices (3.3.10)
+
+Resumed terminals now show the agent and session title, such as **Codex · Agent Usage**, **Claude · Settings cleanup**, or **AGY · Dashboard**. If no title is saved, the workspace name identifies the tab; the short session ID is the final fallback. Terminal labels are bounded display metadata and never alter the resume command. Update and restart Agent Usage, then run **Developer: Reload Window** once in an already-open Code window to load helper 0.2.3. Existing terminals retain their current names; newly resumed sessions get the new labels.
+
+Release publication now sends a signed release notice through free ntfy.sh. The installed Windows app keeps a listening connection open and verifies the notice before checking its normal GitHub update feed. It checks once at startup and catches up after reconnection, replacing the recurring six-hour checks. The relay carries release notices only.
+
+A soft blue pulse in the notch's trailing corner signals an available update or a downloaded update ready to restart. Hover or focus the dot to grow the existing fluid notification: click **Download**, follow its progress, then click **Restart** once it is ready. Leaving lets the notification melt back into the dot; session alerts keep priority. Reduced motion disables the pulse and spring. Settings → General retains the manual Update and Restart controls.
+
+Validation: desktop checks cover notice signatures, tampering, replay, chunked streams, reconnects, updater lifecycle, native dot clicks, session labels and safe resume commands. Browser checks cover the update dot and actions on all four edges, keyboard access, reduced motion, history and the alert bell. Live ntfy delivery and cached-message verification were checked before publication.
