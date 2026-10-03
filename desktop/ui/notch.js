@@ -1527,7 +1527,7 @@ function setShown(on,edge){
   if(on===shown) return;
   shown=on;if(on)shownAt=performance.now();
   const root=document.getElementById('root');
-  if(!on){ if(typeof retractSlivers==='function')retractSlivers(true); root.classList.remove('visible'); cancelAnimationFrame(openFrame);openFrame=0;moveArms(0,.18);setHovered(null); return; } // absorb, then slide away
+  if(!on){ if(typeof notificationRim!=='undefined')notificationRim.clear(); if(typeof retractSlivers==='function')retractSlivers(true); root.classList.remove('visible'); cancelAnimationFrame(openFrame);openFrame=0;moveArms(0,.18);setHovered(null); return; } // absorb, then slide away
   /* Arriving: wells out of the edge instead of sliding in, so its base and flares sit on the screen edge
      from the first frame. Laid out in place and closed against the edge with transitions held, then opened. */
   document.body.classList.add('no-motion');
@@ -1537,6 +1537,7 @@ function setShown(on,edge){
   void pill.offsetWidth;
   document.body.classList.remove('no-motion');
   root.classList.remove('growing'); // the arms sweep out as it opens
+  if(typeof startPendingUpdateRim==='function')startPendingUpdateRim();
 }
 // Hit rectangles are measured on screen, so the ones taken mid-slide are re-taken once it lands
 document.getElementById('root').addEventListener('transitionend',e=>{ if(e.target.id==='root') reportHot(); });

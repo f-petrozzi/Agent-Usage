@@ -334,6 +334,7 @@ function setShapePassage(p,near,transform){ passage=p; cornerNear=near; pillTran
 function setOpenness(v){ openness=v; document.getElementById('root').style.setProperty('--open',v.toFixed(4)); drawShape(); }
 // Monitor transfers discard every arm/open/pocket tween while the renderer's whole surface is masked.
 function stowShape(){
+  if(typeof notificationRim!=='undefined')notificationRim.clear();
   cancelAnimationFrame(openFrame);cancelAnimationFrame(armsFrame);openFrame=armsFrame=0;
   openVelocity=openLast=0;armsOut=0;absorbing=false;
   for(const h of handles){

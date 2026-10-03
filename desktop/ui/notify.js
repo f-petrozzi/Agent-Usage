@@ -8,7 +8,7 @@ const SLIVER={flat:54,flatMin:128,flatMax:160,pad:14,max:228,grace:1600};
 const alertQueue=[], slivers=new Map();
 let pumpTimer=0, slivHeld=false, sliverSerial=0;
 const UPDATE_ID='__update';
-let updateState={status:'idle'}, updatePending=false, updateAction=false, updateHovered=false, updateEscape=false;
+let updateState={status:'idle'}, updatePending=false, updateAction=false, updateHovered=false, updateEscape=false, updateRimPending=false;
 const updateVisible=()=>['available','downloading','ready','installing','error'].includes(updateState.status);
 const updateDot=document.getElementById('update-dot');
 const updateActionable=()=>['available','ready','error'].includes(updateState.status);
@@ -83,6 +83,7 @@ function sliverLine(events){
 }
 function showSliver(account,events,hold){
   let s=slivers.get(account);
+  const arriving=!s||!s.to;
   if(!s){
     const el=document.createElement('div');el.className='sliver';el.dataset.account=account;
     const path=document.createElementNS(SVG_NS,'path');path.setAttribute('class','sliver-ink');
@@ -105,6 +106,7 @@ function showSliver(account,events,hold){
   s.length=Math.min(SLIVER.max,natural+2*SLIVER.pad);
   clearTimeout(s.timer);s.hold=hold;if(!slivHeld&&!s.test)s.timer=setTimeout(()=>retract(s),hold);
   springSliver(s);
+  if(typeof notificationRim!=='undefined'&&(arriving||account!==UPDATE_ID))notificationRim.start(s.el.querySelector('.s-word')?.style.color||INK);
 }
 function springSliver(s){
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){s.t=s.to;s.v=0;drawSliver(s);if(!s.to)dropSliver(s);return;}
@@ -284,14 +286,20 @@ function pumpUpdate(){
 }
 function showUpdate(state){
   if(!state||typeof state.status!=='string')return;
+  const announced=state.status!==updateState.status&&['available','ready'].includes(state.status);
   updateState=state;placeUpdateDot();reportHot();
+  if(announced){updateRimPending=true;if(shown&&!document.getElementById('root').classList.contains('placing'))startPendingUpdateRim();}
   const s=slivers.get(UPDATE_ID);
   if(!updateVisible()){
-    updatePending=false;if(s)retract(s);return;
+    updatePending=false;updateRimPending=false;if(s)retract(s);return;
   }
   if(s?.to){renderUpdate();updatePending=false;}
   // A notice stays a quiet dot until the person asks to see its action.
   else if(updateHovered||document.activeElement===updateDot){updatePending=true;pumpAlert();}
+}
+function startPendingUpdateRim(){
+  if(!updateRimPending||typeof notificationRim==='undefined')return;
+  updateRimPending=false;notificationRim.start(getComputedStyle(updateDot).getPropertyValue('--update-blue').trim());
 }
 async function activateUpdate(){
   if(updateAction||!updateActionable())return;

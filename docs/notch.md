@@ -279,3 +279,11 @@ Regression checks: `tests/test-monitor.cjs` (re-placement before unmasking, the 
 Small mode is a 0.8 page zoom. Text on cards, the log and alerts uses `calc(Npx * var(--tz,1))`; motion.js sets `--tz` to `max(1, 0.96 / scale)` (1.2 in small), and the card's width scales with it (`placeCard` divides the log's measured minimum back by `--tz`). The notch's own glyphs and percentages keep the small size. CSS `zoom` on the card was tried and rejected: the card's positioning reads unzoomed offsets and put it over the pill.
 
 Regression checks: the relay case in `tests/test-monitor.cjs`, and `PLAYWRIGHT_MODULE=/path/to/playwright node tests/browser/notch-small.cjs` (medium unchanged, small text near medium with no cut-off text, the notch still small, the smooth cut-back while switches move).
+
+## Notification shimmer (4.0.0)
+
+`desktop/ui/notification-rim.js` adds a brief travelling glow when an alert opens, or when a release becomes available/ready. It copies the current notch body and notification paths into a clipped SVG silhouette. Dilated alpha minus eroded alpha produces the outside border of their union, so overlapping paths have no internal seams. Three directly rendered gradient layers supply the bright rim and two soft halo widths; filter regions stay bounded to the notch area. The copied paths retain their screen transforms and update while the notification springs out. Floating handles remain separate from the notch perimeter.
+
+A single 3.2-second circuit starts at one side and fades. Bursts update the colour without restarting the circuit, and progress events cannot retrigger it. Reduced motion uses a stationary 1.1-second highlight. The overlay is hidden from accessibility and pointer hit testing. Disappearance and native monitor stowing discard its frames and geometry; pending release announcements start after the destination notch appears.
+
+Run `tests/browser/notch-rim.cjs` with Playwright for rendered glow, movement, cleanup, release colour and input checks on all four edges. Run the existing alert, updater and motion browser checks for regression coverage.
