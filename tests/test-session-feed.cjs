@@ -53,6 +53,25 @@ test('Antigravity activity maps to its Gemini usage account', () => {
   assert.equal(activity[1].detail,'Input needed');
 });
 
+test('Codex questions notify while the turn runs and answers restore working without completion', () => {
+  const { SessionAlerts, alertPreferences } = require('../desktop/alerts.cjs');
+  const alerts = new SessionAlerts(), prefs = alertPreferences({ waiting: true });
+  const session = { provider: 'codex', account: 'codex:a', id: 'rollout-question',
+    sessionId: '12345678-1234-5678-abcd-123456789012', name: 'Project', since: 1000 };
+  const snapshot = state => parseSessions(line([{ ...session, state, waitingFor: state === 'waiting' ? 'input needed' : null }]), true);
+  alerts.update(snapshot('busy'), prefs, 1000000);
+  const events = alerts.update(snapshot('waiting'), prefs, 1060000);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].kind, 'waiting');
+  assert.equal(events[0].body, 'Input needed');
+  assert.equal(events[0].account, accountId('codex', 'codex:a'));
+  assert.equal(events[0].target.sessionId, session.sessionId);
+  assert.deepEqual(alerts.update(snapshot('waiting'), prefs, 1061000), []);
+  assert.deepEqual(alerts.update(snapshot('busy'), prefs, 1062000), []);
+  const finished = parseSessions(line([{ ...session, state: 'idle', since: 1100 }]), true);
+  assert.equal(alerts.update(finished, prefs, 1100000)[0].kind, 'completion');
+});
+
 test('terminal snapshots preserve identity for alerts and leave activity arcs off', () => {
   const feed = new SessionFeed(() => ({}));
   const snapshots=[];

@@ -94,7 +94,10 @@ Completion requires an observed working → explicit idle/turn-ended transition.
 Canceled turns, vanished processes, stream failures, initial readings, and
 reconnections do not announce completion. “Finished working” means the turn ended,
 not that its result was successful. Waiting → idle does not announce completion.
-Codex does not expose approval waits in its rollout. Update the collector alongside
+Codex question tool calls show Waiting until an answer arrives, even while async
+questions allow background work to continue. Enable **Agent waiting for input**
+under Settings → General to receive these notifications. Codex does not expose
+command approval waits in its rollout. Update the collector alongside
 the desktop app to enable the new terminal states; older collectors still provide
 usage and active/waiting indicators.
 
@@ -218,3 +221,9 @@ Validation: 50 desktop checks, including relayed and delivered presses, and ever
 Pending AGY questions and permission requests now take priority over its idle status, so asking for input shows Waiting instead of triggering a finished-working notification. An explicit conversation WAITING status also shows Waiting when the transcript is unavailable. Waiting notifications still follow the existing alert setting.
 
 Update the collector alongside the Windows app. Validation covers idle questions, permission requests, partial transcript writes, answers clearing old requests, and completion alerts after work resumes.
+
+## Codex question notifications (3.3.6)
+
+Codex now shows Waiting and sends the enabled waiting notification when it calls `request_user_input` or `request_user_input_async`. Async acknowledgments and ongoing tool work keep the question pending; the user's reply or the matching answer clears it. A completed, interrupted, or newly started turn clears old questions too. Question and answer text stays out of the session feed.
+
+Enable **Agent waiting for input** in Settings → General. Update the collector alongside the Windows app. Validation covers synchronous and asynchronous questions, multiple outstanding calls, rejected prompts, partial writes, collector restarts, large tool outputs, and the session-feed notification path.

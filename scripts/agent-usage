@@ -823,7 +823,9 @@ def latest_activity(codex_homes: list[Path], include_claude: bool) -> int | None
 #            crash and ignored.
 # * Codex  - each turn appends task_started, then task_complete or
 #            turn_aborted, to the session's rollout. Codex does not record
-#            approval waits there, so Codex cannot report waiting. Terminal states support completion alerts.
+#            approval waits there. Question tool calls stay waiting until their
+#            answer arrives, even while an async question allows work to continue.
+#            Terminal states support completion alerts.
 #            Sub-agents (the guardian that reviews an approval, spawned helpers) keep rollouts of their own
 #            whose short tasks start and finish while their parent is still working; they are part of the
 #            parent's turn, never sessions of their own, or each review would read as "finished".
@@ -930,7 +932,8 @@ def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[di
 # What each rollout last said about its turn and how far it has been read. A long turn writes megabytes after its
 # task_started (every tool output goes into the rollout), far past any fixed tail: a session read only from the tail
 # fell out of view mid-turn, came back finished with no "was working" before it, and its end was never announced.
-_codex_turns: dict[str, tuple[int, int, tuple[str | None, int | None, str | None]]] = {}
+# Cache: inode, observed size, complete-line offset, session state, pending call ids (async or sync).
+_codex_turns: dict[str, tuple[int, int, int, tuple[str | None, int | None, str | None], dict[str, bool]]] = {}
 
 
 def _latest_turn_event(chunk: bytes) -> tuple[str, int | None] | None:
@@ -948,16 +951,63 @@ def _latest_turn_event(chunk: bytes) -> tuple[str, int | None] | None:
     return None
 
 
+def _codex_question_state(chunk: bytes, state: str | None = None, since: int | None = None,
+                          pending: dict[str, bool] | None = None) -> tuple[str | None, int | None, dict[str, bool]]:
+    """Track question call identities only; never export prompts or user answers."""
+    pending = dict(pending or {})
+    if state == "waiting":
+        state = "busy"  # The underlying turn is still running.
+    for line in chunk.splitlines():
+        # Ignore usage records and other non-rollout data.
+        if b'"event_msg"' not in line and b'"response_item"' not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        kind = payload.get("type")
+        if entry.get("type") == "event_msg":
+            if kind in CODEX_TURN_EVENTS:
+                state, since = CODEX_TURN_EVENTS[kind], _parse_iso(entry.get("timestamp"))
+                pending.clear()
+            elif kind == "user_message":
+                pending.clear()
+        elif entry.get("type") == "response_item":
+            if kind == "message" and payload.get("role") == "user":
+                pending.clear()
+            call_id = payload.get("call_id")
+            if not isinstance(call_id, str):
+                continue
+            if kind == "function_call" and state == "busy":
+                name = payload.get("name")
+                if name in {"request_user_input", "functions.request_user_input", "request_user_input_async", "functions.request_user_input_async"}:
+                    pending[call_id] = name.endswith("_async")
+            elif kind == "function_call_output" and call_id in pending:
+                output = payload.get("output")
+                try:
+                    output = json.loads(output) if isinstance(output, str) else output
+                except ValueError:
+                    pass
+                # The async tool acknowledges displaying the prompt immediately;
+                # that acknowledgment is not the user's answer.
+                if not (pending[call_id] and output == {"accepted": True}):
+                    pending.pop(call_id)
+    return ("waiting" if state == "busy" and pending else state), since, pending
+
+
 def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
     """Return (state, turn start, cwd) for one rollout; a sub-agent's rollout has no state of its own.
 
     The first look reads back from the end, widening until it finds the turn; after that only what has been
-    written since is read (with an overlap, for a line that was still being written last time)."""
+    written since is read. Incomplete final lines are reread once they are complete."""
     stat = path.stat()
     key, size = str(path), stat.st_size
     known = _codex_turns.get(key)
     if known and known[0] == stat.st_ino and known[1] == size:
-        return known[2]
+        return known[3]
     with path.open("rb") as handle:
         first = handle.readline(64 * 1024)
         cwd = None
@@ -967,29 +1017,34 @@ def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
                 payload = meta["payload"]
                 source = payload.get("source")
                 if (isinstance(source, dict) and "subagent" in source) or payload.get("parent_thread_id"):
-                    _codex_turns[key] = (stat.st_ino, size, (None, None, None))
+                    _codex_turns[key] = (stat.st_ino, size, size, (None, None, None), {})
                     return None, None, None
                 cwd = payload.get("cwd")
         except ValueError:
             pass
         cwd = cwd if isinstance(cwd, str) else None
         if known and known[0] == stat.st_ino and known[1] < size:
-            since = max(0, known[1] - 64 * 1024)
-            handle.seek(since)
-            found = _latest_turn_event(handle.read(size - since))
-            result = (found[0], found[1], cwd) if found else known[2]
+            offset = known[2]
+            handle.seek(offset)
+            chunk = handle.read(size - offset)
+            complete = chunk[:chunk.rfind(b"\n") + 1]
+            state, started, pending = _codex_question_state(complete, known[3][0], known[3][1], known[4])
         else:
             found, window = None, SESSION_TAIL_BYTES
             while True:
-                handle.seek(max(0, size - window))
-                found = _latest_turn_event(handle.read(min(size, window)))
+                offset = max(0, size - window)
+                handle.seek(offset)
+                chunk = handle.read(min(size, window))
+                complete = chunk[:chunk.rfind(b"\n") + 1]
+                found = _latest_turn_event(complete)
                 if found or window >= size or window >= 64 * 1024 * 1024:
                     break
                 window *= 4
-            result = (found[0], found[1], cwd) if found else (None, None, None)
+            state, started, pending = _codex_question_state(complete)
+        result = (state, started, cwd)
     if len(_codex_turns) > 512:
         _codex_turns.clear()
-    _codex_turns[key] = (stat.st_ino, size, result)
+    _codex_turns[key] = (stat.st_ino, size, offset + len(complete), result, pending)
     return result
 
 
@@ -1009,7 +1064,7 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_termina
                     state, started, cwd = _codex_turn_state(path)
                 except OSError:
                     continue
-                if state is None or (state != "busy" and not include_terminal):
+                if state is None or (state not in {"busy", "waiting"} and not include_terminal):
                     continue
                 sessions.append({
                     "provider": "codex",
@@ -1020,7 +1075,7 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_termina
                     "cwd": cwd,
                     "name": _short(Path(cwd).name if cwd else "Codex"),
                     "state": state,
-                    "waitingFor": None,
+                    "waitingFor": "input needed" if state == "waiting" else None,
                     "since": started,
                 })
     return sessions

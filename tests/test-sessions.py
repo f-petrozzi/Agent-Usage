@@ -81,6 +81,7 @@ class TerminalIdentityTests(unittest.TestCase):
 class CodexSessionTests(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp())
+        usage._codex_turns.clear()
         self.now = time.time()
         self.day = self.home / 'sessions' / time.strftime('%Y/%m/%d', time.localtime(self.now))
         self.day.mkdir(parents=True)
@@ -131,6 +132,111 @@ class CodexSessionTests(unittest.TestCase):
     def test_a_turn_quiet_for_half_an_hour_is_not_busy(self):
         self.rollout('stuck', 'task_started', age=usage.CODEX_QUIET_SECONDS + 60)
         self.assertEqual(usage.codex_sessions([('a', self.home)], self.now), [])
+
+    def question_entry(self, call_id='question', async_question=False):
+        return {'type': 'response_item', 'payload': {'type': 'function_call', 'call_id': call_id,
+                'name': 'request_user_input_async' if async_question else 'request_user_input',
+                'arguments': json.dumps({'questions': [{'question': 'Private question text'}]})}}
+
+    def append_entry(self, path, entry):
+        with path.open('a') as handle:
+            handle.write(json.dumps(entry) + '\n')
+
+    def session_state(self, include_terminal=True):
+        return usage.codex_sessions([('a', self.home)], self.now, include_terminal=include_terminal)[0]
+
+    def test_question_waits_until_matching_answer_and_exports_no_question_text(self):
+        self.rollout('question', 'task_started')
+        path = self.day / 'rollout-question.jsonl'
+        self.assertEqual(self.session_state()['state'], 'busy')
+        self.append_entry(path, self.question_entry())
+        waiting = self.session_state(include_terminal=False)
+        self.assertEqual(waiting['state'], 'waiting')
+        self.assertEqual(waiting['waitingFor'], 'input needed')
+        self.assertEqual(waiting['since'], 1790708400)
+        self.assertNotIn('Private question text', json.dumps(waiting))
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': 'unrelated', 'output': 'done'}})
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': 'question', 'output': '{"answers":{}}'}})
+        self.assertEqual(self.session_state()['state'], 'busy')
+
+    def test_async_question_keeps_waiting_through_acknowledgment_and_background_work(self):
+        self.rollout('question', 'task_started')
+        path = self.day / 'rollout-question.jsonl'
+        self.append_entry(path, self.question_entry(async_question=True))
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': 'question', 'output': '{"accepted":true}'}})
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call', 'call_id': 'work', 'name': 'exec_command'}})
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': 'Private answer'}]}})
+        self.assertEqual(self.session_state()['state'], 'busy')
+        # Growing within the old overlap window must not replay the question.
+        self.append_entry(path, {'type': 'event_msg', 'payload': {'type': 'token_count'}})
+        self.assertEqual(self.session_state()['state'], 'busy')
+
+    def test_multiple_questions_and_rejected_async_prompt(self):
+        self.rollout('question', 'task_started')
+        path = self.day / 'rollout-question.jsonl'
+        for call in ('one', 'two'):
+            self.append_entry(path, self.question_entry(call))
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        for call, expected in [('one', 'waiting'), ('two', 'busy')]:
+            self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': call, 'output': '{"answers":{}}'}})
+            self.assertEqual(self.session_state()['state'], expected)
+        self.append_entry(path, self.question_entry(async_question=True))
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': 'question', 'output': '{"accepted":false}'}})
+        self.assertEqual(self.session_state()['state'], 'busy')
+
+    def test_turn_end_abort_new_turn_and_user_event_clear_questions(self):
+        for event, expected in [('task_complete', 'idle'), ('turn_aborted', 'canceled'), ('task_started', 'busy'), ('user_message', 'busy')]:
+            with self.subTest(event=event):
+                self.rollout('question', 'task_started')
+                path = self.day / 'rollout-question.jsonl'
+                self.append_entry(path, self.question_entry(async_question=True))
+                usage._codex_turns.clear()
+                self.assertEqual(self.session_state()['state'], 'waiting')
+                self.append_entry(path, {'type': 'event_msg', 'timestamp': '2026-10-02T20:00:00Z', 'payload': {'type': event}})
+                self.assertEqual(self.session_state()['state'], expected)
+
+    def test_partial_question_and_answer_are_reread_when_complete(self):
+        self.rollout('question', 'task_started')
+        path = self.day / 'rollout-question.jsonl'
+        for entry, before, after in [
+            (self.question_entry(), 'busy', 'waiting'),
+            ({'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': 'question', 'output': '{"answers":{}}'}}, 'waiting', 'busy'),
+        ]:
+            self.assertEqual(self.session_state()['state'], before)
+            raw = json.dumps(entry) + '\n'
+            with path.open('a') as handle:
+                handle.write(raw[:30])
+            self.assertEqual(self.session_state()['state'], before)
+            with path.open('a') as handle:
+                handle.write(raw[30:])
+            self.assertEqual(self.session_state()['state'], after)
+
+    def test_question_survives_large_outputs_and_collector_restart(self):
+        self.rollout('question', 'task_started')
+        path = self.day / 'rollout-question.jsonl'
+        self.append_entry(path, self.question_entry(async_question=True))
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'function_call_output', 'call_id': 'work', 'output': 'x' * (usage.SESSION_TAIL_BYTES * 3)}})
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        usage._codex_turns.clear()
+        self.assertEqual(self.session_state()['state'], 'waiting')
+        self.append_entry(path, {'type': 'response_item', 'payload': {'type': 'message', 'role': 'user'}})
+        self.assertEqual(self.session_state()['state'], 'busy')
+
+    def test_replaced_or_truncated_rollout_does_not_retain_old_questions(self):
+        for replace in (False, True):
+            with self.subTest(replace=replace):
+                self.rollout('question', 'task_started')
+                path = self.day / 'rollout-question.jsonl'
+                self.append_entry(path, self.question_entry())
+                self.assertEqual(self.session_state()['state'], 'waiting')
+                if replace:
+                    path.unlink()
+                self.rollout('question', 'task_started')
+                self.assertEqual(self.session_state()['state'], 'busy')
 
     def test_a_long_turn_stays_busy_past_the_tail_and_its_end_is_seen(self):
         # A 30-minute Codex turn writes megabytes of tool output after task_started
