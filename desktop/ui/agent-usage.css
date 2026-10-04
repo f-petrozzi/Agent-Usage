@@ -137,7 +137,6 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 .rim-sweep,.rim-tip{pointer-events:none}
 
 /* Session tools share the notch's lobe: quiet labels, generous rows and one fluid selection surface. */
-.h-entry{display:flex;align-items:center;gap:2px}.h-entry .h-item{min-width:0;flex:1}
 .session-pin,.session-close{appearance:none;border:0;background:transparent;color:#b8b8bb;font:inherit;cursor:pointer;padding:6px;border-radius:10px;flex-shrink:0}
 .session-pin{width:28px;height:28px;display:grid;place-items:center}
 .session-pin svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linejoin:round}
@@ -193,3 +192,17 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 .session-handoff[data-status="opened"] .handoff-check{opacity:1;stroke-dashoffset:0}.session-handoff[data-status="opened"] .handoff-ring{opacity:0}
 .session-handoff[data-status="failed"]{opacity:0}
 @media(prefers-reduced-motion:reduce){.session-handoff svg{filter:none}.session-selection{transition:none}}
+
+/* One quiet doorway to saved chats; the liquid moment belongs to the outline. */
+.c-head-actions{display:flex;align-items:center;gap:2px;margin-left:auto;flex:none}
+.c-head .c-head-actions .c-refresh{margin-left:0}
+.c-history-trigger,.session-back{appearance:none;border:0;background:transparent;color:#aaa;display:grid;place-items:center;width:32px;height:32px;padding:0;flex:none;border-radius:12px;cursor:pointer;transition:background-color .16s ease,color .16s ease}
+.c-history-trigger svg,.session-back svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.c-history-trigger:hover,.session-back:hover{background:#202020;color:#fff}
+.c-history-trigger:focus-visible,.session-back:focus-visible{outline:1px solid #8bafff;outline-offset:1px;color:#fff}
+.session-back[hidden]{display:none}
+.session-head:has(.session-back:not([hidden])){gap:8px;margin-top:-3px;margin-bottom:9px}
+@media(prefers-reduced-motion:reduce){.c-history-trigger,.session-back{transition:none}}
+
+/* Retracted pocket targets must not steal Back or search clicks on small screens. */
+#card.session-card.show~.handle{pointer-events:none}

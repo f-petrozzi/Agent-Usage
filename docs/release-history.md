@@ -373,3 +373,28 @@ This is preparation for a personal, SSH-first Mac app. No Mac package is shipped
 and native Mac behavior still needs implementation and hardware validation.
 Update through Settings → General → Update → Restart. If a running VS Code window
 has the older helper loaded, run Developer: Reload Window once after updating.
+
+## Morph usage into attached Sessions (5.0.3)
+
+Saved chat history moves from the quota card's disclosure to a quiet icon in its
+header. Pressing it replaces usage with that account's Sessions in the same
+attached frame. A visible bead draws out of the exposed edge on a liquid neck,
+then merges home over 420ms. Back restores the original account and usage scroll;
+the global shortcut opens All agents. The frame keeps its open state and anchor
+instead of closing and reopening. Cached chats and search respond immediately,
+with a background refresh and the existing automatic refresh while open.
+
+Readable text is never scaled or goo filtered. Only a small band around the bead
+gets the liquid filter. Closing, dragging, monitor transfer, resize and another
+account cancel the effect; reduced motion changes views immediately. Retracted
+pocket controls cannot intercept Sessions clicks, native relayed presses or
+keyboard focus on a small display. Back restores the selected account even when
+its gauge has moved to another page after a resize.
+
+Validation: 121 desktop checks, six collector fixture suites and all fourteen
+Chromium suites. The history suite now checks the visible connected droplet on
+every edge, immediate typing, attachment, account filters, Back, keyboard resume,
+scroll retention, AGY Working links, cancellation and reduced motion. The README
+uses updated fictional-account previews. Windows packaging remains gated on the
+native shortcut/focus and packaged VS Code helper checks. Update through
+Settings → General → Update → Restart; no VS Code helper reload is required.

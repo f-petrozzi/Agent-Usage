@@ -7,8 +7,9 @@ const detailPath=document.createElementNS(SVG_NS,'path');detailSvg.append(detail
 let detailOpen=0,detailVelocity=0,detailFrame=0,detailLast=0,detailTarget=0;
 let detailBox=null,detailAim=null;
 let detailReading=1;
-let detailArm=0,detailArmVelocity=0;
+let detailArm=0,detailArmVelocity=0,detailMorphUntil=0;
 function changeDetailAccount(){
+  if(typeof clearSessionDroplet==='function')clearSessionDroplet();
   setExtraShown(false,true);
   // Keep the lobe's momentum. Switching readings must not kick an already open notch shut.
   detailReading=1;card.style.setProperty('--detail-reading',1);
@@ -66,6 +67,7 @@ function drawDetails(){
   }else detailPath.removeAttribute('filter');
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
+  if(typeof drawSessionDroplet==='function')drawSessionDroplet(performance.now());
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
 function detailHotRect(){
@@ -95,7 +97,7 @@ function detailStep(now){
   };
   [detailArm,detailArmVelocity]=spring(detailArm,detailArmVelocity,detailTarget,8,.86);
   if(detailAim){
-    const mix=1-Math.exp(-dt/.075);
+    const mix=1-Math.exp(-dt/(now<detailMorphUntil?.045:.075));
     for(const key of ['u0','u1','v0','v1','a0','a1']){
       detailBox[key]+=(detailAim[key]-detailBox[key])*mix;
       if(Math.abs(detailBox[key]-detailAim[key])>.1)settled=false;else detailBox[key]=detailAim[key]; // lands exactly, no sub-pixel remainder

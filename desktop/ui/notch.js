@@ -947,41 +947,6 @@ function openResets(row,on){
   if(on){resetsGrowing=true;clearTimeout(resetsGrowTimer);resetsGrowTimer=setTimeout(()=>{resetsGrowing=false;},520);}
 }
 const HISTORY_ICON='<svg class="r-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 8A5.2 5.2 0 1 1 4.4 11.8"/><path d="M2.8 11.3V8H6"/><path d="M8 4.8V8l2 1.3"/></svg>';
-const histories=new Map();
-let historyOpen=null;
-function loadHistory(account){
-  const previous=histories.get(account);
-  if(previous&&(previous.loading||Date.now()-previous.at<60000))return;
-  const record={...previous,loading:true,error:'',at:Date.now()};histories.set(account,record);
-  invoke('get_session_history',{account}).then(rows=>{
-    if(!Array.isArray(rows))throw new Error('Update the collector to load session history.');
-    record.rows=rows;record.loading=false;
-  }).catch(error=>{record.loading=false;record.error=error.message||'Session history could not be loaded.';}).finally(()=>{
-    if(histories.get(account)===record&&card.dataset.account===account&&card.classList.contains('show'))renderCard();
-  });
-}
-function historyRow(account){
-  const record=histories.get(account)||{},rows=record.rows||[],open=historyOpen===account;
-  const content=record.error?`<div class="h-empty">${esc(record.error)}</div>`
-    :!rows.length?`<div class="h-empty">${record.loading?'Loading sessions…':'No saved sessions yet.'}</div>`
-    :rows.map(s=>{
-      const stamp=s.since?new Date(s.since).toLocaleString(ui().locale,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hourCycle:stateSnap.clock_24h?'h23':'h12'}):'';
-      const live=s.live?(s.state==='busy'?'Working':s.state==='waiting'?'Waiting':'Open'):'';
-      const tag=s.canOpen?'button':'div',attrs=s.canOpen?` type="button" data-session="${esc(s.id)}" data-account="${esc(account)}"`:'';
-      const pinned=typeof isSessionPinned==='function'?isSessionPinned(account,s.id):s.pinned;
-      return `<div class="h-entry"><${tag}${attrs} class="h-item${s.canOpen?' history-session':''}" title="${esc(s.canOpen?'Open in VS Code':'Session resume is unavailable for this agent or workspace')}"><span class="h-name">${esc(s.name)}</span><span class="h-meta"><span>${esc(stamp)}</span><span>${esc(live||s.sessionId?.slice(0,8)||'History only')}</span></span></${tag}>${s.canOpen&&typeof sessionPinButton==='function'?sessionPinButton({...s,account,pinned}):''}</div>`;
-    }).join('');
-  return `<div class="c-history${open?' open':''}" data-account="${esc(account)}"><button type="button" class="h-head r-head" aria-expanded="${open}" aria-controls="session-history-list">${HISTORY_ICON}<span class="r-count">Chat history</span><span class="h-count">${rows.length||''}</span><svg class="h-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></button><div class="h-list" id="session-history-list" aria-hidden="${!open}"${open?'':' inert'}><div><div class="h-scroll">${content}</div></div></div></div>`;
-}
-function openHistory(row,on){
-  if(!row)return;
-  if(on)loadHistory(row.dataset.account);
-  if(row.classList.contains('open')===on)return;
-  historyOpen=on?row.dataset.account:null;row.classList.toggle('open',on);
-  row.querySelector('.h-head').setAttribute('aria-expanded',String(on));
-  const list=row.querySelector('.h-list');list.setAttribute('aria-hidden',String(!on));list.inert=!on;
-  if(on){resetsGrowing=true;clearTimeout(resetsGrowTimer);resetsGrowTimer=setTimeout(()=>{resetsGrowing=false;},520);}
-}
 function renderCard(){
   const c=document.getElementById('card');
   if(typeof renderSessionToolsCard==='function'&&renderSessionToolsCard())return;
@@ -993,10 +958,9 @@ function renderCard(){
     if(changed&&typeof changeDetailAccount==='function')changeDetailAccount();
     return;
   }
-  const p=providers().find(x=>x.id===hoverId)||providers()[0];
+  const p=providers().find(x=>x.id===hoverId)||agentAccounts.find(x=>x.id===hoverId)||providers()[0];
   if(!p)return;
   const snap=p.snap;
-  if(p.id!=='collector')loadHistory(p.id);
   const extraWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)==='3p'):[];
   const mainWindows=p.base==='gemini'?snap.windows.filter(w=>laneFamily(w)!=='3p'):snap.windows;
   const hasExtras=!!snap.details?.length||extraWindows.length>0;
@@ -1006,7 +970,7 @@ function renderCard(){
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
   const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
-  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':refresh}</div>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':`<div class="c-head-actions"><button class="c-history-trigger" type="button" data-account="${esc(p.id)}" aria-label="Sessions for ${esc(p.name)}" title="Sessions">${HISTORY_ICON}</button>${refresh}</div>`}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -1017,12 +981,10 @@ function renderCard(){
     html+=renderUsageWindows(mainWindows,p.base!=='gemini',p.base!=='gemini');
     html+=resetsRow(snap.resets,p.id);
     if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
-    if(p.id!=='collector')html+=historyRow(p.id);
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
   if(!snap.windows.length){
     if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
-    if(p.id!=='collector')html+=historyRow(p.id);
   }
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
     const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
@@ -1039,11 +1001,7 @@ function renderCard(){
   }
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
-  const historyScroll=changedAccount?0:c.querySelector('.h-scroll')?.scrollTop||0;
-  const focusedHistory=!changedAccount&&c.querySelector('.c-history')?.contains(document.activeElement)?{head:document.activeElement.classList.contains('h-head'),id:document.activeElement.dataset.session}:null;
   c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;
-  const historyList=c.querySelector('.h-scroll');if(historyList)historyList.scrollTop=historyScroll;
-  if(focusedHistory){const button=focusedHistory.head?c.querySelector('.h-head'):[...c.querySelectorAll('.history-session')].find(b=>b.dataset.session===focusedHistory.id);button?.focus({preventScroll:true});}
   if(typeof setExtraContent==='function')setExtraContent(inlineExtras?[]:snap.details||[],inlineExtras?[]:extraWindows);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){
@@ -1119,12 +1077,6 @@ card.addEventListener('mouseover',e=>openResets(e.target.closest?.('.c-resets.ex
 card.addEventListener('mouseout',e=>{const row=e.target.closest?.('.c-resets.expandable');if(row&&!row.contains(e.relatedTarget))openResets(row,false);});
 card.addEventListener('focusin',e=>openResets(e.target.closest?.('.c-resets.expandable'),true));
 card.addEventListener('focusout',e=>{const row=e.target.closest?.('.c-resets.expandable');if(row&&!row.contains(e.relatedTarget))openResets(row,false);});
-card.addEventListener('mouseover',e=>openHistory(e.target.closest?.('.c-history'),true));
-card.addEventListener('mouseout',e=>{const row=e.target.closest?.('.c-history');if(row&&!row.contains(e.relatedTarget)&&!row.contains(document.activeElement))openHistory(row,false);});
-card.addEventListener('focusin',e=>openHistory(e.target.closest?.('.c-history'),true));
-card.addEventListener('focusout',e=>{const row=e.target.closest?.('.c-history');if(row&&!row.contains(e.relatedTarget)&&!row.matches(':hover'))openHistory(row,false);});
-card.addEventListener('keydown',e=>{const row=e.target.closest?.('.c-history');if(row&&e.key==='Escape'){row.querySelector('.h-head').focus();openHistory(row,false);e.stopPropagation();}});
-listen('session_history_reset',()=>{histories.clear();historyOpen=null;if(card.classList.contains('show'))renderCard();}).catch(()=>{});
 // The card grows while the row opens, and the notch's ink follows it frame by frame. While it opens the ink leads
 // rather than easing after it, so no line of the list is ever drawn outside the black.
 new ResizeObserver(()=>{
@@ -1170,7 +1122,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(typeof clearSessionDroplet==='function')clearSessionDroplet();if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -1192,7 +1144,7 @@ function flushHot(){
   if(open&&typeof detailHotRect==='function'){const expanded=detailHotRect();if(expanded)rects.push(expanded);}
   if(open&&typeof extraTarget==='number'&&extraTarget){rects.push(rectOf(extraCard));const bridge=extraBridgeRect();if(bridge)rects.push(bridge);}
   const controls={};
-  if(placeHandles()){
+  if(placeHandles()&&!(open&&typeof isSessionToolsCard==='function'&&isSessionToolsCard())){
     controls.settings=rectOf(orb);rects.push(controls.settings);
     if(showPin&&hovered!=='sprout'){const lead=rectOf(pinHandle);controls[leadFace()]=lead;rects.push(lead);} // named for what the pocket holds
   }
@@ -1344,14 +1296,8 @@ document.addEventListener('pointerdown',()=>{invoke('page_pressed').catch(()=>{}
 listen('outside_press',()=>{if(cardHeld)hideCard();}).catch(()=>{});
 card.addEventListener('click',async e=>{
   if(e.target.closest('.session-pin,.session-tool-action'))return;
-  const history=e.target.closest('.history-session');
-  if(history){
-    clearSessionLinkError();history.disabled=true;
-    try{if(await invoke('open_history_session',{id:history.dataset.session,account:history.dataset.account})){hideCard();return;}showSessionLinkError('VS Code could not resume this session.');}
-    catch(error){showSessionLinkError(error.message||'VS Code could not be opened.');}
-    finally{history.disabled=false;}return;
-  }
-  const head=e.target.closest('.h-head');if(head){const row=head.closest('.c-history');openHistory(row,!row.classList.contains('open'));return;}
+  const history=e.target.closest('.c-history-trigger');
+  if(history){requestSessionSwitcher(true,history.dataset.account);return;}
   const session=e.target.closest('.session-link');
   if(session){
     clearSessionLinkError();
@@ -1455,6 +1401,8 @@ function put(el,x,y){
   el.classList.add('placed');return {x,y,reach};
 }
 function placeHandles(){
+  const retreated=card.classList.contains('show')&&typeof isSessionToolsCard==='function'&&isSessionToolsCard();
+  orb.inert=retreated;pinHandle.inert=retreated;
   const r=pill.getBoundingClientRect();if(!r.width)return false;
   const R=handleMetrics().flare;
   // Each fillet's centre: the corner of its square diagonally opposite the one on the screen edge
@@ -1468,7 +1416,12 @@ function placeHandles(){
 }
 function near(at,x,y){return !!at&&Math.abs(x-at.x)<=at.reach&&Math.abs(y-at.y)<=at.reach;}
 // The unread dot's bell comes first: it sits in the notch's corner, inside the pin's reach on some edges
-function onHandle(x,y){return typeof updateDotHit==='function'&&updateDotHit(x,y)?'update':typeof sproutHit==='function'&&sproutHit(x,y)?'sprout':near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;}
+function onHandle(x,y){
+  if(typeof updateDotHit==='function'&&updateDotHit(x,y))return 'update';
+  if(typeof sproutHit==='function'&&sproutHit(x,y))return 'sprout';
+  if(card.classList.contains('show')&&typeof isSessionToolsCard==='function'&&isSessionToolsCard())return null;
+  return near(orbAt,x,y)?'orb':near(pinAt,x,y)?'pin':null;
+}
 function setHovered(which){
   const was=hovered;hovered=which;if(was!==which&&typeof hoverUpdate==='function')hoverUpdate(which==='update');orb.classList.toggle('hover',which==='orb');pinHandle.classList.toggle('hover',which==='pin');
   if(was!==which&&typeof morphHandles==='function') morphHandles();

@@ -7,11 +7,11 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.0.2**.
+The current release is **5.0.3**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
-All previews below are captured from the actual 5.0.1 frontend with fictional
+All previews below are captured from the actual 5.0.3 frontend with fictional
 accounts, usage and chats: **Codex · Atlas**, **Claude · Cedar**, **AGY · Drift**
 and **Codex · Harbor**.
 
@@ -22,7 +22,9 @@ and **Codex · Harbor**.
 - **Live activity.** Working and Waiting indicators, clickable active sessions,
   AGY approval requests and Codex questions.
 - **Find any recent chat.** Search Sessions by title, workspace or session ID,
-  filter by agent, pin favorites and keep the list fresh automatically.
+  filter by agent, pin favorites and keep the list fresh automatically. A quiet
+  history icon morphs an account's usage into Sessions with a visible liquid
+  droplet; Back returns to usage in the same attached frame.
 - **Return to VS Code.** Focus a session's existing terminal or resume a closed
   chat in a named terminal using its saved workspace and CLI account. Supports
   SSH and WSL, and can launch VS Code when it is closed.
@@ -45,15 +47,19 @@ and **Codex · Harbor**.
 
 ### Usage and recent sessions
 
-Inspect an account's quota windows, reset times and saved chats. The Sessions
-view brings all accounts together with search, agent filters and pinned chats.
+Inspect an account's quota windows, reset times and credits. Press its header's
+history icon to draw out a droplet and morph the same attached frame into that
+account's Sessions. Search works immediately while the outline moves; Back
+restores usage. The global Sessions shortcut searches all accounts.
 
 <table>
   <tr>
-    <td><img src="docs/images/usage.png" width="416" alt="Claude Cedar usage showing a five-hour limit, weekly limit, two available resets and chat history"></td>
+    <td><img src="docs/images/usage.png" width="416" alt="Claude Cedar usage showing a five-hour limit, weekly limit, two available resets and a quiet history icon"></td>
     <td><img src="docs/images/sessions.png" width="460" alt="Sessions with fictional pinned chats, account labels, workspace names and an active selected chat"></td>
   </tr>
 </table>
+
+<p><img src="docs/images/sessions-motion.gif" width="500" alt="Usage morphing into attached Sessions as a visible droplet pulls out on a liquid neck and merges home; Back restores usage"></p>
 
 ### Notifications and download progress
 

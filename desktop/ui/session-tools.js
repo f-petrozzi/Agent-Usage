@@ -5,7 +5,7 @@ const SESSION_ID='__sessions',FINISHED_ID='__finished';
 const STAR_MARK='<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m10 2 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L2.2 7.7l5.4-.8Z"/></svg>';
 let sessionPins=new Set(),library=[],libraryLoaded=false,libraryLoading=false,libraryError='',libraryAt=0,libraryGeneration=0;
 let switcherPending=false,sessionQuery='',sessionAccount='',sessionIndex=0,sessionMatches=[],sessionRenderFrame=0,sessionListSignature='';
-let finishedSessions=[];
+let finishedSessions=[],sessionOriginAccount=null,sessionOriginScroll=0;
 let sessionRefreshTimer=0,sessionActivitySignature='';
 function scheduleSessionRefresh(delay=30000){
   clearTimeout(sessionRefreshTimer);sessionRefreshTimer=0;
@@ -22,8 +22,6 @@ function sessionPinButton(s){
 }
 function updateSessionPins(rows){
   sessionPins=new Set((Array.isArray(rows)?rows:[]).map(s=>sessionKey(s.account,s.id)));
-  for(const record of histories.values())if(record.rows)record.rows=record.rows.map(s=>({...s,pinned:isSessionPinned(s.account||'',s.id)}));
-  for(const [account,record] of histories)if(record.rows)record.rows.sort((a,b)=>Number(isSessionPinned(account,b.id))-Number(isSessionPinned(account,a.id))||b.since-a.since);
   library=library.map(s=>({...s,pinned:isSessionPinned(s.account,s.id)}));
   if(card.classList.contains('show'))renderCard();
 }
@@ -40,21 +38,32 @@ async function loadSessionLibrary(force=false){
 let sessionFollowClosing=false;
 function completeSessionFollow(){if(!sessionFollowClosing)return;sessionFollowClosing=false;invoke('session_follow_ready').catch(()=>{});}
 listen('session_follow',()=>{sessionFollowClosing=true;switcherPending=false;hideCard();if(!detailTarget&&detailOpen===0)completeSessionFollow();}).catch(()=>{});
-function requestSessionSwitcher(on=true){
+function requestSessionSwitcher(on=true,account=null){
   if(!on){switcherPending=false;if(sessionSwitcherShowing())hideCard();return;}
   sessionFollowClosing=false;
-  if(sessionSwitcherShowing()){focusSessionSearch();return;}
+  if(!switcherPending){
+    sessionOriginAccount=account;sessionOriginScroll=account?card.scrollTop:0;
+    sessionAccount=account||'';if(account)sessionQuery='';
+  }
+  if(sessionSwitcherShowing()){renderSessionToolsCard();focusSessionSearch();return;}
   switcherPending=true;
-  const attempt=()=>{
-    if(!switcherPending)return;
-    if(!shown||window.agentTracking||document.getElementById('root').classList.contains('placing'))return;
-    switcherPending=false;hideCard();sessionListSignature='';
-    hoverId=SESSION_ID;cardHeld=true;card.classList.add('held');showCard();setFocusExpanded(true);
-    focusSessionSearch();loadSessionLibrary(true);scheduleSessionRefresh();
-  };
-  attempt();
+  if(!shown||window.agentTracking||document.getElementById('root').classList.contains('placing'))return;
+  switcherPending=false;sessionListSignature='';clearSessionLinkError();
+  const morph=card.classList.contains('show')&&detailTarget>0;
+  clearTimeout(showTimer);clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;pendingAccount=null;
+  hoverId=SESSION_ID;cardHeld=true;card.classList.add('held');showCard();setFocusExpanded(true);
+  if(morph)startSessionDroplet();
+  focusSessionSearch();loadSessionLibrary(true);scheduleSessionRefresh();
+}
+function returnSessionUsage(){
+  const account=sessionOriginAccount;if(!account)return;
+  closeSessionTools();sessionOriginAccount=null;
+  clearTimeout(showTimer);clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;pendingAccount=null;
+  hoverId=account;cardHeld=true;card.classList.add('held');showCard();card.scrollTop=sessionOriginScroll;startSessionDroplet();
+  card.querySelector('.c-history-trigger')?.focus({preventScroll:true});
 }
 function focusSessionSearch(){
+  card.querySelector('.session-search')?.focus({preventScroll:true});
   invoke('session_switcher_focus').then(()=>{if(sessionSwitcherShowing())requestAnimationFrame(()=>card.querySelector('.session-search')?.focus({preventScroll:true}));}).catch(()=>{});
 }
 listen('session_switcher',e=>requestSessionSwitcher(e.payload!==false)).catch(()=>{});
@@ -89,7 +98,7 @@ function renderSessionToolsCard(){
   card.classList.add('session-card');setExtraContent([],[]);
   if(hoverId===SESSION_ID){
     if(switched||!card.querySelector('.session-search')){
-      card.innerHTML=`<div class="session-head"><span>Sessions</span></div>
+      card.innerHTML=`<div class="session-head"><button type="button" class="session-back session-tool-action" aria-label="Back to usage" title="Back to usage"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.5 5-5 5 5 5M7 10h9"/></svg></button><span>Sessions</span></div>
         <div class="session-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.2 4.2"/></svg><input class="session-search" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" placeholder="Find a chat or workspace" aria-label="Find a chat or workspace" aria-controls="session-results" autocomplete="off" spellcheck="false"></div>
         <div class="session-filter-row"><button type="button" class="session-account session-tool-action" aria-label="Filter sessions by agent" aria-haspopup="listbox" aria-expanded="false" aria-controls="session-agents"><span>All agents</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><div class="session-agent-menu" id="session-agents" role="listbox" aria-label="Agents" inert></div></div>
         <div class="session-results" id="session-results" role="listbox" aria-label="Saved sessions"></div><div class="session-status" role="status" aria-live="polite"></div>`;
@@ -113,6 +122,7 @@ function renderSessionToolsCard(){
       results.addEventListener('keydown',()=>{hoverPoint=null;},true);
       sessionListSignature='';
     }
+    card.querySelector('.session-back').hidden=!sessionOriginAccount;
     card.dataset.account=SESSION_ID;updateSessionList();
   }else{
     card.innerHTML=`<div class="session-head"><span>${finishedSessions.length} finished</span><button type="button" class="session-close session-tool-action" aria-label="Close finished sessions">×</button></div><div class="finished-results">${finishedSessions.map((s,i)=>{
@@ -172,6 +182,7 @@ card.addEventListener('click',async e=>{
     catch(error){if(sessionSwitcherShowing()){card.querySelector('.session-status').textContent=error.message||'This chat could not be pinned.';}else notice(error.message||'This chat could not be pinned.');}
     finally{pinPending.delete(key);pin.disabled=false;}return;
   }
+  if(e.target.closest('.session-back')){returnSessionUsage();return;}
   if(e.target.closest('.session-close')){hideCard();return;}
   const open=e.target.closest('.session-open');if(open){resumeSwitcherSession(Number(open.dataset.index));return;}
   const finished=e.target.closest('.finished-session');if(finished){const s=finishedSessions[Number(finished.dataset.index)];if(s)openNotifiedAlert(s,s.account);return;}
@@ -189,7 +200,7 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();hideCard();return;}
   if(e.target.closest('.session-account')){if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();setSessionFilterOpen(true);}return;}
-  if(!sessionSwitcherShowing()||e.target.closest('.session-agent-menu,.session-account,.session-pin,.session-close'))return;
+  if(!sessionSwitcherShowing()||e.target.closest('.session-agent-menu,.session-account,.session-pin,.session-close,.session-back'))return;
   if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
     e.preventDefault();sessionIndex=e.key==='Home'?0:e.key==='End'?Math.min(119,sessionMatches.length-1):Math.max(0,Math.min(119,sessionMatches.length-1,sessionIndex+(e.key==='ArrowDown'?1:-1)));paintSessionSelection(true);
   }else if(e.key==='Enter'&&e.target.classList.contains('session-search')){e.preventDefault();resumeSwitcherSession(sessionIndex);}

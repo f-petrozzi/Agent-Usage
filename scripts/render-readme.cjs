@@ -1,7 +1,8 @@
 'use strict';
 // Render the real frontend with fictional fixtures. No collector, credentials or
 // session files are read, and no external application is launched.
-// PLAYWRIGHT_MODULE=/path/to/playwright node scripts/render-readme.cjs
+// PLAYWRIGHT_MODULE=/path/to/playwright node scripts/render-readme.cjs [--motion]
+// --motion also records the real morph to /tmp/agent-usage-session-motion.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
@@ -72,7 +73,7 @@ async function installFixtures(page){
 }
 async function frame(page,name){
   const clip=await page.evaluate(()=>{
-    const selectors=['#shape .part','#shape .arm','#shape .neck','#detail-shape > path','.sliver-ink','#card.show'];
+    const selectors=['#shape .part','#shape .arm','#shape .neck','#detail-shape > path','#session-droplet','.sliver-ink','#card.show'];
     const rects=[...document.querySelectorAll(selectors.join(','))].filter(el=>el.tagName.toLowerCase()!=='path'||el.getAttribute('d')).map(el=>el.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0);
     const left=Math.min(...rects.map(r=>r.left)),right=Math.max(...rects.map(r=>r.right));
     const top=Math.min(...rects.map(r=>r.top)),bottom=Math.max(...rects.map(r=>r.bottom));
@@ -92,8 +93,8 @@ async function frame(page,name){
     const context=await browser.newContext({viewport:{width:1024,height:720},deviceScaleFactor:2,timezoneId:'America/New_York',locale:'en-US'});
     // The only inputs to the preview are repository assets and the fixture above.
     await context.route(/^https?:\/\//,route=>route.abort());
-    async function notch(edge='top'){
-      const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await installFixtures(page);
+    async function notch(edge='top',targetContext=context){
+      const page=await targetContext.newPage();page.on('pageerror',e=>errors.push(e.message));await installFixtures(page);
       await page.goto(pathToFileURL(path.join(UI,'notch.html')).href);
       await page.addStyleTag({content:'html{background:#52667d}'});
       await page.mouse.move(20,700);await page.waitForTimeout(300);
@@ -104,6 +105,11 @@ async function frame(page,name){
 
     page=await notch('right');await page.evaluate(()=>holdCard('claude_cedar'));await page.waitForTimeout(1400);
     assert.match(await page.locator('#card').innerText(),/Claude · Cedar/);await frame(page,'usage');await page.close();
+
+    page=await notch();await page.evaluate(()=>holdCard('claude_cedar'));await page.waitForTimeout(1400);
+    await page.locator('.c-history-trigger').click();await page.waitForTimeout(130);
+    assert.equal(await page.evaluate(()=>sessionAccount),'claude_cedar');await frame(page,'droplet');
+    await page.waitForTimeout(800);await frame(page,'account-sessions');await page.close();
 
     page=await notch();await page.evaluate(()=>__demoEmit('session_switcher',true));await page.waitForTimeout(1400);
     assert.equal(await page.locator('.session-result').count(),sessions.length);await page.locator('.session-result').nth(2).hover();await page.waitForTimeout(450);
@@ -124,6 +130,18 @@ async function frame(page,name){
     await page.evaluate(()=>__demoEmit('focus_accounts',['codex_atlas','claude_cedar']));await page.waitForTimeout(300);
     assert.equal(await page.locator('.acct-name').count(),accounts.length);
     await page.screenshot({path:path.join(OUT,'accounts.png')});await page.close();
+    if(process.argv.includes('--motion')){
+      const motion=await browser.newContext({viewport:{width:1024,height:720},timezoneId:'America/New_York',locale:'en-US',recordVideo:{dir:'/tmp/agent-usage-session-motion',size:{width:1024,height:720}}});
+      await motion.route(/^https?:\/\//,route=>route.abort());
+      page=await notch('top',motion);const video=page.video();
+      await page.evaluate(()=>holdCard('claude_cedar'));await page.waitForTimeout(1000);
+      await page.evaluate(()=>{window.__cadence=[];let last=0;const end=performance.now()+650;const sample=now=>{if(last)__cadence.push(now-last);last=now;if(now<end)requestAnimationFrame(sample);};requestAnimationFrame(sample);});
+      await page.locator('.c-history-trigger').click();await page.waitForTimeout(1300);
+      const cadence=await page.evaluate(()=>__cadence.sort((a,b)=>a-b));
+      console.log('Sessions animation cadence',JSON.stringify({frames:cadence.length,median:cadence[Math.floor(cadence.length/2)],maximum:cadence.at(-1)}));
+      await page.locator('.session-back').click();await page.waitForTimeout(1300);
+      await motion.close();console.log('Sessions motion video:',await video.path());
+    }
     assert.deepEqual(errors,[],'preview renderer errors');
     console.log('Saved fictional '+VERSION+' previews in docs/images.');
   }finally{await browser.close();}
