@@ -366,3 +366,11 @@ The Alerts tab's Usage, Waiting and Finished toggles also filter saved rows and 
 Clear remains available when every row is filtered out and removes the whole log, including hidden entries. The existing 40-entry/week retention applies. A filtered empty log explains that no alerts match the filters.
 
 Clickable active-session rows, including Working, have 7px vertical and 10px horizontal padding, a roomier gap and an 8px rounded highlight. Validation: 104 desktop checks; Chromium checks cover saved-row hide/restore, hidden unread state, clearing hidden rows, keyboard focus, liquid switch animations, all four edges and small-size typography. Hover previews confirm the active-session button fits at medium and small sizes on top and side edges. Update and restart Agent Usage; no VS Code helper reload is needed.
+
+## Surrounding update progress (4.1.10)
+
+The update sliver's download bar becomes a blue frame around its content. A faint track shows the complete perimeter; the brighter stroke fills clockwise from the top midpoint, with a soft halo and pale tip marking the actual percentage. Ready-to-restart completes the outline and removes the moving tip.
+
+The persistent SVG stays outside the text that updater packets replace, so percentage changes transition on the same stroke. Its geometry follows the sliver's spring and focus-layout changes. Closing, dragging and hiding remove the frame with the sliver. It cannot intercept clicks. Reduced motion shows exact progress immediately. The existing release shimmer retains its independent circuit.
+
+Validation: 104 desktop checks; Chromium checks verify frame geometry on all four edges, interpolated progress on a persistent stroke, completed ready state, click-through, hover-off cleanup, dragging and reduced motion. Rendered shimmer checks confirm continuous travel and completion through update retraction. Screenshots were inspected for top and side-edge download states. Update and restart Agent Usage; no VS Code helper reload is needed.

@@ -215,9 +215,15 @@
   .sliver-update{outline:none;font-variant-numeric:tabular-nums}
   .sliver-update[aria-disabled="false"]:focus-visible{outline:1px solid var(--update-blue);outline-offset:-4px;border-radius:12px}
   .sliver-update[aria-disabled="true"]{cursor:default}
-  .sliver-update[data-status="downloading"]::after{content:'';position:absolute;left:12px;bottom:2px;height:2px;
-    width:calc((100% - 24px) * var(--update-fraction,0));background:var(--update-blue);border-radius:2px;opacity:.65;transition:width .25s ease}
-  @media (prefers-reduced-motion: reduce){.sliver-update::after{transition:none}}
+  #update-progress{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:4;pointer-events:none;fill:none;stroke:var(--update-blue);stroke-linecap:round;stroke-linejoin:round}
+  #update-progress[hidden]{display:none}
+  .update-progress-track{stroke-width:1;opacity:.16}
+  .update-progress-halo{stroke-width:4;opacity:.32;filter:blur(2px)}
+  .update-progress-fill{stroke-width:1.6;opacity:.9}
+  .update-progress-tip{stroke:#eef4ff;stroke-width:2;filter:drop-shadow(0 0 2px var(--update-blue))}
+  .update-progress-halo,.update-progress-fill{transition:stroke-dasharray .5s cubic-bezier(.22,.7,.2,1)}
+  .update-progress-tip{transition:stroke-dashoffset .5s cubic-bezier(.22,.7,.2,1),opacity .2s ease}
+  @media (prefers-reduced-motion: reduce){#update-progress path{transition:none}}
   /* Refresh lives on the card's title row: a ring click holds its card instead */
   .c-head .c-refresh{margin-left:auto;flex:none;appearance:none;border:0;background:transparent;width:26px;height:26px;border-radius:13px;display:grid;place-items:center;
     color:var(--ink-dim);cursor:pointer;transition:background-color .15s ease,color .15s ease}
@@ -415,6 +421,7 @@
 <script src="notch.js"></script>
 <script src="shape.js"></script>
 <script src="details.js"></script>
+<script src="update-progress.js"></script>
 <script src="notify.js"></script>
 <script src="rim-geometry.js"></script>
 <script src="notification-rim.js"></script>

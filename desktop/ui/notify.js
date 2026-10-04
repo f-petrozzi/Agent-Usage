@@ -172,7 +172,7 @@ function drawSliver(s){
     u0=index===0?start:index===cells.length-1?end-span:Math.max(start,Math.min(end-span,center-span/2));
     u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
   }
-  if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;return;}
+  if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;if(s.account===UPDATE_ID)updateProgress.clear();return;}
   const inkDepth=d+depth-rootDepth;
   s.path.setAttribute('d',notificationRectPath(u0,u1,inkDepth));
   const rimRadius=Math.min(SHAPE.corner,(u1-u0)/2,inkDepth);
@@ -190,6 +190,7 @@ function drawSliver(s){
   const a=screen(u0,depth+SLIVER.pad*.4),b=screen(u1,depth+d-SLIVER.pad*.4);
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
+  if(s.account===UPDATE_ID)updateProgress.draw(updateState,{x,y,width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1]),opacity:smooth((t-.74)/.26)});
   if(s.to&&s.t===s.to)scrollSliver(s);
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
 }
@@ -207,7 +208,7 @@ function scrollSliver(s){
     {duration,iterations:Infinity,easing:'linear'});
   if(!slivHeld&&!s.test){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
+function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);if(s.account===UPDATE_ID)updateProgress.clear();placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
 function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -304,7 +305,6 @@ function renderUpdate(){
   s.el.setAttribute('aria-disabled',String(!updateActionable()));
   s.el.setAttribute('aria-busy',String(['downloading','installing'].includes(updateState.status)));
   s.el.title=updateState.status==='error'?String(updateState.error||'Check for updates again'):`${word}: ${text}`;
-  s.el.style.setProperty('--update-fraction',Math.max(0,Math.min(100,Number(updateState.percent)||0))/100);
 }
 function pumpUpdate(){
   if(!updatePending)return;
