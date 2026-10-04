@@ -374,3 +374,15 @@ The update sliver's download bar becomes a blue frame around its content. A fain
 The persistent SVG stays outside the text that updater packets replace, so percentage changes transition on the same stroke. Its geometry follows the sliver's spring and focus-layout changes. Closing, dragging and hiding remove the frame with the sliver. It cannot intercept clicks. Reduced motion shows exact progress immediately. The existing release shimmer retains its independent circuit.
 
 Validation: 104 desktop checks; Chromium checks verify frame geometry on all four edges, interpolated progress on a persistent stroke, completed ready state, click-through, hover-off cleanup, dragging and reduced motion. Rendered shimmer checks confirm continuous travel and completion through update retraction. Screenshots were inspected for top and side-edge download states. Update and restart Agent Usage; no VS Code helper reload is needed.
+
+## Fluid notch effects (5.0.0)
+
+Notification slivers gain a quiet perimeter countdown. The outline drains clockwise with the notification's remaining time, pauses with expiry while hovered, and continues from its held position when the pointer leaves. Long text retains its reading time; update options keep their existing dismissal timing and blue download frame.
+
+A confirmed quota renewal sends one green sweep around the account's gauge. It requires fresh before/after readings, a recently crossed reset boundary, a later reset and restored capacity. Initial readings, usage corrections, changed future estimates and stale snapshots do not trigger it. Hidden or collapsed gauges do not queue a delayed celebration.
+
+Releasing the notch after moving it gives its black shape a short stretch and liquid rebound at the edge. Gauges and text retain their size and position. Finished notifications gather with up to three small droplets flowing from their accounts into the existing stack, behind its text. Repeated alerts animate only newly added sessions; closing the stack absorbs any remaining droplets without changing its session entries.
+
+Transient effects have bounded lifetimes and are removed on dragging, hiding or monitor transfer. Reduced motion keeps the countdown stationary, uses a brief stationary renewal cue and skips droplets and docking rebound. The existing notification shimmer still completes its own circuit through sliver retraction.
+
+Validation: 104 desktop regression checks and Chromium checks for countdown pause/resume, expiry, repeat arrivals, merge dismissal, reset detection, docking settlement and cleanup on all four edges. Existing updater, notification, session-stack, corner movement, monitor placement and rendered shimmer checks also pass. Screenshots were inspected. A combined Chromium animation sample measured a 16.7ms median frame interval with no frames above 34ms; Windows performance still depends on the device. Update and restart Agent Usage.

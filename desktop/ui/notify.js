@@ -97,6 +97,7 @@ function sliverLine(events){
 }
 function showSliver(account,events,hold){
   let s=slivers.get(account);
+  const previousKeys=new Set((s?.events||[]).map(e=>e.id||[e.account,e.session,e.took].join(':')));
   const arriving=!s||!s.to;
   if(!s){
     const el=document.createElement('div');el.className='sliver';el.dataset.account=account;
@@ -105,6 +106,7 @@ function showSliver(account,events,hold){
     const filter=sliverSvg.querySelector('#'+id);sliverSvg.append(path);
     card.parentElement.append(el);
     s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);placeUnreadDot();
+    if(account!==UPDATE_ID){s.countdown=document.createElementNS(SVG_NS,'path');s.countdown.setAttribute('class','sliver-countdown');s.countdown.setAttribute('pathLength','100');sliverSvg.append(s.countdown);}
     el.setAttribute('role','button');el.tabIndex=0;
     const activate=()=>{if(s.account===UPDATE_ID){activateUpdate();return;}if(typeof FINISHED_ID!=='undefined'&&s.account===FINISHED_ID){markSeen(s);openCompletionStack(s.events);return;}markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
     el.addEventListener('click',activate);
@@ -122,8 +124,10 @@ function showSliver(account,events,hold){
   s.el.style.height='auto';s.el.style.width='max-content';
   const natural=s.el.scrollWidth;
   s.length=Math.min(SLIVER.max,natural+2*SLIVER.pad);
-  clearTimeout(s.timer);s.hold=hold;if(!slivHeld&&!s.test)s.timer=setTimeout(()=>retract(s),hold);
+  clearTimeout(s.timer);s.hold=hold;s.remaining=hold;s.countdownFraction=1;
+  if(!slivHeld&&!s.test)armSliver(s,hold);else pauseSliver(s,true);
   springSliver(s);
+  if(stack){const incoming=events.filter(e=>!previousKeys.has(e.id||[e.account,e.session,e.took].join(':')));if(incoming.length)notchEffects.merge(s,incoming);}
   if(typeof notificationRim!=='undefined'&&(arriving||account!==UPDATE_ID))notificationRim.start(s.el.querySelector('.s-word')?.style.color||INK);
 }
 function springSliver(s){
@@ -190,6 +194,10 @@ function drawSliver(s){
   const a=screen(u0,depth+SLIVER.pad*.4),b=screen(u1,depth+d-SLIVER.pad*.4);
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
+  if(s.countdown){
+    if(Math.abs(a[0]-b[0])>=8&&Math.abs(a[1]-b[1])>=8)s.countdown.setAttribute('d',sliverFramePath({x,y,width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1])}));else s.countdown.removeAttribute('d');
+    s.countdown.style.opacity=s.test?'0':String(.26*smooth((t-.74)/.26));
+  }
   if(s.account===UPDATE_ID)updateProgress.draw(updateState,{x,y,width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1]),opacity:smooth((t-.74)/.26)});
   if(s.to&&s.t===s.to)scrollSliver(s);
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
@@ -206,10 +214,28 @@ function scrollSliver(s){
     {transform:`translateX(-${distance}px)`,offset:(pause+travel)/duration},
     {transform:`translateX(-${distance}px)`,offset:(2*pause+travel)/duration},{transform:'translateX(0)',offset:1}],
     {duration,iterations:Infinity,easing:'linear'});
-  if(!slivHeld&&!s.test){clearTimeout(s.timer);s.timer=setTimeout(()=>retract(s),Math.max(s.hold,pause*2+travel));}
+  if(!slivHeld&&!s.test)armSliver(s,Math.max(s.hold,pause*2+travel));
 }
-function dropSliver(s){cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);if(s.account===UPDATE_ID)updateProgress.clear();placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
-function retract(s){clearTimeout(s.timer);s.to=0;springSliver(s);}
+function armSliver(s,duration,fraction=1){
+  clearTimeout(s.timer);s.countdownAnimation?.cancel();s.remaining=duration;s.deadline=performance.now()+duration;
+  s.countdownSpan=duration;s.countdownFraction=fraction;
+  if(s.countdown){
+    s.countdown.setAttribute('stroke-dasharray',`${fraction*100} 100`);
+    if(duration>0&&!s.test&&!matchMedia('(prefers-reduced-motion: reduce)').matches)s.countdownAnimation=s.countdown.animate(
+      [{strokeDasharray:`${fraction*100} 100`},{strokeDasharray:'0 100'}],{duration,easing:'linear',fill:'forwards'});
+  }
+  s.timer=setTimeout(()=>retract(s),duration);
+}
+function pauseSliver(s,fresh=false){
+  if(!fresh&&s.deadline){s.remaining=Math.max(0,s.deadline-performance.now());s.countdownFraction*=s.countdownSpan>0?s.remaining/s.countdownSpan:0;}
+  clearTimeout(s.timer);s.timer=0;s.deadline=0;s.countdownAnimation?.cancel();s.countdownAnimation=null;
+  s.countdown?.setAttribute('stroke-dasharray',`${(s.countdownFraction??1)*100} 100`);
+}
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{
+  for(const s of slivers.values()){const running=!!s.timer;pauseSliver(s);if(running&&s.to&&!s.test)armSliver(s,s.remaining,s.countdownFraction);}
+});
+function dropSliver(s){notchEffects.dismiss(s);cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.countdownAnimation?.cancel();s.countdown?.remove();s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);if(s.account===UPDATE_ID)updateProgress.clear();placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
+function retract(s){notchEffects.dismiss(s);pauseSliver(s);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
 function stowTrackingNotifications(){
@@ -233,7 +259,7 @@ function holdSlivers(held,over=null){
   if(over)markSeen(over);
   if(held===slivHeld||!slivers.size)return;
   slivHeld=held;
-  for(const s of slivers.values()){clearTimeout(s.timer);if(!held&&s.to&&!s.test)s.timer=setTimeout(()=>retract(s),SLIVER.grace);}
+  for(const s of slivers.values()){if(held)pauseSliver(s);else if(s.to&&!s.test)armSliver(s,s.account===UPDATE_ID?SLIVER.grace:Math.max(SLIVER.grace,s.remaining||0),s.countdownFraction??1);}
 }
 // Seen, an alert no longer counts toward the dot on the pocket; only ones that came and went unread do
 function markSeen(s){

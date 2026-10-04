@@ -150,6 +150,9 @@
   .c-sessions{margin-top:12px;border-top:1px solid var(--card-rule);padding-top:8px}
   .s-row{display:flex;align-items:center;gap:6px;font-size:calc(11px * var(--tz,1));color:var(--ink-4);padding:2px 0}
   .s-dot{width:6px;height:6px;border-radius:3px;flex:0 0 auto}
+  .sliver-countdown{fill:none;stroke:#b9c6db;stroke-width:1.1;stroke-linecap:round;pointer-events:none}
+  .quota-renewal{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;transform-origin:50% 50%}
+  .notification-droplet{position:absolute;left:0;top:0;width:12px;height:12px;border-radius:50%;background:#000;border:1px solid #8191ad;pointer-events:none;z-index:2;will-change:transform,offset-distance;offset-anchor:50% 50%}
   .s-more{font-size:calc(11px * var(--tz,1));color:var(--ink-dim);padding:2px 0}
   /* A window reads as its share used beside its name, the bar, then when it resets and what is left */
   .w-pct{margin-left:auto;font-size:calc(13px * var(--tz,1));font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -420,6 +423,7 @@
 <script src="bridge.js"></script>
 <script src="notch.js"></script>
 <script src="shape.js"></script>
+<script src="notch-effects.js"></script>
 <script src="details.js"></script>
 <script src="update-progress.js"></script>
 <script src="notify.js"></script>

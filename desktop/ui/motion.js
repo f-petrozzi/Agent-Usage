@@ -104,7 +104,7 @@ function animate(now){
   reportHot();
   if(Math.abs(delta)>.3) frame=requestAnimationFrame(animate);else last=0;
 }
-function loadAccounts(value){agentAccounts=value||[];renderRing();if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
+function loadAccounts(value){const renewals=notchEffects.renewals(agentAccounts,value||[]);agentAccounts=value||[];renderRing();notchEffects.renewed(renewals);if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
 window.agentUsage.on('agent_accounts',loadAccounts);
 invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
 let placementRevision=0, placing=false;

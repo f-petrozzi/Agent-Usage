@@ -1,6 +1,6 @@
 {
   "name": "agent-usage-desktop",
-  "version": "4.1.10",
+  "version": "5.0.0",
   "private": true,
   "description": "Agent Usage with the CodeNotch Windows frontend",
   "author": "Agent Usage contributors",

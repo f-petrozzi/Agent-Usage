@@ -131,9 +131,10 @@ function drawStraight(){
   const w=pill.offsetWidth, h=pill.offsetHeight, hgt=h;
   if(!w||!h) return;
   const vertical=notchEdge==='left'||notchEdge==='right', L=vertical?h:w;
-  const proportions=handleMetrics(),depth=edgeDepth(notchEdge), d=Math.max(0,depth*openness), grown=Math.min(1,d/depth);
+  const proportions=handleMetrics(),depth=edgeDepth(notchEdge),pull=typeof notchEffects==='undefined'?0:notchEffects.dock.value;
+  const d=Math.max(0,depth*openness+pull), grown=Math.min(1,d/depth);
   const spread=Math.min(1.02,.75+.25*openness); // opening, it spreads along the edge a little too
-  const Ls=L*spread, u0=(L-Ls)/2, u1=u0+Ls, F=proportions.flare*grown, r=SHAPE.corner*grown;
+  const Ls=L*spread+pull*.8, u0=(L-Ls)/2, u1=u0+Ls, F=proportions.flare*grown, r=SHAPE.corner*grown;
   shapeSvg.style.transform=pillTransform;
   shapeSvg.setAttribute('width',w);shapeSvg.setAttribute('height',h);
   shapeBody.setAttribute('transform',`matrix(${edgeMatrix(notchEdge,w,h).join(' ')})`);
