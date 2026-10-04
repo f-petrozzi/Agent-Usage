@@ -142,6 +142,22 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(sessions[0]['state'],'waiting')
         self.assertTrue(sessions[0]['live'])
 
+    def test_old_idle_codex_chat_keeps_its_open_terminal_identity(self):
+        path=self.codex / 'sessions/2025/01/01' / f'rollout-{ID}.jsonl'
+        self.write(path,[{'type':'session_meta','payload':{'id':ID,'cwd':'/srv/project'}}],age=4*3600)
+        self.write(self.codex / 'session_index.jsonl',[{'id':ID,'thread_name':'Inspect Claude session route'}])
+        with patch.object(usage,'codex_sessions',return_value=[]), patch.object(usage,'rollout_processes',return_value={str(path.resolve()):[101,90,80]}):
+            session=self.history()[0]
+        self.assertEqual(session['terminalPids'],[101,90,80])
+        self.assertTrue(session['live'])
+        self.assertEqual(session['state'],'idle')
+        self.assertEqual(session['name'],'Inspect Claude session route')
+        # The PID belongs to this exact account's file, not another rollout with the same UUID.
+        other=self.root / 'other-account' / path.name
+        with patch.object(usage,'codex_sessions',return_value=[]), patch.object(usage,'rollout_processes',return_value={str(other):[101,90,80]}):
+            session=self.history()[0]
+        self.assertFalse(session['live']);self.assertEqual(session['terminalPids'],[])
+
     def test_antigravity_history_uses_workspace_uris_and_excludes_subagents(self):
         database=self.root / '.gemini/antigravity-cli/conversation_summaries.db'
         database.parent.mkdir(parents=True)

@@ -1210,6 +1210,9 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
     uuid = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}")
     live = (claude_sessions(config_dir, True) if include_claude else []) + codex_sessions(profiles, now, True)
     live_by_id = {(s["account"], s.get("sessionId")): s for s in live}
+    # Activity expires after a quiet period; an open terminal does not. Read the
+    # exact rollout writer independently so old idle chats can still be focused.
+    processes = rollout_processes() if profiles else {}
     history: list[dict[str, Any]] = []
     seen: set[Path] = set()
 
@@ -1284,6 +1287,7 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
                     continue
                 seen.add(real)
                 current = live_by_id.get((account, identity), {})
+                terminal_pids = processes.get(str(real), []) if provider == "codex" else current.get("terminalPids", [])
                 # Closed startup-only files have no conversation to resume. Inspect complete
                 # small files only; keep named chats, live launches and unfamiliar formats.
                 startup_types = {"mode", "permission-mode", "system", "cost-state", "atis-latch", "last-prompt"}
@@ -1299,7 +1303,7 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
                                 "name": _short(title or current.get("name") or Path(cwd or provider.title()).name),
                                 "state": current.get("state", "idle"), "since": path.stat().st_mtime,
                                 "cwd": cwd, "agentHome": str(home.absolute()),
-                                "terminalPids": current.get("terminalPids", []), "live": bool(current)})
+                                "terminalPids": terminal_pids, "live": bool(terminal_pids) if provider == "codex" else bool(current)})
                 count += 1
             except (OSError, ValueError, TypeError, AttributeError):
                 continue

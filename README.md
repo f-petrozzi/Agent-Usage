@@ -336,3 +336,9 @@ Accounts returns to a single compact row: gauge, account name, focus icon, notif
 Claude startup-only files without conversation content or a saved title no longer appear as folder-named history entries such as “homelab”. The collector checks complete small files with recognized startup metadata; active launches, named chats, conversation records, larger files and unfamiliar formats remain visible. This filters Agent Usage history without changing Claude's saved files. The homelab collector has been updated; no VS Code helper reload is needed.
 
 Validation: 98 desktop checks, 11 collector history checks, 23 session checks and browser checks for pointer/keyboard selection, scrolling on all four edges, compact account controls, reordering, dark/light themes and minimum window sizes.
+
+## Focus idle Codex terminals (4.1.6)
+
+History now checks the process holding each exact Codex rollout open independently of recent activity. A terminal left idle for more than 30 minutes, or open with an older transcript, keeps its terminal process ancestry and is shown as open. Clicking it lets the VS Code helper focus the existing terminal rather than start a second resume. Closed sessions still open normally. Identity remains scoped to the owning account's resolved file, never the display title.
+
+The homelab collector has been updated and the reported “Inspect Claude session route” session was verified as open with its live terminal ancestry. No helper change or VS Code reload is needed. Validation adds an old-idle-session regression covering exact account/file identity and retains existing terminal-focus checks.
