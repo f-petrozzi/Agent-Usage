@@ -358,3 +358,11 @@ Agent Usage's `fab@homelab` target and VS Code's `SSH: homelab` authority previo
 Helper 0.2.5 compares the local SSH client's effective hostname, username, port and proxy route using `ssh -G`, without opening a connection. Equivalent aliases focus the existing terminal by its live process ancestry and use the window's remote authority when resuming a closed session. Different users, hosts and routes remain separate. A terminal actually holding the session takes priority over a restored duplicate helper tab; exited terminals cannot match. A live session that cannot be located reports an error instead of launching another copy. Account-specific Codex homes remain unchanged.
 
 Update and restart Agent Usage, then run **Developer: Reload Window** once in the existing VS Code window to load helper 0.2.5. Validation: 104 desktop checks, including equivalent aliases, failed lookups, different users/ports/proxies, existing duplicates, exited terminals, live-session guards and real OpenSSH configuration resolution. Physical focus in the user's Windows SSH window remains a device check.
+
+## Filter saved notifications and pad active sessions (4.1.9)
+
+The Alerts tab's Usage, Waiting and Finished toggles also filter saved rows and the unread badge. Turning a kind off hides its retained notifications; turning it on restores those same rows. Hidden entries keep their read state. Opening the log marks only enabled kinds as read. Sound controls the chime separately. Settings changes update an open log, and keyboard focus stays on the filter during refresh.
+
+Clear remains available when every row is filtered out and removes the whole log, including hidden entries. The existing 40-entry/week retention applies. A filtered empty log explains that no alerts match the filters.
+
+Clickable active-session rows, including Working, have 7px vertical and 10px horizontal padding, a roomier gap and an 8px rounded highlight. Validation: 104 desktop checks; Chromium checks cover saved-row hide/restore, hidden unread state, clearing hidden rows, keyboard focus, liquid switch animations, all four edges and small-size typography. Hover previews confirm the active-session button fits at medium and small sizes on top and side edges. Update and restart Agent Usage; no VS Code helper reload is needed.

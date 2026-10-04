@@ -372,7 +372,9 @@ function chime(kind){
    since the log was last open. Pressing the bell grows the log out of that end of the notch, the disc melting
    into the widening flare, with the alert switches along the top. A row opens its linked session or account usage. */
 let alertLogData=[],alertPrefsData=null,markTimer=0;
-const unreadCount=()=>alertLogData.filter(e=>!e.read).length;
+// Filtering changes the view, never the saved log or hidden entries' read state.
+const visibleAlertLog=()=>alertLogData.filter(e=>alertPrefsData===null||alertPrefsData[e.kind]===true);
+const unreadCount=()=>visibleAlertLog().filter(e=>!e.read).length;
 const logShowing=()=>card.classList.contains('show')&&hoverId===ALERTS_ID;
 listen('alert_log',e=>{
   const before=unreadCount();alertLogData=Array.isArray(e.payload)?e.payload:[];
@@ -380,8 +382,9 @@ listen('alert_log',e=>{
   if(logShowing())renderCard();
 }).catch(()=>{});
 invoke('get_alert_log').then(v=>{alertLogData=Array.isArray(v)?v:[];paintBell();}).catch(()=>{});
-listen('alert_preferences',e=>{alertPrefsData=e.payload;if(logShowing())renderCard();}).catch(()=>{});
-invoke('get_alert_preferences').then(v=>{alertPrefsData=v;}).catch(()=>{});
+function applyAlertPreferences(value){alertPrefsData=value;paintBell();if(logShowing())renderCard();}
+listen('alert_preferences',e=>applyAlertPreferences(e.payload)).catch(()=>{});
+invoke('get_alert_preferences').then(applyAlertPreferences).catch(()=>{});
 function paintBell(){
   pinHandle.classList.toggle('unread',unreadCount()>0&&leadFaces.includes('alerts'));
   renderLead();placeUnreadDot();
@@ -488,24 +491,29 @@ function springEasing(period,zeta){
 const POUR=springEasing(.62,.62), SETTLE=springEasing(.5,.74);
 function renderAlertLog(){
   const old=card.dataset.account===ALERTS_ID?card.querySelector('.a-log'):null;
+  const focused=card.contains(document.activeElement)?document.activeElement.dataset.pref:null;
   const scroll=old?.scrollTop||0, before=old?new Map([...old.querySelectorAll('.a-row')].map(r=>[r.dataset.key,r.offsetTop])):null;
-  const kick=ui().kick||UI.en.kick, rows=[...alertLogData].reverse(), on=key=>!!alertPrefsData?.[key];
+  const kick=ui().kick||UI.en.kick, rows=visibleAlertLog().slice().reverse(), on=key=>!!alertPrefsData?.[key];
   const chips=LOG_KINDS.map(([key,label])=>`<button class="a-chip${on(key)?' on':''}" type="button" data-pref="${key}" aria-pressed="${on(key)}">${esc(textCopy(label))}</button>`).join('');
   const sound=`<span class="a-ink a-sound-ink"><svg class="a-ink-svg" aria-hidden="true"></svg><button class="a-sound${on('sound')?' on':''}" type="button" data-pref="sound" aria-pressed="${on('sound')}" aria-label="${esc(textCopy('Sound'))}">${SOUND_MARK(on('sound'))}</button></span>`;
-  let html=`<div class="c-head"><span class="log-mark">${BELL_MARK}</span><span class="c-title">${esc(textCopy('Alerts'))}</span>${sound}${rows.length?`<button class="a-clear" type="button">${esc(textCopy('Clear'))}</button>`:''}</div>
+  let html=`<div class="c-head"><span class="log-mark">${BELL_MARK}</span><span class="c-title">${esc(textCopy('Alerts'))}</span>${sound}${alertLogData.length?`<button class="a-clear" type="button">${esc(textCopy('Clear'))}</button>`:''}</div>
     <div class="a-chips a-ink"><svg class="a-ink-svg" aria-hidden="true"></svg>${chips}</div>`;
-  if(!rows.length)html+=`<div class="a-empty">${esc(textCopy('No alerts this week'))}</div>`;
+  if(!rows.length)html+=`<div class="a-empty">${esc(textCopy(alertLogData.length?'No alerts match these filters':'No alerts this week'))}</div>`;
   else html+=`<div class="a-log"><div class="a-bead" aria-hidden="true"></div>${rows.map((e,i)=>logRow(e,i,kick)).join('')}</div>`;
   // The rows pour out only as the log opens, not each time it refreshes while open
   const entering=detailOpen<.9||card.dataset.account!==ALERTS_ID;
   card.innerHTML=`<div class="usage-content log-content${entering?' entering':''}">${html}</div>`;
+  if(focused)card.querySelector(`[data-pref="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
   const list=card.querySelector('.a-log');if(list){list.scrollTop=scroll;fadeLog(list);}
   drawInk();placeBead();
   if(list&&!logReduced()){
     if(entering)pourRows(list);else if(before)flowRows(list,before);
   }
   // Read once it has been open long enough to have been seen
-  if(unreadCount()&&!markTimer)markTimer=setTimeout(()=>{markTimer=0;if(logShowing())invoke('mark_alerts_read').catch(()=>{});},1400);
+  if(unreadCount()&&!markTimer)markTimer=setTimeout(()=>{
+    markTimer=0;const ids=visibleAlertLog().filter(e=>!e.read).map(e=>e.id);
+    if(logShowing()&&ids.length)invoke('mark_alerts_read',{ids}).catch(()=>{});
+  },1400);
 }
 // A row reads as the sliver it came out as: the word in the colour of what it reports, then where it came from
 function logRow(e,i,kick){
@@ -753,7 +761,7 @@ card.addEventListener('click',e=>{
     toggle.classList.toggle('on',on);toggle.setAttribute('aria-pressed',String(on));
     if(key==='sound')toggle.innerHTML=SOUND_MARK(on);
     drawInk();
-    invoke('set_alert_preferences',{[key]:on}).then(v=>{alertPrefsData=v;}).catch(()=>{});return;
+    invoke('set_alert_preferences',{[key]:on}).then(applyAlertPreferences).catch(()=>{});return;
   }
   // If the log cannot be cleared, the drained rows come back rather than staying invisible
   if(e.target.closest('.a-clear')){drainRows(()=>invoke('clear_alert_log').catch(()=>{if(logShowing())renderCard();}));return;}

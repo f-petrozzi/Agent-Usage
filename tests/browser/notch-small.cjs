@@ -44,7 +44,7 @@ const measure = page => page.evaluate(() => {
     const small = await open(browser, .8);
     await small.page.evaluate(() => openAlertLog()); await small.page.waitForTimeout(1300);
     const s = await measure(small.page);
-    assert.equal(s.tz, '1.2');
+    assert.equal(s.tz, '1.25');
     // On screen the log's words are within a few percent of medium's, while the notch's own reading stays small
     assert.ok(Math.abs(s.word * .8 - m.word) / m.word < .05 && Math.abs(s.sub * .8 - m.sub) / m.sub < .05, 'text near medium size on screen: ' + JSON.stringify(s));
     assert.equal(s.pct, m.pct, 'the notch itself keeps small mode');

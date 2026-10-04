@@ -40,7 +40,7 @@ const answers = {
         invoke: (c, a = {}) => {
           window.__calls.push([c, a]);
           if (c === 'set_alert_preferences') { answers.get_alert_preferences = { ...answers.get_alert_preferences, ...a }; broadcast('alert_preferences', answers.get_alert_preferences); return Promise.resolve(answers.get_alert_preferences); }
-          if (c === 'mark_alerts_read') { answers.get_alert_log = answers.get_alert_log.map(e => ({ ...e, read: true })); broadcast('alert_log', answers.get_alert_log); return Promise.resolve(answers.get_alert_log); }
+          if (c === 'mark_alerts_read') { answers.get_alert_log = answers.get_alert_log.map(e => !a.ids||a.ids.includes(e.id)?{ ...e, read: true }:e); broadcast('alert_log', answers.get_alert_log); return Promise.resolve(answers.get_alert_log); }
           if (c === 'clear_alert_log') { answers.get_alert_log = []; broadcast('alert_log', []); return Promise.resolve([]); }
           if (c === 'open_alert_session') return Promise.resolve(a.id==='linked');
           if (c === 'open_working_session') return Promise.resolve(true);
@@ -48,7 +48,7 @@ const answers = {
         },
         on: (n, cb) => { (listeners[n] = listeners[n] || []).push(cb); return () => {}; },
       };
-      window.__emit = (n, p) => { if(n==='alert_log')answers.get_alert_log=p; (listeners[n] || []).forEach(cb => cb(p)); };
+      window.__emit = (n, p) => { if(n==='alert_log')answers.get_alert_log=p;if(n==='alert_preferences')answers.get_alert_preferences=p; (listeners[n] || []).forEach(cb => cb(p)); };
       window.AudioContext = class { constructor() { window.__chimes = (window.__chimes || 0) + 1; this.state = 'running'; this.currentTime = 0; this.destination = {}; }
         createGain() { return { gain: { value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
         createOscillator() { return { frequency: {}, connect() {}, start() {}, stop() {} }; } resume() {} };
@@ -102,8 +102,8 @@ const answers = {
     assert.equal(await page.locator('.compact-account').count(), 0, 'the log is about every account, so no ring recedes');
     assert.ok(await page.evaluate(() => Math.abs(card.getBoundingClientRect().top - (pill.getBoundingClientRect().top - 12)) < 2), 'it grows from the pocket end');
     assert.ok(await page.evaluate(() => +getComputedStyle(pinHandle).getPropertyValue('--disc-glyph') < .05), 'the bell melts into the widened flare');
-    assert.deepEqual(await page.locator('#card .a-name').allInnerTexts(), ['Claude', 'Codex', 'Codex']);
-    assert.equal(await page.locator('#card .a-when').last().innerText(), 'yesterday');
+    assert.deepEqual(await page.locator('#card .a-name').allInnerTexts(), ['Claude', 'Codex']);
+    assert.equal(await page.locator('#card .a-row[data-alert="a"]').count(),0,'disabled finished alerts stay saved but hidden');
     assert.deepEqual(await page.locator('#card .a-chip.on').allInnerTexts(), ['Usage', 'Waiting']);
     // The switches are drops of ink: the two that are on run together through a neck; the one that is off is an empty well
     const ink = () => page.evaluate(() => ({ drops: (card.querySelector('.a-chips .a-drop:not(.a-neck)').getAttribute('d').match(/M/g) || []).length,
@@ -131,6 +131,9 @@ const answers = {
     // A switch changes the alert preference it names; its drop wells up and reaches the one beside it
     await page.locator('#card .a-chip', { hasText: 'Finished' }).click(); await page.waitForTimeout(100);
     assert.deepEqual(await page.evaluate(() => window.__calls.filter(c => c[0] === 'set_alert_preferences').at(-1)[1]), { completion: true });
+    assert.equal(await page.locator('#card .a-row[data-alert="a"]').count(),1,'enabling restores the saved finished alert');
+    assert.equal(await page.locator('#card .a-row[data-alert="a"] .a-when').innerText(),'yesterday');
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.pref),'completion','filter keeps keyboard focus after refresh');
     await page.waitForTimeout(900);
     assert.deepEqual(await ink(), { drops: 3, neck: true, wells: 3, inks: [1, 1, 1] });
     assert.equal(await page.evaluate(() => (card.querySelector('.a-chips .a-neck').getAttribute('d').match(/M/g) || []).length), 2, 'three on in a row are one body');
@@ -148,7 +151,9 @@ const answers = {
     assert.ok(necks.filter(count => count === 2).length > 6, 'the necks stretch for a while before they give');
     assert.ok(await page.evaluate(() => __thinnest) >= .19, 'a neck parts with body left, never as a thread');
     assert.deepEqual((await ink()).inks, [1, 0, 1]);
+    assert.equal(await page.locator('#card .a-row[data-alert="b"]').count(),0,'disabling waiting hides its retained row');
     await page.locator('#card .a-chip', { hasText: 'Waiting' }).click(); await page.waitForTimeout(900);
+    assert.equal(await page.locator('#card .a-row[data-alert="b"]').count(),1,'waiting comes back when enabled');
     await page.locator('#card .a-sound').click(); await page.waitForTimeout(100);
     assert.deepEqual(await page.evaluate(() => [window.__calls.filter(c => c[0] === 'set_alert_preferences').at(-1)[1], card.querySelector('.a-sound').getAttribute('aria-pressed')]), [{ sound: true }, 'true']);
     await page.locator('#card .a-sound').click(); await page.waitForTimeout(100);
@@ -190,6 +195,29 @@ const answers = {
     assert.ok(await page.evaluate(() => card.querySelector('.a-row').getAnimations().length > 0));
     await page.waitForTimeout(400);
     assert.equal(await page.locator('#card .a-empty').innerText(), 'No alerts this week');
+    // Hidden notifications remain unread, settings broadcasts filter the open log, and Clear also removes hidden rows.
+    await page.evaluate(()=>{
+      __emit('alert_preferences',{quota:true,waiting:false,completion:false,sound:false,muted:[]});
+      __emit('alert_log',[{id:'hidden-wait',at:Date.now(),kind:'waiting',account:'codex',session:'Hidden',read:false},
+        {id:'visible-quota',at:Date.now(),kind:'quota',account:'claude',level:80,used:.8,read:false}]);
+    });
+    await page.waitForTimeout(1600);
+    assert.deepEqual(await page.locator('.a-row').evaluateAll(rows=>rows.map(row=>row.dataset.alert)),['visible-quota']);
+    assert.deepEqual(await page.evaluate(()=>alertLogData.map(e=>[e.id,e.read])),[['hidden-wait',false],['visible-quota',true]],'viewing the log marks only enabled kinds as read');
+    await page.evaluate(()=>__emit('alert_preferences',{quota:false,waiting:false,completion:false,sound:true,muted:[]}));
+    assert.equal(await page.locator('.a-empty').innerText(),'No alerts match these filters');
+    assert.equal(await page.evaluate(()=>unreadCount()),0,'hidden unread alerts do not light the badge');
+    assert.equal(await page.locator('.a-clear').count(),1,'hidden notifications can still be cleared');
+    await page.locator('.a-chip[data-pref="waiting"]').focus();await page.keyboard.press('Enter');
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('.a-row[data-alert="hidden-wait"]').count(),1,'keyboard toggle restores the same saved notification');
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.pref),'waiting');
+    assert.equal(await page.evaluate(()=>unreadCount()),1,'restored alerts retain unread state');
+    await page.locator('.a-chip[data-pref="waiting"]').click();await page.waitForTimeout(100);
+    await page.locator('.a-clear').click();await page.waitForTimeout(100);
+    await page.evaluate(()=>__emit('alert_preferences',{quota:true,waiting:true,completion:true,sound:false,muted:[]}));
+    assert.equal(await page.locator('.a-row').count(),0,'cleared hidden entries cannot come back');
+    assert.equal(await page.evaluate(()=>alertLogData.length),0);
     await page.mouse.move(640, 400); await page.waitForTimeout(1300);
 
     // Scrolling the other way brings the pin back, and a press is a pin press again
