@@ -317,3 +317,12 @@ Accounts has a clear row of four labeled controls: Focus, Test, Notify on/off, a
 Claude history recognizes `ai-title` / `aiTitle` records and prefers manually chosen titles. Helper 0.2.4 leaves `CLAUDE_CONFIG_DIR` unset when the selected home is the remote user's default `~/.claude`, preserving the usual sibling `~/.claude.json` onboarding file. Custom Claude homes and account-specific Codex `CODEX_HOME` values remain explicit. The desktop refreshes launch metadata and retains collector terminal IDs even when no matching alert-feed entry exists. Newly created tabs carry a scoped identity so the helper can reuse restored tabs after a reload. A manually opened terminal can be reused when its process ID matches; otherwise resume creates a terminal.
 
 After updating, run **Developer: Reload Window** once in an already-open VS Code window to activate helper 0.2.4.
+
+
+## Keep Claude usage checks out of history (4.1.4)
+
+The collector's fallback `claude -p /usage` command now uses `--no-session-persistence`, so checking a quota no longer creates a resumable chat in the user's home directory. Existing small SDK transcripts containing only `/usage` are excluded from Agent Usage history. Real home-directory chats, interactive `/usage` sessions, named conversations, assistant responses and larger transcripts remain visible.
+
+`scripts/archive-claude-usage-probes.py` previews old usage-only transcripts. Run it with `--apply` to move confirmed probes into `~/.local/state/agent-usage/claude-usage-probes/<timestamp>`, with original paths and SHA-256 hashes in `manifest.jsonl`. Active sessions and files changed within five minutes are retained. This makes cleanup recoverable and removes archived probes from Claude's own resume list without changing folder trust, permissions, authentication or real conversations.
+
+The homelab collector has been updated and 92 confirmed completed probes have been backed up. No VS Code helper reload is needed for this collector fix. Update and restart Agent Usage to clear the desktop's history cache.

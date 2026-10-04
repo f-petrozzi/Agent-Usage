@@ -451,7 +451,7 @@ def _claude_cli_usage(timeout: float) -> str:
     if not binary:
         raise UsageError("claude is not installed or not on PATH")
     completed = subprocess.run(
-        [binary, "-p", "/usage", "--output-format", "json"],
+        [binary, "-p", "/usage", "--output-format", "json", "--no-session-persistence"],
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -1187,6 +1187,22 @@ def session_links(profiles: list[tuple[str, Path]], config_dir: Path, now: float
     return sessions[-2048:]
 
 
+def _claude_usage_probe(records: list[dict[str, Any]]) -> bool:
+    """Recognize only SDK /usage-only transcripts; retain interactive and substantive chats."""
+    users = [r for r in records if r.get("type") == "user" and not r.get("isMeta")]
+    if not users or any(r.get("type") in {"assistant", "custom-title", "ai-title", "aiTitle", "summary"} for r in records):
+        return False
+    command = re.compile(r"\s*<command-name>/usage</command-name>\s*<command-message>usage</command-message>\s*<command-args>\s*</command-args>\s*")
+    for record in users:
+        message = record.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if record.get("entrypoint") != "sdk-cli" or record.get("userType") != "external" or not isinstance(content, str):
+            return False
+        if content.strip() != "/usage" and not command.fullmatch(content):
+            return False
+    return True
+
+
 def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: float,
                     include_claude: bool = True, include_antigravity: bool = True) -> list[dict[str, Any]]:
     """Recent saved conversations, including closed ones. Export names/identity only, never messages."""
@@ -1244,6 +1260,9 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
                 if real in seen:
                     continue
                 records = edges(path)
+                # Only classify complete small transcripts, never a head/tail excerpt of a real chat.
+                if provider == "claude" and path.stat().st_size <= 64 * 1024 and _claude_usage_probe(records):
+                    continue
                 if provider == "codex":
                     meta = next((r.get("payload") or {} for r in records if r.get("type") == "session_meta"), {})
                     source = meta.get("source")

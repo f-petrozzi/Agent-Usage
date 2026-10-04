@@ -59,6 +59,50 @@ class HistoryTests(unittest.TestCase):
                           {'type':'ai-title','aiTitle':'New generated title'}])
         self.assertEqual(self.history()[0]['name'], 'My chosen name')
 
+    def test_usage_probes_are_hidden_without_hiding_real_home_directory_chats(self):
+        path=self.claude / 'projects/home' / f'{ID}.jsonl'
+        probe={'type':'user','cwd':'/home/fab','entrypoint':'sdk-cli','userType':'external',
+               'message':{'role':'user','content':'<command-name>/usage</command-name>\n <command-message>usage</command-message>\n <command-args></command-args>'}}
+        self.write(path,[{'type':'user','isMeta':True,'message':{'content':'CLI metadata'}},probe,{'type':'system','subtype':'local_command'}])
+        self.assertEqual(self.history(),[])
+        for additional in [
+            {'type':'user','cwd':'/home/fab','message':{'content':'Fix my project'}},
+            {'type':'assistant','message':{'content':'A substantive conversation'}},
+            {'type':'custom-title','customTitle':'My usage investigation'},
+        ]:
+            self.write(path,[probe,additional]);self.assertEqual(len(self.history()),1)
+        self.write(path,[{**probe,'entrypoint':'cli'}]);self.assertEqual(len(self.history()),1)
+        self.write(path,[{**probe,'message':{'content':'/usage extra text'}}]);self.assertEqual(len(self.history()),1)
+        self.write(path,[probe,{'type':'progress','data':'x'*70000}]);self.assertEqual(len(self.history()),1,'partial reads cannot identify disposable probes')
+
+    def test_cli_usage_queries_do_not_persist_sessions(self):
+        from types import SimpleNamespace
+        with patch.object(usage,'_claude_cli',return_value=('/bin/claude',(2,1,0))), patch.object(usage.subprocess,'run',return_value=SimpleNamespace(returncode=0,stdout='{"result":"Usage reading"}')) as run:
+            self.assertEqual(usage._claude_cli_usage(30),'Usage reading')
+        self.assertEqual(run.call_args.args[0],['/bin/claude','-p','/usage','--output-format','json','--no-session-persistence'])
+
+    def test_probe_archive_preserves_real_recent_and_active_sessions(self):
+        archive_loader=importlib.machinery.SourceFileLoader('probe_archive',str(Path(__file__).parents[1] / 'scripts/archive-claude-usage-probes.py'))
+        archive_spec=importlib.util.spec_from_loader(archive_loader.name,archive_loader)
+        archive=importlib.util.module_from_spec(archive_spec);archive_loader.exec_module(archive)
+        probe={'type':'user','cwd':'/home/fab','entrypoint':'sdk-cli','userType':'external','message':{'content':'/usage'}}
+        paths=[self.claude / 'projects/home' / f'{i:08x}-1234-5678-abcd-123456789012.jsonl' for i in range(4)]
+        for path in paths:self.write(path,[probe],age=600)
+        self.write(paths[1],[probe,{'type':'user','message':{'content':'Real work'}}],age=600)
+        self.write(paths[2],[probe],age=5)
+        backup=self.root / 'backup'
+        with patch.object(archive.usage,'claude_sessions',return_value=[{'sessionId':paths[3].stem}]):
+            plan=archive.archive_probes(self.claude,backup,now=self.now)
+            self.assertEqual(len(plan),1);self.assertTrue(paths[0].exists());self.assertFalse(backup.exists())
+            raw=paths[0].read_bytes();done=archive.archive_probes(self.claude,backup,apply=True,now=self.now)
+        self.assertEqual(len(done),1);self.assertFalse(paths[0].exists())
+        self.assertTrue(all(path.exists() for path in paths[1:]))
+        self.assertEqual(Path(done[0]['backup']).read_bytes(),raw)
+        manifest=json.loads((backup / 'manifest.jsonl').read_text())
+        self.assertEqual(manifest['original'],str(paths[0]))
+        with patch.object(archive.usage,'claude_sessions',return_value=[{'sessionId':paths[3].stem}]):
+            self.assertEqual(archive.archive_probes(self.claude,backup,apply=True,now=self.now),[])
+
     def test_subagents_corrupt_records_and_duplicates_are_excluded(self):
         for i, payload in enumerate([{'source':{'subagent':{}}},{'parent_thread_id':ID},{'id':'bad'}]):
             self.write(self.codex / 'sessions/2026/01/01' / f'rollout-{i}-{ID}.jsonl', [{'type':'session_meta','payload':{'id':ID,'cwd':'/srv/project',**payload}}])
