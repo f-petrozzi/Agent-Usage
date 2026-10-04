@@ -2,7 +2,7 @@
 const { test } = require('node:test'), assert = require('node:assert/strict');
 const { normalizeHistory, accountId, readSessionHistory } = require('../desktop/collector.cjs');
 const { resumeUrl, openSession, createReceipt, installHelper, prepareHelper } = require('../desktop/session-open.cjs');
-const { parseResume, resumeCommand, handleResume, restoreResume, dispatchResume, sendReceipt } = require('../vscode-link/extension.js');
+const { parseResume, resumeCommand, handleResume, restoreResume, dispatchResume, sendReceipt, sshConnection } = require('../vscode-link/extension.js');
 const { URI } = require('../desktop/node_modules/vscode-uri');
 const id = '12345678-1234-5678-abcd-123456789012';
 const target = { provider:'codex', sessionId:id, cwd:"/srv/client's $(project)", agentHome:'/home/me/profiles/b', source:'ssh', sshTarget:'me@lab' };
@@ -70,6 +70,60 @@ test('history focuses a live terminal only on the matching host, and honors work
   await handleResume(f.vscode,f.context,uri({...target,terminalPids:[80]}),0,linuxHost);assert.equal(shown,1);assert.equal(f.calls[0][0],'vscode.openFolder');
   const untrusted=fixture();untrusted.vscode.workspace.isTrusted=false;await assert.rejects(handleResume(untrusted.vscode,untrusted.context,uri(target),0),/Trust this workspace/);
   assert.equal(untrusted.vscode.window.terminals.length,0);
+});
+test('equivalent SSH aliases focus the existing live terminal and use the window authority for closed sessions',async()=>{
+  const f=fixture(),aliases=[];
+  f.vscode.workspace.workspaceFolders[0].uri.authority='ssh-remote+lab';
+  const connection=async(alias,platform)=>{aliases.push(alias);assert.equal(platform,'win32');return 'same-host-and-user';};
+  let shown=0;
+  f.vscode.window.terminals.push({processId:Promise.resolve(80),show:()=>shown++});
+  await handleResume(f.vscode,f.context,uri({...target,live:true,terminalPids:[80]}),0,windowsHost,connection);
+  assert.equal(shown,1);assert.equal(f.calls.length,0);assert.deepEqual(aliases,['me@lab','lab']);
+  await handleResume(f.vscode,f.context,uri(target),0,windowsHost,connection);
+  assert.equal(f.calls[0].cwd.authority,'ssh-remote+lab');assert.equal(f.calls[0].shellPath,'/bin/bash');
+});
+test('the terminal holding the session takes precedence over a restored failed duplicate with the same scope',async()=>{
+  const f=fixture();let shown=0;
+  const scope=JSON.stringify(['codex','ssh-remote+me@lab',target.agentHome,id]);
+  f.vscode.window.terminals.push({processId:Promise.resolve(70),creationOptions:{env:{AGENT_USAGE_SESSION_SCOPE:scope}},show:()=>assert.fail('must not focus the duplicate')});
+  f.vscode.window.terminals.push({processId:Promise.resolve(80),show:()=>shown++});
+  await handleResume(f.vscode,f.context,uri({...target,live:true,terminalPids:[90,80]}),0);
+  assert.equal(shown,1);assert.equal(f.calls.length,0);
+});
+test('live sessions cannot launch duplicates when their terminal is missing, exited, on another host, or SSH lookup fails',async()=>{
+  for(const condition of ['missing','exited','other host','lookup failed']){
+    const f=fixture();let shown=0;
+    if(condition!=='missing')f.vscode.window.terminals.push({processId:Promise.resolve(80),
+      ...(condition==='exited'?{exitStatus:{code:0}}:{}),show:()=>shown++});
+    if(condition==='other host'||condition==='lookup failed')f.vscode.workspace.workspaceFolders[0].uri.authority='ssh-remote+other';
+    const lookup=async alias=>condition==='lookup failed'?null:alias;
+    await assert.rejects(handleResume(f.vscode,f.context,uri({...target,live:true,terminalPids:[80]}),0,windowsHost,lookup),/already running.*No duplicate session was started/);
+    assert.equal(shown,0);assert.equal(f.calls.length,0);assert.equal(f.store.has('pendingResume'),false);
+  }
+  assert.equal(parseResume(uri({...target,live:true})).live,true);
+  assert.equal(parseResume(encoded({...parseResume(uri(target)),live:'true'})).live,false,'only a boolean enables the guard');
+});
+test('effective SSH configuration keeps different users, ports and proxy routes separate and handles lookup errors',async()=>{
+  const config='hostname lab.internal\nuser me\nport 22\nproxyjump none\nproxycommand none\n';
+  const resolve=output=>sshConnection('me@lab','win32',(exe,args,options,done)=>{
+    assert.equal(exe,'ssh.exe');assert.deepEqual(args,['-G','me@lab']);assert.equal(options.windowsHide,true);
+    assert.equal(options.timeout,3000);done(null,output);
+  });
+  const key=await resolve(config);
+  assert.equal(await resolve(config.replace('lab.internal','LAB.INTERNAL.')),key);
+  for(const [from,to] of [['user me','user other'],['port 22','port 2222'],['proxyjump none','proxyjump jump'],['proxycommand none','proxycommand tunnel']])assert.notEqual(await resolve(config.replace(from,to)),key);
+  for(const output of ['',config.replace('port 22','port bad'),config.replace('user me','')])assert.equal(await resolve(output),null);
+  assert.equal(await sshConnection('lab; touch file','win32',()=>assert.fail('must not execute')),null);
+  assert.equal(await sshConnection('lab','win32',(e,a,o,done)=>done(new Error('unavailable'))),null);
+});
+test('real OpenSSH -G resolves explicit-user and configured aliases without a network connection',async t=>{
+  const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{execFile}=require('node:child_process');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-usage-ssh-config-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const config=path.join(root,'config');
+  fs.writeFileSync(config,'Host lab alternate\n  HostName 127.0.0.1\n  User me\n  Port 2222\n  ProxyJump none\n');
+  const run=(exe,args,options,done)=>execFile(exe,['-F',config,...args],options,done);
+  const keys=await Promise.all(['lab','me@lab','alternate','other@lab'].map(alias=>sshConnection(alias,process.platform,run)));
+  assert.ok(keys[0],'OpenSSH must resolve the fixture');assert.equal(keys[0],keys[1]);assert.equal(keys[0],keys[2]);assert.notEqual(keys[0],keys[3]);
 });
 test('history installs the helper even with no live terminal; missing Code is actionable',async()=>{
   const {EventEmitter}=require('node:events');let installed=0,args;

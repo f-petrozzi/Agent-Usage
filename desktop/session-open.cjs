@@ -15,7 +15,7 @@ function resumeUrl(target, reply) {
   const pids = (target.terminalPids || []).filter(n => Number.isInteger(n) && n > 1 && n <= 2147483647).slice(0, 16);
   // VS Code percent-decodes URI.query and reserves `session` for its own chats. An opaque URL-safe payload
   // survives both steps without corrupting '+' SSH authorities or '&'/'%' in paths.
-  const payload = { provider: target.provider, sessionId: target.sessionId, cwd: target.cwd, home: target.agentHome, remote, pids,
+  const payload = { provider: target.provider, sessionId: target.sessionId, cwd: target.cwd, home: target.agentHome, remote, pids, live: target.live === true,
     title: typeof target.name === 'string' ? target.name.slice(0, 160) : '',
     ...(reply ? { reply } : {}) };
   return `vscode://f-petrozzi.agent-usage-link/resume?target=${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
@@ -73,7 +73,7 @@ function installFailure(error, stdout, stderr) {
   return new Error('The VS Code terminal helper could not be installed. ' + detail);
 }
 // The bundled helper's identity; tests keep it equal to vscode-link/package.json.
-const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.4' };
+const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.5' };
 // Installed only when VS Code lacks this version. Reinstalling it on every launch (as --force did) replaced the helper
 // under a running VS Code window, which then dropped the first link until a new window was opened.
 async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
