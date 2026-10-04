@@ -8,7 +8,7 @@ const { sessionUrl } = require('./alerts.cjs');
 const { validHost, validLinuxPath } = require('./collector.cjs');
 function resumeUrl(target, reply) {
   if (!target || !['claude', 'codex', 'antigravity'].includes(target.provider) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.sessionId || '')
-    || !validLinuxPath(target.cwd) || !validLinuxPath(target.agentHome)) return null;
+    || !validLinuxPath(target.cwd) || target.focusOnly !== true && !validLinuxPath(target.agentHome)) return null;
   const remote = target.source === 'ssh' && validHost(target.sshTarget) ? 'ssh-remote+' + target.sshTarget
     : target.source === 'wsl' && /^[A-Za-z0-9._-]{1,120}$/.test(target.wslDistro || '') ? 'wsl+' + target.wslDistro : '';
   if (!remote) return null;
@@ -16,6 +16,7 @@ function resumeUrl(target, reply) {
   // VS Code percent-decodes URI.query and reserves `session` for its own chats. An opaque URL-safe payload
   // survives both steps without corrupting '+' SSH authorities or '&'/'%' in paths.
   const payload = { provider: target.provider, sessionId: target.sessionId, cwd: target.cwd, home: target.agentHome, remote, pids, live: target.live === true,
+    ...(target.focusOnly === true ? { focusOnly: true } : {}),
     title: typeof target.name === 'string' ? target.name.slice(0, 160) : '',
     ...(reply ? { reply } : {}) };
   return `vscode://f-petrozzi.agent-usage-link/resume?target=${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
@@ -47,33 +48,15 @@ async function createReceipt({ initialMs = 25000, receivedMs = 120000 } = {}) {
   arm(initialMs);
   return { reply: { port: server.address().port, token }, result, close: () => { done = true; resolve(false); close(); } };
 }
-function codeLocations(env = process.env) {
-  return [env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Microsoft VS Code', 'Code.exe'),
-    env.ProgramFiles && path.join(env.ProgramFiles, 'Microsoft VS Code', 'Code.exe'),
-    env['ProgramFiles(x86)'] && path.join(env['ProgramFiles(x86)'], 'Microsoft VS Code', 'Code.exe')].filter(Boolean);
-}
+const { codeLocations, codeCli } = require('./platform-vscode.cjs');
 const installed = new Map();
-function codeCli(executable, { exists = fs.existsSync, read = fs.readFileSync } = {}) {
-  const root = path.dirname(executable), bin = path.join(root, 'bin');
-  // Follow the installed wrapper's entrypoint rather than assuming Code's layout.
-  try {
-    const match = read(path.join(bin, 'code.cmd'), 'utf8').match(/"%~dp0([^"\r\n]*cli\.js)"/i);
-    if (match) {
-      const cli = path.resolve(bin, match[1].replace(/\\/g, path.sep));
-      if (exists(cli)) return cli;
-    }
-  } catch {}
-  const cli = path.join(root, 'resources', 'app', 'out', 'cli.js');
-  if (exists(cli)) return cli;
-  throw new Error('VS Code’s command-line installer was not found. Finish updating VS Code, then try again.');
-}
 function installFailure(error, stdout, stderr) {
   const detail = error.killed ? 'Installation timed out after 60 seconds.'
     : String(stderr || stdout || error.message || '').replace(/\x1b\[[0-9;]*m/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, 600);
   return new Error('The VS Code terminal helper could not be installed. ' + detail);
 }
 // The bundled helper's identity; tests keep it equal to vscode-link/package.json.
-const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.5' };
+const HELPER = { id: 'f-petrozzi.agent-usage-link', version: '0.2.6' };
 // Installed only when VS Code lacks this version. Reinstalling it on every launch (as --force did) replaced the helper
 // under a running VS Code window, which then dropped the first link until a new window was opened.
 async function installHelper(executable, helper, run = execFile, { exists = fs.existsSync, read = fs.readFileSync, env = process.env, extraArgs = [] } = {}) {
@@ -120,7 +103,7 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
     if (receipt) await receipt.result;
     } finally { receipt?.close(); }
   } else {
-    if (target.resume) throw new Error('Install the standard Windows VS Code build so Agent Usage can install its session helper.');
+    if (target.resume) throw new Error('Install the standard VS Code build so Agent Usage can install its session helper.');
     if (!protocolName(url)) throw new Error('VS Code was not found. Install VS Code or register its vscode: links.');
     await shell.openExternal(url);
   }

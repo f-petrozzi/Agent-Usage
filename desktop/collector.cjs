@@ -9,11 +9,9 @@ const validHost = value => typeof value === 'string' && value.length <= 120 && /
 // The app's id for a collector account; the session feed names accounts the same way the usage snapshot does
 const accountId = (base, raw) => base + '_' + crypto.createHash('sha256').update(String(raw)).digest('hex').slice(0, 12);
 // [executable, args] reaching the collector over WSL or SSH, or null when no SSH host is set
-function collectorCommand(cfg, flags, sshOptions = []) {
-  if (cfg.source !== 'ssh') return ['wsl.exe', ['--exec', 'sh', '-lc', `exec "$HOME/.local/bin/agent-usage" ${flags}`]];
-  if (!validHost(cfg.sshTarget)) return null;
-  return ['ssh.exe', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', ...sshOptions,
-    cfg.sshTarget, `~/.local/bin/agent-usage ${flags}`]];
+function collectorCommand(cfg, flags, sshOptions = [], platform = process.platform) {
+  if (cfg.source === 'ssh' && !validHost(cfg.sshTarget)) return null;
+  return require('./platform-runtime.cjs').collectorCommand(cfg, flags, sshOptions, platform);
 }
 function normalize(raw) {
   if (raw.schema !== 2 || !Array.isArray(raw.accounts)) throw new Error('Unsupported collector snapshot');

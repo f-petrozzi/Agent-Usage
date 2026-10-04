@@ -16,7 +16,7 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
       const answers={get_agent_accounts:accounts,get_state:{sessions:[],agg:'idle',counts:{},lang_resolved:'en',clock_24h:false},get_activity:[],get_notch_slots:[],get_notch_edge:'top',get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true},get_update_state:{status:'current'}};
       window.agentUsage={invoke:async(c,a)=>{
         if(c==='get_session_history')return Array.from({length:30},(_,i)=>({id:a.account+'-'+i,sessionId:'12345678-1234-5678-abcd-123456789012',name:`${a.account==='claude'?'Review reset dropdown':'Continue workspace work'} ${i+1}`,since:now-i*3600e3,live:i===0,state:'idle',canOpen:true}));
-        if(c==='open_history_session'){calls.push(a);return true;}
+        if(c==='open_history_session'||c==='open_working_session'){calls.push(a);return true;}
         return c in answers?answers[c]:null;
       },on:(n,cb)=>{(listeners[n]??=[]).push(cb);return()=>{};}};
       window.__emit=(n,p)=>(listeners[n]||[]).forEach(cb=>cb(p));
@@ -51,6 +51,9 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
     }
     await page.evaluate(()=>{const account=agentAccounts.find(a=>a.id==='antigravity');account.snap.windows.push({id:'claude',label:'Claude models',used:.5},{id:'3p-gpt',label:'GPT models',used:.6});__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge:'right',along:.5,visible:true,tracking:false,pinned:false});hoverId='antigravity';showCard();});await page.waitForTimeout(1000);
     assert.equal(await page.evaluate(()=>!!card.querySelector('.inline-extras') && !!(card.querySelector('.inline-extras').compareDocumentPosition(card.querySelector('.c-history'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'AGY model quotas precede history on a side edge');
+    await page.evaluate(()=>{__emit('activity',[{account:'antigravity',provider:'antigravity',id:'live-agy',sessionId:'12345678-1234-5678-abcd-123456789012',name:'Live AGY',detail:'Working',state:'busy',since:Date.now()}]);renderCard();});
+    await page.locator('.session-link').click();
+    assert.deepEqual(await page.evaluate(()=>__calls.at(-1)),{id:'live-agy',account:'antigravity'},'AGY Working uses the same identity route');
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.setViewportSize({width:360,height:300});
     for(const edge of ['top','right','bottom','left']){

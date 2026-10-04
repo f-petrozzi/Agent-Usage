@@ -4,12 +4,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
+const { createInputMonitor, shortcuts, SESSION_SHORTCUT } = require('./platform-input.cjs');
 const { openSession, resumeUrl, prepareHelper } = require('./session-open.cjs');
 const { createUpdates } = require('./updates.cjs');
+const windowPolicy = require('./platform-window.cjs');
+const { canInstallUpdates } = require('./platform-runtime.cjs');
+const { resolveSession, sessionScope } = require('./session-routing.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
 const {normalizePins,libraryRows,changePin,publicRow,alertResumeRow}=require('./session-library.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks, readSessionHistory } = require('./collector.cjs');
-const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts, sessionUrl, historicalTarget, sessionTarget } = require('./alerts.cjs');
+const { alertPreferences, QuotaAlerts, SessionAlerts, orderedAccounts, trayReadings, alertLog, logAlerts } = require('./alerts.cjs');
 
 app.setName('Agent Usage');
 app.setAppUserModelId('ink.petro.agent-usage');
@@ -22,7 +26,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
   });
 }
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
-let trayTimer;
+let trayTimer, nativeInput;
 let historyCache = null, historyPending = null, historyAt = 0, historyGeneration = 0;
 async function recentHistory(refresh = false) {
   if (!refresh && historyCache && Date.now() - historyAt < 60000) return historyCache;
@@ -41,11 +45,10 @@ let expanded = false, alerting = false, pinned = false, menuOpen = false, visibl
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
 let switcherRequested=false,switcherFocused=false,sessionKeyHeld=false,sessionShortcutAt=0,sessionShortcutSource='',sessionFollowUntil=0;
-const SESSION_SHORTCUT='Ctrl+Scrolllock';
 function registerSessionShortcut(){
   // Windows owns this chord in InputMonitor's native message loop. Registering it twice
   // makes the helper lose WM_HOTKEY ownership and depend entirely on sampled key state.
-  if(process.platform==='win32')return !!input;
+  if(process.platform==='win32')return nativeInput?.ready === true;
   return globalShortcut.register(SESSION_SHORTCUT,()=>triggerSessionShortcut('electron'));
 }
 function triggerSessionShortcut(source){
@@ -61,11 +64,11 @@ function triggerSessionShortcut(source){
 function focusSwitcher(){
   if(!win||win.isDestroyed())return;
   // Electron makes a focusable Windows window a taskbar tab. Restore the overlay policy before focusing.
-  switcherFocused=true;win.setFocusable(true);win.setSkipTaskbar(true);win.focus();
+  switcherFocused=true;windowPolicy.focus(win);
 }
 function releaseSwitcherFocus(){
   if(!switcherFocused)return;
-  switcherFocused=false;win?.blur();win?.setFocusable(false);win?.setSkipTaskbar(true);
+  switcherFocused=false;if(win&&!win.isDestroyed())windowPolicy.releaseFocus(win);
 }
 function openSessionSwitcher(){
   sessionFollowUntil=0;switcherRequested=true;reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+3000);
@@ -80,13 +83,32 @@ async function sessionLibrary(refresh=false){
   }
   return libraryRows(history,config.sessionPins,config);
 }
+async function openResolvedSession(identity, alert = null) {
+  const scope = sessionScope(config);
+  const matches = s => s.account === identity.account && (identity.sessionId ? s.sessionId === identity.sessionId : s.id === identity.id);
+  let active = [...(sessionAlerts.previous?.values() || []), ...(feed?.sessions || [])], rows;
+  try { rows = await sessionLibrary(true); }
+  catch (error) { if (!active.some(matches)) throw error; rows = []; }
+  if (scope !== sessionScope(config)) throw new Error('Collector changed. Open Sessions and try again.');
+  if (alert) {
+    const saved = alertResumeRow(alert, rows);
+    if (saved) identity = {account:saved.account,id:saved.id};
+    else if (!identity.sessionId) throw new Error('This notification’s session is no longer available. Open Sessions to find the chat.');
+  }
+  if (!rows.some(matches) && (alert?.target?.sessionId || active.some(matches))) {
+    active = await readSessionLinks({...config});
+    if (scope !== sessionScope(config)) throw new Error('Collector changed. Open Sessions and try again.');
+  }
+  const target = resolveSession({rows,active,config,...identity});
+  releaseSwitcherFocus();return openSession(target,shell);
+}
 function currentSessionPins(){
   return normalizePins(config.sessionPins).filter(s=>s.source===config.source&&(s.source==='ssh'?s.sshTarget===config.sshTarget:s.wslDistro===config.lastWslDistro)).map(s=>({id:s.id,account:s.account}));
 }
 let phase = 'hidden', frameReady = false, hotkeyProblem = '', lastRaise = 0, replacements = 0, pageViewport = null, lastPlacedAt = 0;
+let placementTimer = null, placementFailures = 0;
 let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null, pendingPlacementStage = null, pendingPlacementAtPointer = false;
 const uiRoot = path.join(__dirname, 'ui');
-const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 const absent = () => ({ status: 'absent', windows: [], fetched_at: 0, note: '' });
 const placeholder = () => ({ id: 'collector', base: 'claude', name: 'Agent Usage', glyph: '…', snap: { ...absent(), status: 'loading', note: 'Reading your collector…', details: [] } });
 const accounts = () => {
@@ -156,14 +178,13 @@ async function start() {
   monitor = screen.getAllDisplays().find(d => String(d.id) === config.display) || screen.getPrimaryDisplay();
   // Shown once and then only moved (see place): Windows zooms a window in from its middle each time
   // it is shown, and on this screen-sized overlay that made the notch float in to the edge
-  win = new BrowserWindow({ ...monitor.bounds, show: false, transparent: true, frame: false, resizable: false,
-    icon: resource('icon.ico'), focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, backgroundColor: '#00000000',
+  win = new BrowserWindow({ ...windowPolicy.overlayOptions(monitor.bounds, resource('icon.ico')),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true,
       nodeIntegration: false, backgroundThrottling: false, spellcheck: false,
       // The alert chime is synthesised in the page, and an overlay nobody clicks never has a gesture to start audio
       autoplayPolicy: 'no-user-gesture-required' } });
   secure(win); win.setIgnoreMouseEvents(true, { forward: true });
-  win.setAlwaysOnTop(true, 'screen-saver');
+  windowPolicy.initialize(win);
   win.webContents.setZoomFactor(config.scale);
   // Install the bundled UI helper before the app appears, so reloading an already-open Code window after
   // updating the app loads the new helper even before the first history click. Clicks still retry failures.
@@ -171,7 +192,7 @@ async function start() {
   await win.loadFile(path.join(uiRoot, 'notch.html'));
   place(); win.showInactive(); // its one show happens parked, off every screen
   updates = createUpdates({ app, updater: require('electron-updater').autoUpdater,
-    installed: process.platform === 'win32' && app.isPackaged && fs.existsSync(resource('installer-managed')),
+    installed: canInstallUpdates({packaged: app.isPackaged, exists: fs.existsSync, resource}),
     onChange: state => {
       if(['available','ready','error'].includes(state.status)){
         reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+6500);
@@ -223,10 +244,29 @@ function useMonitor(display) {
   place();
   sendLayout();
 }
+function armPlacementTimeout() {
+  clearTimeout(placementTimer);
+  const token = pendingPlacement;
+  placementTimer = setTimeout(() => recoverPlacement(token), 4000);placementTimer.unref?.();
+}
+function recoverPlacement(token) {
+  if (pendingPlacement !== token || token === null || !win || win.isDestroyed()) return;
+  diagnose('placement timeout token=' + token + ' stage=' + pendingPlacementStage);
+  if (++placementFailures <= 2) {
+    pendingPlacement = ++placementSerial;pendingPlacementStage='stow';
+    send('monitor_stow',{placement:pendingPlacement});armPlacementTimeout();return;
+  }
+  clearTimeout(placementTimer);placementTimer=null;
+  pendingPlacement=null;pendingPlacementStage=null;pendingPlacementEdge=null;pendingPlacementAtPointer=false;
+  visible=false;phase='hidden';dismissed=true;hot=[];controls={};alerting=false;expanded=false;switcherRequested=false;releaseSwitcherFocus();endMove();
+  send('disappear');place();sendLayout();win.setOpacity(1);broadcast('ui_flags',flags());
+  broadcast('notice','Display placement could not finish. Reveal the notch again to retry.');
+}
 function switchMonitor(display, { show = visible, atPointer = false } = {}) {
   // Clear Chromium's last painted surface before moving a settled notch to another screen.
   win.setOpacity(0); win.setIgnoreMouseEvents(true, { forward: true });
   hot = []; controls = {}; lastCursor = ''; inside = false;
+  placementFailures=0;
   pendingPlacement = ++placementSerial; visible = show; phase = 'transfer'; replacements = 0;
   pendingPlacementStage = 'stow'; pendingPlacementAtPointer = atPointer;
   monitor = display; config.display = String(display.id);
@@ -234,18 +274,15 @@ function switchMonitor(display, { show = visible, atPointer = false } = {}) {
     const at = cursorPlacement(screen.getCursorScreenPoint()); config.edge = at.edge; config.along = at.along;
   }
   pendingPlacementEdge = config.edge;
-  send('monitor_stow', { placement: pendingPlacement });
+  send('monitor_stow', { placement: pendingPlacement });armPlacementTimeout();
   if (show) visibleUntil = Math.max(visibleUntil, Date.now() + 1800);
 }
 // Closed, the window is parked just past the leftmost screen, still shown: nothing of it is composited over
 // other apps, and opening moves it back, as moving it between screens always has, with no show animation.
-function parkedBounds() {
-  const left = Math.min(...screen.getAllDisplays().map(d => d.bounds.x));
-  return { x: left - monitor.bounds.width - 400, y: monitor.bounds.y, width: monitor.bounds.width, height: monitor.bounds.height };
-}
-function place() { if (win && !win.isDestroyed()) win.setBounds(visible ? monitor.bounds : parkedBounds(), false); }
+function parkedBounds() { return windowPolicy.parkedBounds(screen.getAllDisplays(), monitor); }
+function place() { if (win && !win.isDestroyed()) windowPolicy.place(win, visible ? monitor.bounds : parkedBounds()); }
 // Above the taskbar, which is also topmost and wins whenever it was raised more recently
-function raise() { win.setAlwaysOnTop(true, 'screen-saver'); win.moveTop(); }
+function raise() { windowPolicy.raise(win); }
 function sendLayout() {
   if (!config || !monitor || pendingPlacementStage === 'stow') return;
   send('layout', { width: monitor.bounds.width, height: monitor.bounds.height, scale: config.scale,
@@ -317,28 +354,16 @@ function registerShortcut(value) {
     if (config.shortcut !== value) globalShortcut.unregister(config.shortcut);
   }
   config.shortcut = value;
-  input?.kill();
-  if (process.platform !== 'win32') return; // development preview only
-  const [key, mods] = shortcuts[value];
-  input = spawn(resource('InputMonitor.exe'), [String(process.pid), String(key), String(mods)], { windowsHide: true, stdio: ['ignore','pipe','pipe'] });
-  const helper=input;let statusBuffer='';
-  helper.stderr.on('data',data=>{
-    statusBuffer+=data.toString();let end;
-    while((end=statusBuffer.indexOf('\n'))>=0){const line=statusBuffer.slice(0,end).trim();statusBuffer=statusBuffer.slice(end+1);if(/^sessions-ready hotkey=[01] hook=[01] thread=\d+$/.test(line)||/^sessions-event (hotkey|detected)$/.test(line))diagnose(line);}
+  if (process.platform !== 'win32') return; // preview callback; native Mac monitoring is a separate implementation
+  if (!nativeInput) nativeInput = createInputMonitor({
+    executable: resource('InputMonitor.exe'), owner: process.pid, launch: spawn,
+    onInput: inputLine, onChild: child => { input = child; }, diagnose,
+    onReset: () => { inputLine('000'); endMove(); },
+    onProblem: problem => { hotkeyProblem = problem; if(problem)broadcast('notice',problem); }
   });
-  let buffer = '';
-  input.stdout.on('data', data => {
-    buffer += data.toString();
-    let at;
-    while ((at = buffer.indexOf('\n')) >= 0) {
-      const value = buffer.slice(0, at).trim(); buffer = buffer.slice(at + 1);
-      if (!/^[01]{3}$/.test(value)) continue;
-      inputLine(value);
-    }
-  });
-  helper.on('error', error => { diagnose('sessions helper start failed '+error.code);hotkeyProblem = 'Keyboard helper could not start. Reinstall this build.'; broadcast('notice', hotkeyProblem); });
-  helper.on('exit',(code,signal)=>{if(input===helper){sessionKeyHeld=false;diagnose('sessions helper stopped code='+code+' signal='+signal);}});
+  nativeInput.configure(value);
 }
+
 function inputLine(value){
   if(!/^[01]{3}$/.test(value))return;
   const previous=held,previousMouse=mouseDown,previousSession=sessionKeyHeld;
@@ -469,7 +494,7 @@ function updateTray() {
 const ALERT_MS = 6500;
 function showAlerts(events) {
   if (!events.length || !win || win.isDestroyed()) return;
-  config.alertLog = logAlerts(config.alertLog, events); save(); broadcast('alert_log', config.alertLog);
+  config.alertLog = logAlerts(config.alertLog, events.map(e=>({...e,scope:sessionScope(config)}))); save(); broadcast('alert_log', config.alertLog);
   const logged = config.alertLog.slice(-events.length); // their log entries, so the page can mark the ones it showed as seen
   reveal(false);
   visibleUntil = Math.max(visibleUntil, Date.now() + 2500); // until the page has it open and says so
@@ -504,7 +529,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
         const at = cursorPlacement(point); config.edge = at.edge; config.along = at.along;
       }
       pendingPlacementEdge = config.edge; pendingPlacementStage = 'paint';
-      useMonitor(monitor); if (visible) raise(); return true;
+      useMonitor(monitor);armPlacementTimeout();if (visible) raise(); return true;
     }
     case 'monitor_placed': {
       if (event.sender !== win?.webContents || !Number.isInteger(args.placement) || args.placement !== pendingPlacement || pendingPlacementStage !== 'paint') return false;
@@ -514,7 +539,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       }
       // The shortcut may have crossed to another edge while the masked renderer was resizing.
       if (visible && pendingPlacementEdge !== config.edge) {
-        pendingPlacement = ++placementSerial; pendingPlacementEdge = config.edge; sendLayout(); return false;
+        pendingPlacement = ++placementSerial; pendingPlacementEdge = config.edge; sendLayout();armPlacementTimeout();return false;
       }
       // Asked to cover the monitor, the window can land elsewhere on its first move from the parked position (sized for
       // the leftmost screen) to a screen at another scale; clicks then miss everything drawn. Placed again from the screen
@@ -523,8 +548,9 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       const off = !!actual && ['x', 'y', 'width', 'height'].some(k => Math.abs(actual[k] - monitor.bounds[k]) > 1);
       diagnose(`placed display=${monitor.id} scale=${monitor.scaleFactor} monitor=${JSON.stringify(monitor.bounds)} window=${JSON.stringify(actual)} page=${JSON.stringify(pageViewport)} zoom=${config.scale}${off ? ' off' : ''}`);
       if (visible && off && replacements < 2) {
-        replacements++; place(); pendingPlacement = ++placementSerial; sendLayout(); return false;
+        replacements++; place(); pendingPlacement = ++placementSerial; sendLayout();armPlacementTimeout();return false;
       }
+      clearTimeout(placementTimer);placementTimer=null;placementFailures=0;
       replacements = 0; lastPlacedAt = Date.now();
       pendingPlacement = null; pendingPlacementEdge = null; pendingPlacementStage = null; pendingPlacementAtPointer = false;
       phase = visible ? 'shown' : 'hidden';
@@ -564,15 +590,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'session_follow_ready':if(event.sender===win?.webContents&&held){sessionFollowUntil=0;lastCursor='';}return null;
     case 'get_focus_accounts':return config.focusAccounts||[];
     case 'set_focus_accounts':return setFocusAccounts(args.accounts);
-    case 'open_history_session': {
-      // Identity only from the renderer: launch metadata must come from this collector's saved snapshot.
-      const saved=(await sessionLibrary(true)).find(s=>s.account===args.account&&s.id===args.id);
-      if (!saved) throw new Error('This session is no longer in recent history. Open history again.');
-      const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === saved.account && (s.sessionId || s.id) === saved.sessionId);
-      const target = {...saved,terminalPids:[...new Set([...(current?.terminalPids||[]),...(saved.terminalPids||[])])].slice(0,16)};
-      if (!resumeUrl(target)) throw new Error('This agent does not support session resume here, or its workspace metadata is missing.');
-      releaseSwitcherFocus();return openSession(target, shell);
-    }
+    case 'open_history_session': return openResolvedSession({account:args.account,id:args.id});
     case 'get_claude_auth': return { available: false, busy: false, can_sign_in: false };
     case 'get_glyphs': return glyphs();
     case 'get_tray_options': return accounts().map(a => ({ id: a.id, label: a.name, status: a.snap.status, used: a.snap.windows[0]?.used }));
@@ -587,38 +605,12 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       broadcast('notification_test', notificationTestAccount); return notificationTestAccount;
     }
     case 'open_alert_session': {
-      releaseSwitcherFocus();
-      // Resolve a stored alert, never accept a URL or command from the renderer.
       const entry = alertLog(config.alertLog).find(e => e.id === args.id);
-      if(entry&&!entry.target?.terminalPids?.length){
-        // Saved CLI metadata can resume a closed chat, including AGY, without changing its account.
-        const saved=alertResumeRow(entry,await sessionLibrary().catch(()=>[]));
-        if(saved)return openSession(saved,shell);
-      }
-      if (entry?.target && !entry.target.terminalPids?.length) {
-        const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === entry.account && s.sessionId === entry.target.sessionId);
-        const target = sessionTarget(current);
-        if (target?.terminalPids?.length) entry.target = target;
-      }
-      if (entry && !entry.target && entry.kind === 'completion') {
-        entry.target = historicalTarget(entry, await readSessionLinks(config));
-        if (entry.target) {
-          config.alertLog = alertLog(config.alertLog).map(e => e.id === entry.id ? { ...e, target: entry.target } : e);
-          save(); broadcast('alert_log', config.alertLog);
-        }
-      }
-      const url = sessionUrl(entry?.target);
-      if (!url) return false;
-      return openSession(entry.target, shell, { protocolName: url => app.getApplicationNameForProtocol(url) });
+      if (!entry || !['waiting','completion'].includes(entry.kind)) return false;
+      if (entry.scope && entry.scope !== sessionScope(config)) throw new Error('Choose the SSH host or WSL distribution that produced this notification, then try again.');
+      return openResolvedSession({account:entry.account,sessionId:entry.target?.sessionId},entry);
     }
-    case 'open_working_session': {
-      releaseSwitcherFocus();
-      const active = feed?.sessions.find(s => s.account === args.account && s.id === args.id)
-        || sessionAlerts.previous?.get(args.account + ':' + args.id);
-      const url = sessionUrl(active);
-      if (!url) return false;
-      return openSession(active, shell, { protocolName: url => app.getApplicationNameForProtocol(url) });
-    }
+    case 'open_working_session': return openResolvedSession({account:args.account,id:args.id});
     case 'get_alert_log': return config.alertLog = alertLog(config.alertLog);
     case 'mark_alerts_read': { // all of them (the log was opened), or just the ones an alert showed and was pointed at
       const ids = Array.isArray(args.ids) ? new Set(args.ids.filter(id => typeof id === 'string').slice(0, 40)) : null;
@@ -693,7 +685,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       if (config.source !== args.source || config.sshTarget !== target) { quotaAlerts = new QuotaAlerts(); config.quotaWarnings = {}; }
       config.source = args.source; config.sshTarget = target; save(); restartCollector(); return null;
     }
-    case 'set_shortcut': registerShortcut(args.shortcut); hotkeyProblem = ''; save(); return config.shortcut;
+    case 'set_shortcut': hotkeyProblem = ''; registerShortcut(args.shortcut); save(); return config.shortcut;
     case 'open_settings': openSettings(); return null;
     case 'close_settings': settings?.close(); return null;
     case 'refresh_ring': requestRefresh(); return false;
@@ -708,4 +700,4 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   }
 });
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer); globalShortcut.unregisterAll(); input?.kill(); collector?.close(); feed?.close(); updates?.close(); });
+app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer);clearTimeout(placementTimer); globalShortcut.unregisterAll(); nativeInput?.close(); collector?.close(); feed?.close(); updates?.close(); });

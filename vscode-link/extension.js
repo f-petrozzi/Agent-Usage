@@ -68,11 +68,11 @@ function parseResume(uri) {
   if (uri.path !== '/resume') return null;
   const payload = linkPayload(uri.query), link = parseLink({ path: '/open', query: uri.query }, ['claude', 'codex', 'antigravity']);
   const home = payload?.home, remote = payload?.remote;
-  if (!link || !validPath(link.cwd) || !validPath(home)
+  if (!link || !validPath(link.cwd) || payload.focusOnly !== true && !validPath(home)
     || !/^(?:ssh-remote\+[A-Za-z0-9_][A-Za-z0-9._-]*(?:@[A-Za-z0-9_][A-Za-z0-9._-]*)?|wsl\+[A-Za-z0-9._-]{1,120})$/.test(remote || '')) return null;
   const reply = payload.reply;
   if (reply && (!Number.isInteger(reply.port) || reply.port < 1024 || reply.port > 65535 || !/^[a-f0-9]{48}$/.test(reply.token || ''))) return null;
-  return { ...link, home, remote, live: payload.live === true, title: cleanTitle(payload.title), ...(reply ? { reply: { port: reply.port, token: reply.token } } : {}) };
+  return { ...link, home, remote, focusOnly: payload.focusOnly === true, live: payload.live === true, title: cleanTitle(payload.title), ...(reply ? { reply: { port: reply.port, token: reply.token } } : {}) };
 }
 async function sendReceipt(reply, status, message) {
   if (!reply) return;
@@ -152,7 +152,7 @@ async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_
   const restored = vscode.window.terminals.find(t=>t.exitStatus===undefined&&t.creationOptions?.env?.AGENT_USAGE_SESSION_SCOPE===key);
   const previous = restored || resumed.get(key);
   if (previous && previous.exitStatus===undefined && vscode.window.terminals.includes(previous)) { previous.show(false); return true; }
-  if (target.live) throw new Error('This session is already running, but its terminal was not found in this VS Code window. Switch to its SSH/WSL window and try again. No duplicate session was started.');
+  if (target.live || target.focusOnly) throw new Error('This session is already running, but its terminal was not found in this VS Code window. Switch to its SSH/WSL window and try again. No duplicate session was started.');
   // A terminal may start anywhere on this host; the open editor folder does not have to contain the session.
   // If the window uses another host or a local folder, connect from a local terminal in this window.
   const options = remote ? {

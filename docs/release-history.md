@@ -348,3 +348,28 @@ The refreshed 5.0.0 installer replaces the update progress pill with light on th
 Finished slivers, including grouped completions, now trace their real exposed sides and rounded front instead of drawing a separate pill around the text. Waiting and quota-warning countdowns use the same contour as update download progress, with no line across the attachment inside the notch. The shared geometry stays cached per sliver while timer and percentage changes preserve their existing animation.
 
 Hover still pauses the outline and expiry together. Closing, dragging, hiding and monitor changes remove the countdown; reduced motion retains a stationary cue. Validation: 107 desktop checks and Chromium checks for individual and stacked Finished contours on every edge, countdown pause/resume and expiry, updater progress, notification interactions and cleanup. Screenshots were inspected. Update through Settings → General → Update → Restart.
+
+## Prepare the shared app for Mac (5.0.2)
+
+History, Working and notification clicks now use one host-checked, account-aware
+VS Code terminal route and wait for confirmation. AGY Working rows are linked.
+Live sessions with incomplete history can focus their existing terminal without
+starting duplicates; new notifications retain the SSH/WSL collector scope.
+
+The Windows keyboard helper clears held and drag state after a crash, requires
+real readiness and retries with bounded backoff. Missing display-transfer
+acknowledgments retry twice before parking safely so another reveal can retry.
+Platform modules isolate window policy, input ownership, collector transport,
+Code discovery and installer capability while preserving the shared frontend.
+
+Validation: all 121 desktop checks, all six collector fixture suites and all
+fourteen sequential Chromium suites passed locally. Release CI now gates Windows
+packaging on those suites. The native Windows
+shortcut/focus and packaged Code-helper checks remain required. Browser timing
+is measured independently of functional assertions; the optional cadence
+benchmark can be enabled on an idle machine.
+
+This is preparation for a personal, SSH-first Mac app. No Mac package is shipped
+and native Mac behavior still needs implementation and hardware validation.
+Update through Settings → General → Update → Restart. If a running VS Code window
+has the older helper loaded, run Developer: Reload Window once after updating.

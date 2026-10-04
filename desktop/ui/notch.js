@@ -1030,7 +1030,7 @@ function renderCard(){
       html+=`<div class="c-sessions">`;
       for(const a of acts.slice(0,SESSION_ROWS)){
         const col=a.state==='waiting'?WATCH:INK;
-        const linked=a.id&&a.sessionId&&['claude','codex'].includes(a.provider);
+        const linked=a.id&&a.sessionId&&['claude','codex','antigravity'].includes(a.provider);
         const tag=linked?'button':'div', attrs=linked?` type="button" data-session="${esc(a.id)}" data-account="${esc(a.account)}"`:"";
         html+=`<${tag}${attrs} class="s-row${linked?' session-link':''}"><span class="s-dot" style="background:${col}"></span>${esc(a.name)}<span style="color:#808080;margin-left:auto">${esc(textCopy(a.detail))}</span></${tag}>`;
       }

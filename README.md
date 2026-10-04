@@ -7,7 +7,7 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.0.1**.
+The current release is **5.0.2**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
@@ -152,6 +152,8 @@ scripts/install-agent-usage.sh --force
 
 - [Notch controls, G815 setup and build details](docs/notch.md)
 - [Release history and validation notes](docs/release-history.md)
+- [Shared platform architecture and Mac preparation](docs/platforms.md)
+- [Mac readiness audit of 5.0.1](docs/mac-readiness-audit.md)
 - [Latest release notes](https://github.com/f-petrozzi/Agent-Usage/releases/latest)
 
 The previews can be regenerated with an installed Playwright module and Chromium:

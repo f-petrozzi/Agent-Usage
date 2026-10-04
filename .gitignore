@@ -48,3 +48,6 @@ desktop/node_modules/
 desktop/dist/
 
 desktop/resources/*.vsix
+
+# Browser validation dependencies
+tests/browser/node_modules/

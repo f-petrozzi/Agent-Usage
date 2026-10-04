@@ -81,7 +81,7 @@ function trayReadings(accounts, now = Date.now()) {
 // Only fixed provider routes and UUID session identities reach the OS URL opener.
 function sessionTarget(raw) {
   const target = raw?.target || raw;
-  return target && ['claude', 'codex'].includes(target.provider) && typeof target.sessionId === 'string'
+  return target && ['claude', 'codex', 'antigravity'].includes(target.provider) && typeof target.sessionId === 'string'
     && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.sessionId)
     ? { provider: target.provider, sessionId: target.sessionId,
       ...(Array.isArray(target.terminalPids) && target.terminalPids.some(n => Number.isInteger(n) && n > 1 && n <= 2147483647)
@@ -90,7 +90,7 @@ function sessionTarget(raw) {
 }
 function sessionUrl(raw) {
   const target = sessionTarget(raw);
-  if (!target) return null;
+  if (!target || target.provider === 'antigravity') return null;
   if (target.terminalPids?.length) {
     const payload = { provider: target.provider, sessionId: target.sessionId, pids: target.terminalPids, ...(target.cwd ? { cwd: target.cwd } : {}) };
     return `vscode://f-petrozzi.agent-usage-link/open?target=${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
@@ -118,6 +118,7 @@ function alertLog(raw, now = Date.now()) {
     id: text(e.id, 40) || String(e.at), at: e.at, kind: e.kind, account: text(e.account, 100), window: text(e.window, 100),
     level: [80, 100].includes(e.level) ? e.level : null, used: Number.isFinite(e.used) ? Math.max(0, Math.min(1, e.used)) : null,
     session: text(e.session, 200), target: sessionTarget(e.target), took: Number.isFinite(e.took) && e.took >= 0 ? e.took : null,
+    ...(typeof e.scope === 'string' && /^(?:ssh:[A-Za-z0-9_][A-Za-z0-9._@-]*|wsl:[A-Za-z0-9._-]*)$/.test(e.scope) ? { scope: e.scope.slice(0, 140) } : {}),
     title: text(e.title, 200) || '', body: text(e.body, 300) || '', read: e.read === true }));
 }
 function logAlerts(log, events, now = Date.now()) {

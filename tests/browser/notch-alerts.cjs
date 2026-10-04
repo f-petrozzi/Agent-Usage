@@ -58,7 +58,7 @@ const sideSection = (page, id) => page.evaluate(id => {
     await arrive(page, { events: [quota], sound: true, hold: 2500 });
     await page.waitForTimeout(150);
     assert.equal(await page.evaluate(() => slivers.size), 0, 'waits for the notch to finish arriving');
-    await page.waitForTimeout(1100);
+    await page.waitForFunction(() => slivers.get('claude')?.t === 1 && !slivers.get('claude')?.frame);
     const ring = await ringBox(page, 'claude'), s = await box(page, 'claude');
     assert.ok(s, 'a sliver out of Claude\'s ring');
     assert.equal(s.text, 'Usage warning 5 hours · 83%');

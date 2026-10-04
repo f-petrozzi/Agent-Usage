@@ -7,7 +7,6 @@ const { pathToFileURL } = require('node:url');
 const main = path.resolve(__dirname, '../desktop/main.cjs');
 function setup(t, initialVisible = true, dependencies = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-usage-monitor-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const calls = [], displays = [
     { id: 1, bounds: { x: 0, y: 0, width: 1280, height: 800 } },
     { id: 2, bounds: { x: -1600, y: 0, width: 1600, height: 1000 } },
@@ -28,9 +27,10 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, inputLine, setInput(value){input=value;}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, recoverPlacement, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
+  t.after(()=>{context.monitorTest.closeTimers();fs.rmSync(root,{recursive:true,force:true});});
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
   return { calls, displays, config, win, root, point: p => { point = p; }, move: context.monitorTest.switchMonitor, reveal: context.monitorTest.reveal, test: context.monitorTest,
     command: (name, args, sender = win.webContents) => command(event(sender), name, args), settings };
@@ -292,4 +292,49 @@ test('history opening preserves fresh collector terminal IDs without a live aler
   sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',agentHome:'/home/me/.codex',terminalPids:[90,80]};
  const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>({sessions:[saved]})},'./session-open.cjs':{openSession:async row=>{opened.push(row);return true;}}});
  await s.command('open_history_session',{id:'chat',account:'codex-a'});assert.deepEqual(Array.from(opened[0].terminalPids),[90,80]);
+});
+
+test('Working, history and notification clicks share the host-checked resume route',async t=>{
+ const opened=[],saved={id:'chat',account:'codex-a',provider:'codex',name:'Session',since:Date.now(),state:'idle',live:true,
+  sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',agentHome:'/home/me/.codex',terminalPids:[90,80]};
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>({sessions:[saved]})},'./session-open.cjs':{openSession:async row=>{opened.push(row);return true;}}});
+ s.config.alertLog=[{id:'alert',kind:'completion',at:Date.now(),account:saved.account,session:saved.name,target:saved,scope:'ssh:homelab'}];
+ for(const command of ['open_working_session','open_history_session'])await s.command(command,{id:saved.id,account:saved.account,sshTarget:'injected'});
+ await s.command('open_alert_session',{id:'alert'});assert.equal(opened.length,3);
+ for(const row of opened){assert.equal(row.resume,true);assert.equal(row.sshTarget,'homelab');assert.equal(row.agentHome,saved.agentHome);assert.deepEqual(Array.from(row.terminalPids),[90,80]);}
+ s.config.sshTarget='other';await assert.rejects(s.command('open_alert_session',{id:'alert'}),/produced this notification/);assert.equal(opened.length,3);
+});
+test('missing monitor acknowledgments retry twice then park safely; a stale timeout cannot undo recovery',async t=>{
+ const s=setup(t);await s.command('set_notch_monitor',{id:'2'});
+ const token=()=>s.calls.filter(c=>c[0]==='monitor_stow').at(-1)[1].placement;
+ const initial=token();s.test.recoverPlacement(initial);const second=token();assert.notEqual(initial,second);
+ const count=s.calls.length;s.test.recoverPlacement(initial);assert.equal(s.calls.length,count);
+ s.test.recoverPlacement(second);const third=token();s.test.recoverPlacement(third);
+ assert.equal(s.test.phase(),'hidden');assert.equal(s.calls.at(-1)[0],'notice');assert.equal(s.calls.some(c=>c[0]==='bounds'&&c[1].x < -1600),true);
+ assert.equal(await s.command('monitor_stowed',{placement:third}),false);s.reveal();await stow(s);
+ const current=s.calls.filter(c=>c[0]==='layout').at(-1)[1].placement;
+ s.test.recoverPlacement(third);assert.equal(await s.command('monitor_placed',{placement:current}),true);assert.equal(s.test.phase(),'shown');
+});
+
+test('a Windows input helper crash releases both held following and mouse dragging',t=>{
+ const {EventEmitter}=require('node:events');let child;
+ const s=setup(t,true,{platform:'win32','node:child_process':{spawn:()=>{child=new EventEmitter();child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.kill=()=>{};return child;}}});
+ s.test.registerShortcut('Scrolllock');assert.equal(s.test.registerSessionShortcut(),false);
+ child.stderr.emit('data','sessions-ready hotkey=1 hook=1 thread=100\n');assert.equal(s.test.registerSessionShortcut(),true);
+ child.stdout.emit('data','100\n');s.test.beginMove();assert.equal(s.test.inputState().held,true);assert.equal(s.test.inputState().carrying,true);
+ child.emit('exit',1,null);assert.equal(s.test.inputState().held,false);assert.equal(s.test.inputState().carrying,false);
+ assert.equal(s.test.inputState().inputPresent,false);assert.equal(s.test.registerSessionShortcut(),false);
+ assert.ok(s.calls.some(c=>c[0]==='move_end'));assert.ok(s.calls.some(c=>c[0]==='release'));
+});
+test('Working rechecks live identities and uses focus-only when history is unavailable',async t=>{
+ const live={id:'active',account:'codex-a',provider:'codex',sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',terminalPids:[80]},opened=[];let reads=0;
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>{throw new Error('History unavailable');},readSessionLinks:async()=>{reads++;return [live];}},'./session-open.cjs':{openSession:async row=>{opened.push(row);return true;}}});
+ s.test.setActive([live]);await s.command('open_working_session',{account:live.account,id:live.id});
+ assert.equal(reads,1);assert.equal(opened[0].focusOnly,true);assert.equal(opened[0].resume,true);assert.equal(opened[0].sshTarget,'homelab');
+});
+test('collector changes during a session lookup cannot open a session on the new host',async t=>{
+ let resolve;const pending=new Promise(r=>resolve=r),opened=[];
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:()=>pending},'./session-open.cjs':{openSession:async row=>opened.push(row)}});
+ const click=s.command('open_history_session',{account:'codex-a',id:'chat'});s.config.sshTarget='other';resolve({sessions:[]});
+ await assert.rejects(click,/Collector changed/);assert.equal(opened.length,0);
 });

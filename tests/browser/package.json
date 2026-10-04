@@ -1,0 +1,6 @@
+{
+  "name": "agent-usage-browser-checks",
+  "private": true,
+  "scripts": { "test": "node ../../scripts/test-browser.cjs" },
+  "devDependencies": { "playwright": "1.63.0" }
+}

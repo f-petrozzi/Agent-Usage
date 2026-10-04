@@ -131,7 +131,7 @@ test('history installs the helper even with no live terminal; missing Code is ac
     receiptFactory:async()=>({result:Promise.resolve(true),close(){}}),
     ensureHelper:async()=>installed++,launch:(exe,a)=>{args=a;const child=new EventEmitter();child.unref=()=>{};queueMicrotask(()=>child.emit('spawn'));return child;}});
   assert.equal(opened,true);assert.equal(installed,1);assert.deepEqual(args,['--reuse-window','--open-url','--',resumeUrl(target)]);
-  await assert.rejects(openSession({...target,resume:true},{},{locations:[]}),/standard Windows VS Code/);
+  await assert.rejects(openSession({...target,resume:true},{},{locations:[]}),/standard VS Code/);
 });
 test('real VS Code URI decoding and protocol routing preserve SSH/WSL authorities and punctuation in paths',()=>{
   for(const t of [target,{...target,source:'wsl',wslDistro:'Ubuntu-24.04'},{...target,cwd:"/srv/a&b+100%#?é=project",agentHome:"/home/me/profiles/a+b%&"}]) {

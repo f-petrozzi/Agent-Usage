@@ -7,7 +7,43 @@ on:
 permissions:
   contents: read
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            tests/browser/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+        working-directory: desktop
+      - run: npm ci
+        working-directory: tests/browser
+      - run: npx playwright install --with-deps chromium
+        working-directory: tests/browser
+      - name: Check shared session, geometry and platform behavior
+        run: node scripts/test-desktop.cjs
+      - name: Check collector fixtures
+        run: python scripts/test-collector.py
+      - name: Check browser interactions and motion sequentially
+        run: node scripts/test-browser.cjs
+        env:
+          AGENT_USAGE_BROWSER_OUTPUT: ${{ runner.temp }}/agent-usage-browser-checks
+      - name: Preserve browser logs and synthetic previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentUsage-Browser-Checks
+          path: ${{ runner.temp }}/agent-usage-browser-checks
   package:
+    needs: validate
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +66,7 @@ jobs:
         working-directory: desktop
       - name: Verify native session shortcut and keyboard focus
         run: node tests/shortcut-windows.cjs
-      - run: node --test tests/test-updates.cjs tests/test-update-push.cjs tests/test-session-feed.cjs tests/test-perimeter.cjs tests/test-collector.cjs tests/test-alerts.cjs tests/test-session-open.cjs tests/test-session-history.cjs tests/test-session-library.cjs tests/test-rim-geometry.cjs tests/test-monitor.cjs
+      - run: node scripts/test-desktop.cjs
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
