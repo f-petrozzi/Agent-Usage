@@ -342,3 +342,11 @@ Validation: 98 desktop checks, 11 collector history checks, 23 session checks an
 History now checks the process holding each exact Codex rollout open independently of recent activity. A terminal left idle for more than 30 minutes, or open with an older transcript, keeps its terminal process ancestry and is shown as open. Clicking it lets the VS Code helper focus the existing terminal rather than start a second resume. Closed sessions still open normally. Identity remains scoped to the owning account's resolved file, never the display title.
 
 The homelab collector has been updated and the reported “Inspect Claude session route” session was verified as open with its live terminal ancestry. No helper change or VS Code reload is needed. Validation adds an old-idle-session regression covering exact account/file identity and retains existing terminal-focus checks.
+
+## Recognize AGY approval pauses (4.1.7)
+
+AGY can set its conversation summary to idle while a command approval is pending. The readable JSONL transcript omits that waiting tool step until it is answered, so relying on the summary and transcript could produce a false finished notification.
+
+The collector now reads only the latest step's status from the conversation SQLite database, including live WAL changes. Pending approvals become waiting/input-needed; executing steps remain busy and canceled/error steps cannot produce completion alerts. The transcript remains the fallback for unavailable or unfamiliar database formats. An answered request clears the wait even while the transcript is behind. No tool arguments, prompts or permission grants are read or exported by the new database query.
+
+The current AGY approval on homelab was verified as waiting and the collector has been updated. Restart Agent Usage to reconnect its activity stream; no VS Code reload is needed. Enable **Settings → General → Agent waiting for input** for input-request notifications. Validation: 24 session checks (including unexported approvals, WAL updates, resolution, cancellation and fallback), 12 history checks, and 99 desktop checks including AGY notification transitions with waiting alerts enabled and disabled.

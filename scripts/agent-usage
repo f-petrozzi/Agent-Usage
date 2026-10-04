@@ -1083,6 +1083,19 @@ def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_termina
     return sessions
 
 
+def _antigravity_step_status(data_dir: Path, identity: str) -> str | None:
+    """Read status only: AGY exports an approval step to JSONL after it is answered."""
+    database = data_dir / "conversations" / (identity + ".db")
+    try:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.1)) as conn:
+            row = conn.execute("SELECT status FROM steps ORDER BY idx DESC LIMIT 1").fetchone()
+        # CortexStepStatus values from AGY's protobuf schema (CLI 1.2.16).
+        return {1: "busy", 2: "busy", 8: "busy", 11: "busy", 9: "waiting", 3: "done",
+                4: "canceled", 5: "canceled", 6: "canceled", 7: "canceled", 12: "canceled"}.get(row[0]) if row else None
+    except (OSError, sqlite3.Error, ValueError):
+        return None
+
+
 def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list[dict[str, Any]]:
     """Read live CLI presence and status metadata; never open Google credentials."""
     database = data_dir / "conversation_summaries.db"
@@ -1111,28 +1124,31 @@ def antigravity_sessions(data_dir: Path, include_terminal: bool = False) -> list
             if not active and not waiting and status != "CASCADE_RUN_STATUS_IDLE":
                 continue
             state, reason = ("waiting", "input needed") if waiting else (("busy" if active else "idle"), None)
-            transcript = data_dir / "brain" / identity / ".system_generated" / "logs" / "transcript.jsonl"
-            try:
-                with transcript.open("rb") as handle:
-                    handle.seek(max(0, transcript.stat().st_size - SESSION_TAIL_BYTES))
-                    lines = handle.read().splitlines()
-                for line in reversed(lines):
-                    try:
-                        step = json.loads(line)
-                    except ValueError:
-                        continue
-                    if not isinstance(step, dict):
-                        continue
-                    calls = step.get("tool_calls")
-                    question = isinstance(calls, list) and any(isinstance(call, dict) and call.get("name") in {"ask_question", "ask_permission"} for call in calls)
-                    # AGY can mark the conversation idle while a question is still
-                    # pending. Inspect input requests before treating idle as a
-                    # completed turn, including in the activity-only feed.
-                    if step.get("status") == "WAITING" or question:
-                        state, reason = "waiting", "input needed"
-                    break
-            except OSError:
-                pass
+            step_status = _antigravity_step_status(data_dir, identity)
+            if step_status in {"waiting", "canceled"} or (step_status == "busy" and not waiting):
+                state, reason = step_status, "input needed" if step_status == "waiting" else None
+            # Structured status includes unexported approvals and supersedes stale
+            # transcript questions. Older installations retain the JSONL fallback.
+            if step_status is None:
+                transcript = data_dir / "brain" / identity / ".system_generated" / "logs" / "transcript.jsonl"
+                try:
+                    with transcript.open("rb") as handle:
+                        handle.seek(max(0, transcript.stat().st_size - SESSION_TAIL_BYTES))
+                        lines = handle.read().splitlines()
+                    for line in reversed(lines):
+                        try:
+                            step = json.loads(line)
+                        except ValueError:
+                            continue
+                        if not isinstance(step, dict):
+                            continue
+                        calls = step.get("tool_calls")
+                        question = isinstance(calls, list) and any(isinstance(call, dict) and call.get("name") in {"ask_question", "ask_permission"} for call in calls)
+                        if step.get("status") == "WAITING" or question:
+                            state, reason = "waiting", "input needed"
+                        break
+                except OSError:
+                    pass
             if state == "idle" and not include_terminal:
                 continue
             sessions.append({"provider": "antigravity", "account": "antigravity", "id": identity,

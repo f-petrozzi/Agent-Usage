@@ -277,6 +277,46 @@ class CodexSessionTests(unittest.TestCase):
 
 
 class AntigravitySessionTests(unittest.TestCase):
+    def test_unexported_approval_uses_live_sqlite_status_until_resolved(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            (root / 'presence').mkdir();(root / 'conversations').mkdir()
+            transcript=root / 'brain/approval/.system_generated/logs/transcript.jsonl'
+            transcript.parent.mkdir(parents=True)
+            transcript.write_text(json.dumps({'type':'PLANNER_RESPONSE','status':'DONE','tool_calls':[{'name':'run_command'}]})+'\n')
+            with sqlite3.connect(root / 'conversation_summaries.db') as summary, sqlite3.connect(root / 'conversations/approval.db') as steps:
+                summary.execute('CREATE TABLE conversation_summaries (conversation_id TEXT,title TEXT,status TEXT,not_fully_idle INTEGER,killed INTEGER,last_modified_time TEXT)')
+                summary.execute('INSERT INTO conversation_summaries VALUES (?,?,?,?,?,?)',('approval','AGY','CASCADE_RUN_STATUS_IDLE',0,0,'2026-10-03T23:00:00Z'))
+                summary.commit()
+                steps.execute('PRAGMA journal_mode=WAL')
+                steps.execute('CREATE TABLE steps (idx INTEGER PRIMARY KEY,status INTEGER,step_payload BLOB)')
+                steps.execute('INSERT INTO steps VALUES (?,?,?)',(40,3,b'Private command output'))
+                steps.execute('INSERT INTO steps VALUES (?,?,?)',(42,9,b'Private approval request'))
+                steps.commit()
+                with (root / 'presence/approval.lock').open('wb') as lock:
+                    fcntl.flock(lock,fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    for include_terminal in (False,True):
+                        got=usage.antigravity_sessions(root,include_terminal)
+                        self.assertEqual(got[0]['state'],'waiting')
+                        self.assertEqual(got[0]['waitingFor'],'input needed')
+                        self.assertNotIn('Private',json.dumps(got))
+                    # Approval is accepted; the live WAL changes before JSONL catches up.
+                    steps.execute('UPDATE steps SET status=2 WHERE idx=42');steps.commit()
+                    self.assertEqual(usage.antigravity_sessions(root)[0]['state'],'busy')
+                    # A newer completed step must supersede an older WAITING row and stale question.
+                    steps.execute('UPDATE steps SET status=9 WHERE idx=42')
+                    steps.execute('INSERT INTO steps VALUES (?,?,?)',(43,3,b'Finished'));steps.commit()
+                    transcript.write_text(json.dumps({'status':'WAITING','tool_calls':[{'name':'ask_permission'}]})+'\n')
+                    self.assertEqual(usage.antigravity_sessions(root),[])
+                    self.assertEqual(usage.antigravity_sessions(root,True)[0]['state'],'idle')
+                    steps.execute('UPDATE steps SET status=6 WHERE idx=43');steps.commit()
+                    self.assertEqual(usage.antigravity_sessions(root,True)[0]['state'],'canceled')
+                    # New/unsupported schemas or values fall back to transcript metadata.
+                    steps.execute('UPDATE steps SET status=99 WHERE idx=43');steps.commit()
+                    self.assertEqual(usage.antigravity_sessions(root)[0]['state'],'waiting')
+                    steps.execute('DROP TABLE steps');steps.commit()
+                    self.assertEqual(usage.antigravity_sessions(root)[0]['state'],'waiting')
+
     def test_idle_input_requests_remain_waiting_until_the_next_step(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

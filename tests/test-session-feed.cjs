@@ -53,6 +53,21 @@ test('Antigravity activity maps to its Gemini usage account', () => {
   assert.equal(activity[1].detail,'Input needed');
 });
 
+test('AGY approval snapshots notify as input requests and finish only after work resumes', () => {
+  const {SessionAlerts,alertPreferences}=require('../desktop/alerts.cjs');
+  for(const waiting of [true,false]){
+    const alerts=new SessionAlerts(),prefs=alertPreferences({waiting,completion:true});
+    const snapshot=(state,since)=>parseSessions(line([{provider:'antigravity',account:'antigravity',id:'approval',name:'AGY project',state,since,waitingFor:state==='waiting'?'input needed':null}]),true);
+    alerts.update(snapshot('busy',1000),prefs,1000000);
+    assert.deepEqual(alerts.update(snapshot('waiting',1060),prefs,1060000).map(e=>e.kind),waiting?['waiting']:[]);
+    assert.deepEqual(alerts.update(snapshot('waiting',1060),prefs,1100000),[]);
+    assert.deepEqual(alerts.update(snapshot('busy',1100),prefs,1100000),[]);
+    assert.deepEqual(alerts.update(snapshot('idle',1160),prefs,1160000).map(e=>e.kind),['completion']);
+    alerts.update(snapshot('busy',1200),prefs,1200000);
+    assert.deepEqual(alerts.update(snapshot('canceled',1260),prefs,1260000),[]);
+  }
+});
+
 test('Codex questions notify while the turn runs and answers restore working without completion', () => {
   const { SessionAlerts, alertPreferences } = require('../desktop/alerts.cjs');
   const alerts = new SessionAlerts(), prefs = alertPreferences({ waiting: true });
