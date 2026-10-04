@@ -306,3 +306,14 @@ Dragging with Scroll Lock or the mouse keeps the selected focus group. Notificat
 Sessions uses a larger, brighter type hierarchy on the existing fluid black surface. Small keeps titles at a 14px screen size and supporting text at 12px; card positions snap to the device pixel grid and settle without fractional translation. The shortcut badge, keyboard hints and reload control are removed from the Sessions panel. History refreshes on opening, activity changes and every 30 seconds while the panel is open, preserving search, selected chat and scroll position. Closing cancels the refresh timer. Collector cache refreshes are explicit and concurrent reads share one operation.
 
 Validation includes 93 desktop checks and browser checks for one/two-agent dragging, immediate notification cleanup on every edge, automatic refresh, reopening search state, fractional display scaling, small viewports, reduced motion, account cards, updater priority and shimmer continuity.
+
+
+## Reliable session switching and account controls (4.1.3)
+
+Ctrl + Scroll Lock replaces an open account card with Sessions on its first press. Keyboard focus no longer puts the notch in the Windows taskbar. Holding Scroll Lock alone closes Sessions with the existing liquid spring, then returns to following the cursor; releasing it leaves the notch in place. The agent filter is now a bounded, keyboard-accessible dropdown, and the Sessions close button has been removed.
+
+Accounts has a clear row of four labeled controls: Focus, Test, Notify on/off, and Active/Inactive. Focus selections remain independent for multiple accounts. The focus explanation and Show all at rest button have been removed. On side edges, AGY's Claude and GPT quotas appear before its chat history and live sessions.
+
+Claude history recognizes `ai-title` / `aiTitle` records and prefers manually chosen titles. Helper 0.2.4 leaves `CLAUDE_CONFIG_DIR` unset when the selected home is the remote user's default `~/.claude`, preserving the usual sibling `~/.claude.json` onboarding file. Custom Claude homes and account-specific Codex `CODEX_HOME` values remain explicit. The desktop refreshes launch metadata and retains collector terminal IDs even when no matching alert-feed entry exists. Newly created tabs carry a scoped identity so the helper can reuse restored tabs after a reload. A manually opened terminal can be reused when its process ID matches; otherwise resume creates a terminal.
+
+After updating, run **Developer: Reload Window** once in an already-open VS Code window to activate helper 0.2.4.

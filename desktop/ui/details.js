@@ -104,6 +104,7 @@ function detailStep(now){
   detailReading=Math.min(1,detailReading+dt/.12);card.style.setProperty('--detail-reading',detailReading);
   if(detailReading<1)settled=false;
   card.style.setProperty('--detail-open',Math.max(0,detailOpen));drawDetails();reportHot();
+  if(!detailTarget&&detailOpen===0&&typeof completeSessionFollow==='function')completeSessionFollow();
   if(!settled){detailFrame=requestAnimationFrame(detailStep);return;}
   detailFrame=0;detailLast=0;
   if(!detailTarget)card.classList.remove('closing');
@@ -125,7 +126,7 @@ function setDetailsShown(on,instant=false){
   if(instant||reducedDetails()){
     cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;detailArm=detailTarget;detailArmVelocity=0;
     card.style.setProperty('--detail-open',detailOpen);drawDetails();
-    if(!on)card.classList.remove('closing');return;
+    if(!on){card.classList.remove('closing');if(typeof completeSessionFollow==='function')completeSessionFollow();}return;
   }
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }

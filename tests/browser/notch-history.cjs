@@ -49,6 +49,8 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
       await page.locator('.h-head').focus();await page.keyboard.press('Escape');assert.equal(await page.locator('.c-history.open').count(),0);
       await page.evaluate(()=>hideCard());await page.waitForTimeout(600);
     }
+    await page.evaluate(()=>{const account=agentAccounts.find(a=>a.id==='antigravity');account.snap.windows.push({id:'claude',label:'Claude models',used:.5},{id:'3p-gpt',label:'GPT models',used:.6});__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge:'right',along:.5,visible:true,tracking:false,pinned:false});hoverId='antigravity';showCard();});await page.waitForTimeout(1000);
+    assert.equal(await page.evaluate(()=>!!card.querySelector('.inline-extras') && !!(card.querySelector('.inline-extras').compareDocumentPosition(card.querySelector('.c-history'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'AGY model quotas precede history on a side edge');
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.setViewportSize({width:360,height:300});
     for(const edge of ['top','right','bottom','left']){

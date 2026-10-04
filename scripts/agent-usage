@@ -1254,8 +1254,13 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
                 else:
                     identity = path.stem
                     cwd = next((r["cwd"] for r in records if isinstance(r.get("cwd"), str)), None)
-                    title = next((r.get("customTitle") or r.get("summary") for r in reversed(records)
-                                  if r.get("type") in {"custom-title", "summary"}), None)
+                    title = next((r.get("customTitle") for r in reversed(records)
+                                  if r.get("type") == "custom-title" and isinstance(r.get("customTitle"), str) and r["customTitle"].strip()), None)
+                    if not title:
+                        title = next((r.get("aiTitle") or r.get("summary") for r in reversed(records)
+                                      if r.get("type") in {"ai-title", "aiTitle", "summary"}
+                                      and isinstance(r.get("aiTitle") or r.get("summary"), str)
+                                      and (r.get("aiTitle") or r.get("summary")).strip()), None)
                 if not isinstance(identity, str) or not uuid.fullmatch(identity):
                     continue
                 seen.add(real)

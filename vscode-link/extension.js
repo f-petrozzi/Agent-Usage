@@ -92,9 +92,10 @@ const quote = value => "'" + value.replace(/'/g, "'\\''") + "'";
 function resumeCommand(target) {
   if (target.provider === 'antigravity') return `exec agy --conversation ${quote(target.sessionId)}`;
   // Every argument is quoted; only these two fixed CLI invocations can be launched. No prompt or permission override.
-  const variable = target.provider === 'codex' ? 'CODEX_HOME' : 'CLAUDE_CONFIG_DIR';
-  const command = target.provider === 'codex' ? 'codex resume' : 'claude --resume';
-  return `exec env ${variable}=${quote(target.home)} ${command} ${quote(target.sessionId)}`;
+  if (target.provider === 'codex') return `exec env CODEX_HOME=${quote(target.home)} codex resume ${quote(target.sessionId)}`;
+  // The default directory has a sibling ~/.claude.json. Setting CLAUDE_CONFIG_DIR even
+  // to ~/.claude relocates that onboarding file. Compare on the remote host, not Windows.
+  return `if [ ${quote(target.home.replace(/\/+$/, ''))} = "$HOME/.claude" ]; then exec env -u CLAUDE_CONFIG_DIR claude --resume ${quote(target.sessionId)}; else exec env CLAUDE_CONFIG_DIR=${quote(target.home)} claude --resume ${quote(target.sessionId)}; fi`;
 }
 const resumed = new Map();
 function localResumeOptions(vscode, target, host) {
@@ -112,8 +113,9 @@ async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_
   const target = parseResume(uri); if (!target) throw new Error('The session link is invalid. Update Agent Usage and its VS Code helper, then try again.');
   const folders = vscode.workspace.workspaceFolders || [];
   const remoteMatches = folders.some(f => f.uri.scheme === 'vscode-remote' && f.uri.authority === target.remote);
-  const key = target.remote + ':' + target.home + ':' + target.sessionId;
-  const previous = resumed.get(key);
+  const key = JSON.stringify([target.provider,target.remote,target.home,target.sessionId]);
+  const restored = vscode.window.terminals.find(t=>t.exitStatus===undefined&&t.creationOptions?.env?.AGENT_USAGE_SESSION_SCOPE===key);
+  const previous = restored || resumed.get(key);
   if (previous && previous.exitStatus===undefined && vscode.window.terminals.includes(previous)) { previous.show(false); return true; }
   if (remoteMatches) {
     const terminal = await findTerminal(vscode, target.pids, until);
@@ -129,7 +131,7 @@ async function handleResume(vscode, context, uri, until = activatedAt + STARTUP_
     if (!vscode.workspace.isTrusted) throw new Error('Trust this workspace in VS Code before resuming its agent session.');
     const created = vscode.window.createTerminal({
       name: terminalName(target),
-      location: vscode.TerminalLocation?.Panel ?? 1, ...options });
+      location: vscode.TerminalLocation?.Panel ?? 1, ...options, env:{AGENT_USAGE_SESSION_SCOPE:key} });
     resumed.set(key, created); created.show(false); return true;
   }
   // A UI extension persists the validated request locally; the new remote window consumes it after reconnecting.

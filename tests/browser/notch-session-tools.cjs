@@ -27,13 +27,21 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   await page.goto('file://'+UI+'/notch.html');await page.addStyleTag({content:'html{background:#52667d}'});await page.waitForTimeout(400);
   for(const edge of ['top','right','bottom','left']){
    await page.mouse.move(0,0);await page.evaluate(edge=>{hideCard();__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false});__emit('appear',{edge});},edge);await page.waitForTimeout(900);
-   await page.evaluate(()=>__emit('session_switcher',true));await page.waitForTimeout(1200);
+   await page.evaluate(()=>{holdCard('codex_a');pill.querySelector('[data-p=codex_a]').focus();__emit('session_switcher',true);pill.querySelector('[data-p=codex_a]').focus();});await page.waitForTimeout(1200);
    assert.equal(await page.locator('.session-search').evaluate(el=>el===document.activeElement),true,'shortcut focuses the search input');
-   assert.equal(await page.locator('.session-head kbd,.session-reload').count(),0,'Sessions has no shortcut badge or reload control');
+   assert.equal(await page.locator('.session-head kbd,.session-reload,.session-head .session-close').count(),0,'Sessions has no shortcut badge or reload control');
    assert.equal(await page.locator('.session-result').count(),96);
    const box=await page.locator('#card').boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=1280.5&&box.y+box.height<=800.5,'switcher fits '+edge);
    assert.ok(Math.abs(box.x*1.25-Math.round(box.x*1.25))<.02&&Math.abs(box.y*1.25-Math.round(box.y*1.25))<.02,'settled Sessions lands on the device pixel grid');
    assert.ok(await page.locator('.session-results').evaluate(el=>el.scrollHeight>el.clientHeight),'sessions scroll in a bounded lobe');
+   await page.locator('.session-account').click();await page.waitForTimeout(350);
+   assert.equal(await page.locator('.session-agent-option').count(),4);
+   await page.screenshot({path:path.join(OUT,edge+'-agent-filter.png')});
+   await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+   assert.equal(await page.locator('.session-result').count(),32);
+   await page.locator('.session-account').focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Home');await page.keyboard.press('Enter');
+   assert.equal(await page.locator('.session-result').count(),96);
+   await page.locator('.session-account').click();await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>sessionSwitcherShowing()),true,'Escape closes the filter first');
    await page.locator('.session-search').fill('Orbit');await page.waitForTimeout(100);assert.equal(await page.locator('.session-result').count(),32);
    await page.locator('.session-search').fill('planning');await page.waitForTimeout(100);assert.equal(await page.locator('.session-result').count(),1);
    if(await page.locator('.session-pin').getAttribute('aria-pressed')==='true'){await page.locator('.session-pin').click();assert.equal(await page.locator('.session-pin').getAttribute('aria-pressed'),'false');}
@@ -103,6 +111,10 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   assert.equal(await page.locator('.session-results').evaluate(el=>el.scrollTop),80,'automatic refresh preserves scroll');
   assert.ok(await page.evaluate(()=>__calls.some(c=>c[0]==='get_session_library'&&c[1].refresh===true)),'automatic refresh requests fresh collector history');
   assert.match(await page.locator('.session-open').first().innerText(),/updated/);
+  await page.evaluate(()=>__emit('session_follow'));await page.waitForTimeout(120);
+  assert.equal(await page.evaluate(()=>sessionSwitcherShowing()),false);
+  assert.ok(await page.evaluate(()=>detailOpen>0&&detailOpen<1),'Scroll Lock closes the lobe smoothly before movement');
+  await page.waitForTimeout(1300);assert.ok(await page.evaluate(()=>__calls.some(c=>c[0]==='session_follow_ready')),'movement begins once the lobe closes');
   await page.keyboard.press('Escape');
   await page.evaluate(()=>{__emit('disappear');__emit('session_switcher',true);hideCard();});
   assert.equal(await page.evaluate(()=>switcherPending),true,'a closed card cannot cancel a shortcut queued while hidden');

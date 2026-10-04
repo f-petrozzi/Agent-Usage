@@ -40,7 +40,7 @@ let visible = false, held = false, mouseDown = false, carrying = false, dismisse
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
-let switcherRequested=false,switcherFocused=false,sessionKeyHeld=false,sessionShortcutAt=0,sessionShortcutSource='';
+let switcherRequested=false,switcherFocused=false,sessionKeyHeld=false,sessionShortcutAt=0,sessionShortcutSource='',sessionFollowUntil=0;
 const SESSION_SHORTCUT='Ctrl+Scrolllock';
 function registerSessionShortcut(){
   // Windows owns this chord in InputMonitor's native message loop. Registering it twice
@@ -60,14 +60,15 @@ function triggerSessionShortcut(source){
 }
 function focusSwitcher(){
   if(!win||win.isDestroyed())return;
-  switcherFocused=true;win.setFocusable(true);win.focus();
+  // Electron makes a focusable Windows window a taskbar tab. Restore the overlay policy before focusing.
+  switcherFocused=true;win.setFocusable(true);win.setSkipTaskbar(true);win.focus();
 }
 function releaseSwitcherFocus(){
   if(!switcherFocused)return;
-  switcherFocused=false;win?.blur();win?.setFocusable(false);
+  switcherFocused=false;win?.blur();win?.setFocusable(false);win?.setSkipTaskbar(true);
 }
 function openSessionSwitcher(){
-  switcherRequested=true;reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+3000);
+  sessionFollowUntil=0;switcherRequested=true;reveal(false);visibleUntil=Math.max(visibleUntil,Date.now()+3000);
   send('session_switcher',true);
 }
 async function sessionLibrary(refresh=false){
@@ -286,7 +287,7 @@ function tick() {
   // Windows lets a topmost window sink behind the taskbar and other topmost windows; keep reasserting it
   if (visible && Date.now() - lastRaise > 2000) { lastRaise = Date.now(); raise(); }
   cursor = screen.getCursorScreenPoint();
-  if ((held || carrying) && !dismissed && !menuOpen) {
+  if ((held || carrying) && Date.now()>=sessionFollowUntil && !dismissed && !menuOpen) {
     reveal();
     const display = screen.getDisplayNearestPoint(cursor);
     if (display.id !== monitor.id && pendingPlacement === null) switchMonitor(display, { atPointer: true });
@@ -343,7 +344,11 @@ function inputLine(value){
   const previous=held,previousMouse=mouseDown,previousSession=sessionKeyHeld;
   sessionKeyHeld=value[1]==='1';
   if(sessionKeyHeld&&!previousSession)triggerSessionShortcut('native');
-  held=value[0]==='1'&&!switcherFocused&&!sessionKeyHeld;mouseDown=value[2]==='1';
+  held=value[0]==='1'&&!sessionKeyHeld;mouseDown=value[2]==='1';
+  if(held&&!previous&&(switcherFocused||switcherRequested)){
+    switcherRequested=false;sessionFollowUntil=Date.now()+1200;send('session_follow');releaseSwitcherFocus();
+  }
+  if(!held)sessionFollowUntil=0;
   if(held&&!previous){dismissed=false;lastCursor='';reveal();}
   if(!held&&previous){visibleUntil=Date.now()+1800;send('release');broadcast('ui_flags',flags());save();}
   if(mouseDown&&!previousMouse&&visible&&!held&&!carrying)physicalPress(screen.getCursorScreenPoint());
@@ -556,14 +561,15 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'open_session_switcher':openSessionSwitcher();return null;
     case 'session_switcher_focus':if(event.sender!==win?.webContents||!visible||pendingPlacement!==null)return false;switcherRequested=false;focusSwitcher();return true;
     case 'close_session_switcher':switcherRequested=false;releaseSwitcherFocus();return null;
+    case 'session_follow_ready':if(event.sender===win?.webContents&&held){sessionFollowUntil=0;lastCursor='';}return null;
     case 'get_focus_accounts':return config.focusAccounts||[];
     case 'set_focus_accounts':return setFocusAccounts(args.accounts);
     case 'open_history_session': {
       // Identity only from the renderer: launch metadata must come from this collector's saved snapshot.
-      const saved=(await sessionLibrary()).find(s=>s.account===args.account&&s.id===args.id);
+      const saved=(await sessionLibrary(true)).find(s=>s.account===args.account&&s.id===args.id);
       if (!saved) throw new Error('This session is no longer in recent history. Open history again.');
       const current = [...(sessionAlerts.previous?.values() || [])].find(s => s.account === saved.account && (s.sessionId || s.id) === saved.sessionId);
-      const target = {...saved,terminalPids:current?.terminalPids||[]};
+      const target = {...saved,terminalPids:[...new Set([...(current?.terminalPids||[]),...(saved.terminalPids||[])])].slice(0,16)};
       if (!resumeUrl(target)) throw new Error('This agent does not support session resume here, or its workspace metadata is missing.');
       releaseSwitcherFocus();return openSession(target, shell);
     }

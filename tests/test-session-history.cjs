@@ -52,8 +52,8 @@ test('closed sessions resume in a new terminal using the selected account, witho
   const options=f.calls[0];assert.equal(options.shellPath,'/bin/bash');assert.deepEqual(options.shellArgs,['-ilc',"exec env CODEX_HOME='/home/me/profiles/b' codex resume '"+id+"'"]);
   assert.equal(options.cwd.path,target.cwd);assert.equal(f.calls[1],'show');
   await handleResume(f.vscode,f.context,uri(target),0);assert.equal(f.calls.filter(c=>typeof c==='object').length,1,'repeat click focuses the same terminal');
-  const command=resumeCommand({...parseResume(uri(target)),provider:'claude',home:"/home/me/a'$(touch /tmp/x)"});
-  assert.equal(command,"exec env CLAUDE_CONFIG_DIR='/home/me/a'\\''$(touch /tmp/x)' claude --resume '"+id+"'");
+  const custom=parseResume(uri({...target,provider:'claude',agentHome:"/home/me/a'$(touch /tmp/x)"}));
+  assert.ok(resumeCommand(custom).includes("CLAUDE_CONFIG_DIR='/home/me/a'\\''$(touch /tmp/x)'"));
 });
 test('remote workspace handoff persists once, restores after Code starts, and does not resume in other windows',async()=>{
   const f=fixture(false);await handleResume(f.vscode,f.context,uri(target),0,linuxHost);
@@ -163,7 +163,7 @@ test('a Windows tab selects the saved WSL distribution, folder and account and r
   const f=fixture(),t={...target,provider:'claude',source:'wsl',wslDistro:'Ubuntu-24.04'};
   assert.equal(await handleResume(f.vscode,f.context,uri(t),0,windowsHost),true);
   assert.equal(f.calls[0].shellPath,'wsl.exe');assert.deepEqual(f.calls[0].cwd,{scheme:'file',path:'C:/Users/me'});
-  assert.deepEqual(f.calls[0].shellArgs,['--distribution','Ubuntu-24.04','--cd',target.cwd,'--exec','/bin/bash','-ilc',`exec env CLAUDE_CONFIG_DIR='/home/me/profiles/b' claude --resume '${id}'`]);
+  assert.deepEqual(f.calls[0].shellArgs,['--distribution','Ubuntu-24.04','--cd',target.cwd,'--exec','/bin/bash','-ilc',resumeCommand(parseResume(uri(t)))]);
   const untrusted=fixture(false);untrusted.vscode.workspace.isTrusted=false;
   await assert.rejects(handleResume(untrusted.vscode,untrusted.context,uri(target),0,windowsHost),/Trust this workspace/);
   assert.equal(untrusted.calls.length,0);
@@ -195,4 +195,31 @@ test('resumed terminal names use the agent and sanitized session title without c
   assert.equal(terminalName({provider:'codex',sessionId:id,cwd:'/srv/Agent-Usage'}),'Codex · Agent-Usage');
   assert.equal(terminalName({provider:'claude',sessionId:id,cwd:'/'}),'Claude · 12345678');
   assert.equal(terminalName({provider:'antigravity',sessionId:id,title:'a'.repeat(200)}).length,6+80);
+});
+
+test('Claude resumes preserve the remote default onboarding file and still select custom account homes',()=>{
+  const defaultTarget=parseResume(uri({...target,provider:'claude',agentHome:'/home/me/.claude'}));
+  const command=resumeCommand(defaultTarget);
+  assert.ok(command.startsWith('if [ \'/home/me/.claude\' = "$HOME/.claude" ]; then exec env -u CLAUDE_CONFIG_DIR claude --resume'));
+  assert.ok(command.includes("else exec env CLAUDE_CONFIG_DIR='/home/me/.claude'"));
+  assert.ok(resumeCommand({...defaultTarget,home:'/home/me/custom/'}).includes("CLAUDE_CONFIG_DIR='/home/me/custom/'"));
+});
+test('restored helper terminals remain reusable after extension reload without a process ID',async()=>{
+  const f=fixture(),scope=JSON.stringify(['codex','ssh-remote+me@lab',target.agentHome,id]);let shown=0;
+  f.vscode.window.terminals.push({creationOptions:{env:{AGENT_USAGE_SESSION_SCOPE:scope}},show:()=>shown++});
+  await handleResume(f.vscode,f.context,uri(target),0);assert.equal(shown,1);assert.equal(f.calls.length,0);
+  f.vscode.window.terminals[0].creationOptions.env.AGENT_USAGE_SESSION_SCOPE=JSON.stringify(['codex','ssh-remote+other',target.agentHome,id]);
+  await handleResume(f.vscode,f.context,uri(target),0);assert.equal(shown,1);assert.equal(f.calls.length,2,'a different host cannot reuse that terminal');
+});
+
+test('executed Claude resume unsets inherited custom configuration only for the remote default home',{skip:process.platform==='win32'},t=>{
+  const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{execFileSync}=require('node:child_process');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-usage-claude-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  fs.writeFileSync(path.join(root,'claude'),'#!/bin/bash\nprintf "%s\\0" "${CLAUDE_CONFIG_DIR-unset}" "$@"\n',{mode:0o755});
+  const defaultHome=path.join(os.homedir(),'.claude');
+  for(const home of [defaultHome,"/home/remote/custom'$(printf injected)"]){
+    const command=resumeCommand({provider:'claude',home,sessionId:id});
+    const output=execFileSync('/bin/bash',['--noprofile','--norc','-c',command],{env:{...process.env,CLAUDE_CONFIG_DIR:'/inherited/custom',PATH:root+path.delimiter+process.env.PATH}}).toString().split('\0');
+    assert.deepEqual(output,[home===defaultHome?'unset':home,'--resume',id,'']);
+  }
 });

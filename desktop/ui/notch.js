@@ -1016,10 +1016,14 @@ function renderCard(){
   }else{
     html+=renderUsageWindows(mainWindows,p.base!=='gemini',p.base!=='gemini');
     html+=resetsRow(snap.resets,p.id);
+    if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
     if(p.id!=='collector')html+=historyRow(p.id);
     if(snap.note) html+=`<div class="c-note">${esc(textCopy(snap.note))}</div>`;
   }
-  if(!snap.windows.length&&p.id!=='collector')html+=historyRow(p.id);
+  if(!snap.windows.length){
+    if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
+    if(p.id!=='collector')html+=historyRow(p.id);
+  }
   { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
     const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
     if(acts.length){
@@ -1033,7 +1037,6 @@ function renderCard(){
       html+=moreRow(acts.length-SESSION_ROWS)+`</div>`;
     }
   }
-  if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   const historyScroll=changedAccount?0:c.querySelector('.h-scroll')?.scrollTop||0;
@@ -1282,7 +1285,7 @@ function cellAt(x,y){
   return null;
 }
 pill.addEventListener('focusin',e=>{
-  const cell=e.target.closest('.cell');if(!cell||!shown||window.agentTracking)return;
+  const cell=e.target.closest('.cell');if(!cell||!shown||window.agentTracking||typeof sessionSwitcherShowing==='function'&&(sessionSwitcherShowing()||switcherPending))return;
   clearTimeout(showTimer);pendingAccount=null;hoverId=cell.dataset.p;
   if(card.classList.contains('show'))renderCard();else showCard();
 });

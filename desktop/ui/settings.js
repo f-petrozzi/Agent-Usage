@@ -110,10 +110,9 @@ function createRow(id){
   el.setAttribute('role','listitem');el.setAttribute('aria-keyshortcuts','Alt+ArrowUp Alt+ArrowDown');
   el.innerHTML=`<span class="acct-mark"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"></svg><span class="glyph" aria-hidden="true"></span></span>
     <span class="acct-text"><span class="acct-name"></span><span class="acct-detail" hidden></span></span>
-    <span class="acct-actions"><button class="account-focus" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg><span>Focus</span></button><button class="notification-test" type="button" aria-pressed="false">Test notification</button></span>
-    <button class="bell" role="switch" aria-label="Usage warnings">${BELL}</button><button class="switch" role="switch" aria-label="Show in notch"></button>`;
+    <span class="acct-actions"><button class="account-focus" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg><span>Focus</span></button><button class="notification-test" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 4 7 6-7 6Z"/></svg><span>Test</span></button><button class="bell" role="switch" aria-label="Usage warnings">${BELL}<span class="account-notify-label">Notify on</span></button><button class="account-active" role="switch" aria-label="Show in notch"><span class="account-state-dot" aria-hidden="true"></span><span class="account-active-label">Active</span></button></span>`;
   const r={id,el,ringEl:el.querySelector('svg.ring'),glyph:el.querySelector('.glyph'),name:el.querySelector('.acct-name'),
-    detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),focus:el.querySelector('.account-focus'),bell:el.querySelector('.bell'),sw:el.querySelector('.switch'),ringKey:''};
+    detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),focus:el.querySelector('.account-focus'),bell:el.querySelector('.bell'),sw:el.querySelector('.account-active'),ringKey:''};
   const paint=()=>paintRow(r);
   r.y=spring(0,paint,.08);r.x=spring(0,paint,.08);r.tilt=spring(0,paint,.004);r.lift=spring(0,paint,.002);
   r.lift.done=()=>{if(!r.lift.x&&drag?.r!==r)el.classList.remove('settling');};
@@ -150,7 +149,7 @@ function updateRow(r,a,on){
   r.el.classList.toggle('stale',staleOf(a.snap));
   const shown=on.includes(a.id), muted=alertPrefs.muted.includes(a.id);
   r.el.classList.toggle('off',!shown);
-  r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
+  r.sw.classList.toggle('on',shown);r.sw.querySelector('.account-active-label').textContent=shown?'Active':'Inactive';r.bell.querySelector('.account-notify-label').textContent=muted?'Notify off':'Notify on';r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
   r.bell.setAttribute('aria-checked',String(!muted));r.bell.setAttribute('aria-label',`Usage warnings for ${a.name}`);
   r.test.setAttribute('aria-pressed',String(notificationTestAccount===a.id));r.test.setAttribute('aria-label',`Test notification for ${a.name}`);
   r.focus.setAttribute('aria-pressed',String(focusAccounts.includes(a.id)));r.focus.setAttribute('aria-label',`Focus ${a.name}`);
@@ -160,7 +159,6 @@ function updateRow(r,a,on){
   r.detail.hidden=!problem;if(r.detail.textContent!==problem){r.detail.textContent=problem;}
 }
 function renderAccounts(){
-  $('clear-focus').disabled=!focusAccounts.length;
   const ids=accounts.map(a=>a.id), on=enabledIds();
   for(const [id,r] of rows)if(!ids.includes(id)){r.el.remove();rows.delete(id);for(const s of [r.x,r.y,r.tilt,r.lift])live.delete(s);}
   for(const a of accounts)updateRow(rows.get(a.id)||createRow(a.id),a,on);
@@ -379,7 +377,6 @@ $('btn-data').onclick=action(()=>call('open_data_dir'));
 $('btn-recentre').onclick=action(()=>call('reset_notch_position'));
 $('save-collector').onclick=action(async()=>{await call('set_collector',{source:$('source').value,sshTarget:$('ssh').value.trim()});$('strip').hidden=false;$('strip').textContent='Collector saved; refreshing…';});
 $('shortcut').onchange=action(async()=>{try{await call('set_shortcut',{shortcut:$('shortcut').value});}finally{const c=await call('get_collector');$('shortcut').value=c.shortcut;}});
-$('clear-focus').onclick=action(()=>changeFocusSelection([]));
 $('seg-show').onclick=event=>{const b=event.target.closest('button');if(!b)return;action(async()=>renderFlags(await call('set_ui_flags',{notchVisible:b.dataset.v!=='hide',notchOnHover:b.dataset.v!=='show'})))();};
 $('sw-tray').onclick=action(async()=>renderFlags(await call('set_ui_flags',{trayVisible:!$('sw-tray').classList.contains('on')})));
 // The colour transition also recolours the rings on this page, so its value is kept as well as shown

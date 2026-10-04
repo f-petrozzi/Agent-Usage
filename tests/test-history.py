@@ -49,6 +49,16 @@ class HistoryTests(unittest.TestCase):
         self.assertTrue(all(s['state']=='idle' and not s['live'] for s in sessions))
         self.assertNotIn('private chat body', json.dumps(sessions))
 
+    def test_claude_ai_titles_and_explicit_names(self):
+        path=self.claude / 'projects/project' / f'{ID}.jsonl'
+        for kind in ['ai-title', 'aiTitle']:
+            self.write(path, [{'type':'user','cwd':'/home/fab'}, {'type':kind,'aiTitle':'Fix session switching'}])
+            self.assertEqual(self.history()[0]['name'], 'Fix session switching')
+        self.write(path, [{'type':'user','cwd':'/home/fab'},
+                          {'type':'custom-title','customTitle':'My chosen name'},
+                          {'type':'ai-title','aiTitle':'New generated title'}])
+        self.assertEqual(self.history()[0]['name'], 'My chosen name')
+
     def test_subagents_corrupt_records_and_duplicates_are_excluded(self):
         for i, payload in enumerate([{'source':{'subagent':{}}},{'parent_thread_id':ID},{'id':'bad'}]):
             self.write(self.codex / 'sessions/2026/01/01' / f'rollout-{i}-{ID}.jsonl', [{'type':'session_meta','payload':{'id':ID,'cwd':'/srv/project',**payload}}])

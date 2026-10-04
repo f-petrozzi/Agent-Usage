@@ -80,6 +80,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
   assert.match(helperLines.join(''),/010/,'the compiled helper must report the native session chord');
   console.log('PASS: native Windows registration, message loop, compiled helper pipe, hidden reveal, search focus and toggle close');
   await wait(300);
+  await main.window.webContents.executeJavaScript("holdCard(agentAccounts[0].id);pill.querySelector('.cell').focus()");
+  await hotkey();await until(showing,'Sessions must replace an open account card on the first chord');
+  await wait(250);await hotkey();await until(async()=>!await main.window.webContents.executeJavaScript('sessionSwitcherShowing()'),'Sessions must toggle closed after replacing an account');
+  console.log('PASS: native shortcut replaces the focused gauge card on the first press');
+  await wait(300);
   await key(0x91);
   await wait(300);
   const interactive=helperLines.join('').includes('100');
@@ -93,6 +98,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     await key(0x91,true);await key(control,true);await wait(200);
     await key(control);await key(0x91);await key(0x91,true);await key(control,true);
     await until(async()=>!await main.window.webContents.executeJavaScript('sessionSwitcherShowing()'),'Second chord did not close Sessions');
+    await wait(250);await hotkey();await until(showing,'Sessions did not reopen for the follow check');await wait(200);
+    await key(0x91);await until(async()=>!await main.window.webContents.executeJavaScript('sessionSwitcherShowing()'),'Scroll Lock alone did not close Sessions');
+    await until(async()=>await main.window.webContents.executeJavaScript('window.agentTracking && detailOpen===0'),'Scroll Lock did not follow after the fluid close');
+    assert.equal(main.window.isFocusable(),false,'carry mode releases keyboard focus');
+    await key(0x91,true);await until(async()=>!await main.window.webContents.executeJavaScript('window.agentTracking'),'releasing Scroll Lock did not stop following');
     console.log('PASS: '+(control===0xa2?'left':'right')+' Ctrl + Scroll Lock opens hidden Sessions, focuses search, ignores repeats and closes');
   }
   injector.kill();app.emit('before-quit');app.exit(0);

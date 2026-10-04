@@ -37,8 +37,12 @@ async function loadSessionLibrary(force=false){
   catch(error){if(generation===libraryGeneration)libraryError=error.message||'Saved sessions could not be loaded.';}
   finally{if(generation===libraryGeneration){libraryLoading=false;updateSessionList();scheduleSessionRefresh();}}
 }
+let sessionFollowClosing=false;
+function completeSessionFollow(){if(!sessionFollowClosing)return;sessionFollowClosing=false;invoke('session_follow_ready').catch(()=>{});}
+listen('session_follow',()=>{sessionFollowClosing=true;switcherPending=false;hideCard();if(!detailTarget&&detailOpen===0)completeSessionFollow();}).catch(()=>{});
 function requestSessionSwitcher(on=true){
   if(!on){switcherPending=false;if(sessionSwitcherShowing())hideCard();return;}
+  sessionFollowClosing=false;
   if(sessionSwitcherShowing()){focusSessionSearch();return;}
   switcherPending=true;
   const attempt=()=>{
@@ -58,12 +62,26 @@ for(const name of ['appear','layout','release'])listen(name,()=>{if(switcherPend
 listen('disappear',()=>{switcherPending=false;clearResumeEffects();}).catch(()=>{});
 listen('monitor_stow',()=>clearResumeEffects()).catch(()=>{});
 function closeSessionTools(){
-  if(sessionSwitcherShowing()){clearTimeout(sessionRefreshTimer);sessionRefreshTimer=0;switcherPending=false;invoke('close_session_switcher').catch(()=>{});}
+  if(sessionSwitcherShowing()){setSessionFilterOpen(false);clearTimeout(sessionRefreshTimer);sessionRefreshTimer=0;switcherPending=false;invoke('close_session_switcher').catch(()=>{});}
   scheduleFocusRest();
 }
-function sessionOptions(){
+function sessionAgents(){
   const values=new Map(agentAccounts.map(a=>[a.id,a.name]));for(const s of library)if(!values.has(s.account))values.set(s.account,s.accountName);
-  return '<option value="">All agents</option>'+[...values].map(([id,name])=>`<option value="${esc(id)}">${esc(name)}</option>`).join('');
+  return [['','All agents'],...values];
+}
+function setSessionFilterOpen(on){
+  const button=card.querySelector('.session-account'),menu=card.querySelector('.session-agent-menu');if(!button||!menu)return;
+  button.setAttribute('aria-expanded',String(on));menu.classList.toggle('open',on);menu.inert=!on;
+  if(on)menu.querySelector('[aria-selected="true"]')?.focus({preventScroll:true});
+}
+function updateSessionAgents(){
+  const button=card.querySelector('.session-account'),menu=card.querySelector('.session-agent-menu');if(!button||!menu)return;
+  const agents=sessionAgents(),signature=JSON.stringify([agents,sessionAccount]);if(menu.dataset.signature===signature)return;
+  menu.dataset.signature=signature;button.querySelector('span').textContent=agents.find(([id])=>id===sessionAccount)?.[1]||'All agents';
+  menu.innerHTML=agents.map(([id,name])=>`<button type="button" class="session-agent-option session-tool-action" role="option" aria-selected="${id===sessionAccount}" data-agent="${esc(id)}"><span>${esc(name)}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg></button>`).join('');
+}
+function chooseSessionAgent(button){
+  sessionAccount=button.dataset.agent;sessionIndex=0;setSessionFilterOpen(false);updateSessionList();card.querySelector('.session-account')?.focus({preventScroll:true});
 }
 function renderSessionToolsCard(){
   if(!isSessionToolsCard())return false;
@@ -71,14 +89,15 @@ function renderSessionToolsCard(){
   card.classList.add('session-card');setExtraContent([],[]);
   if(hoverId===SESSION_ID){
     if(switched||!card.querySelector('.session-search')){
-      card.innerHTML=`<div class="session-head"><span>Sessions</span><button type="button" class="session-close session-tool-action" aria-label="Close sessions">×</button></div>
+      card.innerHTML=`<div class="session-head"><span>Sessions</span></div>
         <div class="session-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.2 4.2"/></svg><input class="session-search" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" placeholder="Find a chat or workspace" aria-label="Find a chat or workspace" aria-controls="session-results" autocomplete="off" spellcheck="false"></div>
-        <div class="session-filter-row"><select class="session-account" aria-label="Filter sessions by agent">${sessionOptions()}</select></div>
+        <div class="session-filter-row"><button type="button" class="session-account session-tool-action" aria-label="Filter sessions by agent" aria-haspopup="listbox" aria-expanded="false" aria-controls="session-agents"><span>All agents</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><div class="session-agent-menu" id="session-agents" role="listbox" aria-label="Agents" inert></div></div>
         <div class="session-results" id="session-results" role="listbox" aria-label="Saved sessions"></div><div class="session-status" role="status" aria-live="polite"></div>`;
       const search=card.querySelector('.session-search');search.value=sessionQuery;
       search.addEventListener('input',()=>{sessionQuery=search.value;sessionIndex=0;queueSessionRender();});
-      const filter=card.querySelector('.session-account');filter.value=sessionAccount;
-      filter.addEventListener('change',()=>{sessionAccount=filter.value;sessionIndex=0;updateSessionList();});
+      const filter=card.querySelector('.session-account');
+      filter.addEventListener('click',()=>setSessionFilterOpen(filter.getAttribute('aria-expanded')!=='true'));
+      card.querySelector('.session-agent-menu').addEventListener('click',e=>{const option=e.target.closest('.session-agent-option');if(option)chooseSessionAgent(option);});
       sessionListSignature='';
     }
     card.dataset.account=SESSION_ID;updateSessionList();
@@ -94,6 +113,7 @@ function renderSessionToolsCard(){
 function queueSessionRender(){if(!sessionRenderFrame)sessionRenderFrame=requestAnimationFrame(()=>{sessionRenderFrame=0;updateSessionList();});}
 function updateSessionList(){
   if(!sessionSwitcherShowing())return;
+  updateSessionAgents();
   const selected=sessionMatches[sessionIndex],words=sessionQuery.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
   sessionMatches=library.filter(s=>(!sessionAccount||s.account===sessionAccount)&&words.every(word=>[s.name,s.accountName,s.workspace,s.sessionId].join(' ').toLocaleLowerCase().includes(word)))
     .sort((a,b)=>Number(isSessionPinned(b.account,b.id)||b.pinned)-Number(isSessionPinned(a.account,a.id)||a.pinned)||b.since-a.since);
@@ -145,8 +165,18 @@ card.addEventListener('click',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(!isSessionToolsCard()||!card.classList.contains('show'))return;
+  const menu=card.querySelector('.session-agent-menu'),filter=card.querySelector('.session-account');
+  if(menu?.classList.contains('open')){
+    if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();setSessionFilterOpen(false);filter.focus({preventScroll:true});return;}
+    if(e.target.closest('.session-agent-menu')&&['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+      e.preventDefault();const options=[...menu.querySelectorAll('.session-agent-option')],index=options.indexOf(e.target.closest('.session-agent-option'));
+      options[e.key==='Home'?0:e.key==='End'?options.length-1:Math.max(0,Math.min(options.length-1,index+(e.key==='ArrowDown'?1:-1)))]?.focus({preventScroll:true});return;
+    }
+    if(e.key==='Tab')setSessionFilterOpen(false);
+  }
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();hideCard();return;}
-  if(!sessionSwitcherShowing()||e.target.matches('select,.session-pin,.session-close'))return;
+  if(e.target.closest('.session-account')){if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();setSessionFilterOpen(true);}return;}
+  if(!sessionSwitcherShowing()||e.target.closest('.session-agent-menu,.session-account,.session-pin,.session-close'))return;
   if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
     e.preventDefault();sessionIndex=e.key==='Home'?0:e.key==='End'?Math.min(119,sessionMatches.length-1):Math.max(0,Math.min(119,sessionMatches.length-1,sessionIndex+(e.key==='ArrowDown'?1:-1)));paintSessionSelection(true);
   }else if(e.key==='Enter'&&e.target.classList.contains('session-search')){e.preventDefault();resumeSwitcherSession(sessionIndex);}
@@ -262,3 +292,5 @@ window.agentUsage.invoke=(command,args={})=>{
   const request=Promise.resolve().then(()=>originalInvoke(command,args)).then(value=>{finishResumeEffect(effect,value===true);return value;},error=>{finishResumeEffect(effect,false);throw error;}).finally(()=>resumeRequests.delete(key));
   resumeRequests.set(key,request);return request;
 };
+
+document.addEventListener('pointerdown',e=>{if(sessionSwitcherShowing()&&!e.target.closest('.session-filter-row'))setSessionFilterOpen(false);},true);

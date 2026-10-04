@@ -22,13 +22,13 @@ function setup(t, initialVisible = true, dependencies = {}) {
   };
   const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
     setIgnoreMouseEvents: v => calls.push(['ignore', v]), setBounds: r => calls.push(['bounds', r]),
-    setFocusable:value=>calls.push(['focusable',value]),focus:()=>calls.push(['focus']),blur:()=>calls.push(['blur']),
+    setFocusable:value=>calls.push(['focusable',value]),setSkipTaskbar:value=>calls.push(['skip-taskbar',value]),focus:()=>calls.push(['focus']),blur:()=>calls.push(['blur']),
     setAlwaysOnTop() {}, moveTop() {}, webContents: { send: (_name, event, payload) => calls.push([event, structuredClone(payload)]), sendInputEvent: e => calls.push(['input', e]) } };
-  const settings = { isDestroyed: () => false, webContents: { send() {} } };
+  const settings = { isDestroyed: () => false,isVisible:()=>false, webContents: { send() {} } };
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, inputLine, setInput(value){input=value;}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, inputLine, setInput(value){input=value;}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   const event = sender => ({ sender, senderFrame: { url: pathToFileURL(path.join(path.dirname(main), 'ui', 'notch.html')).href } });
@@ -63,8 +63,8 @@ test('Ctrl + Scroll Lock opens the switcher, enables keyboard focus only for it,
  assert.deepEqual(s.calls.at(-1),['session_switcher',true]);
  assert.equal(await s.command('session_switcher_focus',{},s.settings.webContents),false);
  assert.equal(await s.command('session_switcher_focus',{}),true);
- assert.deepEqual(s.calls.slice(-2),[['focusable',true],['focus']]);
- registration[2]();assert.deepEqual(s.calls.slice(-3),[['session_switcher',false],['blur'],['focusable',false]]);
+ assert.deepEqual(s.calls.slice(-3),[['focusable',true],['skip-taskbar',true],['focus']]);
+ registration[2]();assert.deepEqual(s.calls.slice(-4),[['session_switcher',false],['blur'],['focusable',false],['skip-taskbar',true]]);
 });
 test('Windows leaves session hotkey ownership with the native helper',t=>{
  const s=setup(t,true,{platform:'win32'});s.test.setInput({});
@@ -97,7 +97,7 @@ test('native Ctrl + Scroll Lock opens while hidden, ignores held repeats and coa
  await stow(s);const layout=s.calls.filter(c=>c[0]==='layout').at(-1)[1];assert.equal(layout.tracking,false);
  await s.command('monitor_placed',{placement:layout.placement});await s.command('session_switcher_focus');
  callback();s.test.inputLine('010');assert.equal(s.calls.filter(c=>c[0]==='session_switcher'&&c[1]===false).length,0);
- s.test.inputLine('000');s.test.inputLine('010');assert.deepEqual(s.calls.slice(-3),[['session_switcher',false],['blur'],['focusable',false]]);
+ s.test.inputLine('000');s.test.inputLine('010');assert.deepEqual(s.calls.slice(-4),[['session_switcher',false],['blur'],['focusable',false],['skip-taskbar',true]]);
  s.test.inputLine('010');assert.equal(s.calls.filter(c=>c[0]==='session_switcher'&&c[1]===false).length,1);
 });
 test('focus groups persist multiple known accounts, retain visibility and clear independently of old settings',async t=>{
@@ -275,4 +275,21 @@ test('the blue update dot receives native presses before an overlapping settings
   s.test.physicalPress({x:1130,y:430});
   assert.deepEqual(s.calls.filter(c=>c[0]==='control_pressed'),[['control_pressed','update']]);
   assert.equal(s.calls.some(c=>c[0]==='input'),false,'the dot opens its options without relaying another click');
+});
+
+test('Scroll Lock alone closes Sessions smoothly before following and releases keyboard focus',async t=>{
+ const s=setup(t);s.point({x:640,y:30});await s.command('open_session_switcher');await s.command('session_switcher_focus');
+ s.test.inputLine('100');assert.ok(s.calls.some(c=>c[0]==='session_follow'));
+ assert.deepEqual(s.calls.filter(c=>c[0]==='focusable').at(-1),['focusable',false]);
+ assert.deepEqual(s.calls.filter(c=>c[0]==='skip-taskbar').at(-1),['skip-taskbar',true]);
+ s.test.tick();assert.equal(s.calls.some(c=>c[0]==='edge_cursor'),false,'cursor waits for the closing animation');
+ await s.command('session_follow_ready',{},s.settings.webContents);s.test.tick();assert.equal(s.calls.some(c=>c[0]==='edge_cursor'),false,'settings cannot advance overlay motion');
+ await s.command('session_follow_ready');s.test.tick();assert.ok(s.calls.some(c=>c[0]==='edge_cursor'),'cursor resumes when the notch ink has closed');
+ s.test.inputLine('000');assert.ok(s.calls.some(c=>c[0]==='release'));
+});
+test('history opening preserves fresh collector terminal IDs without a live alert-feed entry',async t=>{
+ const opened=[],saved={id:'chat',account:'codex-a',provider:'codex',name:'Session',since:1700000000000,state:'idle',live:true,
+  sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',agentHome:'/home/me/.codex',terminalPids:[90,80]};
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>({sessions:[saved]})},'./session-open.cjs':{openSession:async row=>{opened.push(row);return true;}}});
+ await s.command('open_history_session',{id:'chat',account:'codex-a'});assert.deepEqual(Array.from(opened[0].terminalPids),[90,80]);
 });
