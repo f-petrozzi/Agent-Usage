@@ -10,16 +10,31 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   window.__calls=[];window.__emit=(n,p)=>(listeners[n]||[]).forEach(fn=>fn(p));window.agentUsage={invoke:async(c,a)=>{__calls.push([c,a]);return answers[c]??null;},on:(n,fn)=>{(listeners[n]??=[]).push(fn);return()=>{};}};
  });
  await page.goto('file://'+UI+'/notch.html');await page.addStyleTag({content:'html{background:#52667d}'});await page.waitForTimeout(350);
+ const checkContour=async account=>{
+  const outline=await page.evaluate(account=>{
+   const s=slivers.get(account),el=s.countdown,d=el.getAttribute('d'),length=el.getTotalLength(),m=s.path.getScreenCTM().inverse();
+   const samples=Array.from({length:65},(_,i)=>{const p=el.getPointAtLength(length*i/64),q=new DOMPoint(p.x,p.y).matrixTransform(m);return{x:q.x,y:q.y};});
+   const [u0,u1,depth,radius]=s.path.rimPart;
+   const distance=p=>Math.min(Math.abs(p.x-u0),Math.abs(p.x-u1),Math.abs(p.y-depth),
+    p.x<=u0+radius&&p.y>=depth-radius?Math.abs(Math.hypot(p.x-u0-radius,p.y-depth+radius)-radius):Infinity,
+    p.x>=u1-radius&&p.y>=depth-radius?Math.abs(Math.hypot(p.x-u1+radius,p.y-depth+radius)-radius):Infinity);
+   return{moves:(d.match(/M/g)||[]).length,closed:/Z/i.test(d),maxError:Math.max(...samples.map(distance)),
+    reachesTip:samples.some(p=>Math.abs(p.y-depth)<.1),touchesBothSides:samples.some(p=>Math.abs(p.x-u0)<.1)&&samples.some(p=>Math.abs(p.x-u1)<.1)};
+  },account);
+  assert.equal(outline.moves,1,'countdown has one seamless contour');assert.equal(outline.closed,false,'no countdown across the attachment seam');
+  assert.ok(outline.maxError<.1&&outline.reachesTip&&outline.touchesBothSides,'countdown follows the real ink sides and rounded front');
+ };
  const place=async edge=>{await page.mouse.move(400,300);await page.evaluate(edge=>{retractSlivers(true);notchEffects.clear();hideCard();__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false});__emit('appear',{edge});},edge);await page.waitForTimeout(850);};
  for(const edge of ['top','right','bottom','left']){
   await place(edge);
-  await page.evaluate(()=>showSliver('claude',[{id:'countdown',account:'claude',kind:'waiting',session:'Review'}],2600));await page.waitForTimeout(850);
+  await page.evaluate(()=>showSliver('claude',[{id:'countdown',account:'claude',kind:'completion',session:'Review'}],2600));await page.waitForTimeout(850);
+  await checkContour('claude');
   const initial=await page.locator('.sliver-countdown').evaluate(el=>parseFloat(getComputedStyle(el).strokeDasharray));
   await page.waitForTimeout(200);assert.ok(await page.locator('.sliver-countdown').evaluate(el=>parseFloat(getComputedStyle(el).strokeDasharray))<initial-4,'countdown drains');
   await page.evaluate(()=>holdSlivers(true));const frozen=await page.locator('.sliver-countdown').evaluate(el=>parseFloat(getComputedStyle(el).strokeDasharray));
   await page.waitForTimeout(2900);assert.equal(await page.evaluate(()=>slivers.size),1,'reading pauses expiry');
   assert.ok(Math.abs(await page.locator('.sliver-countdown').evaluate(el=>parseFloat(getComputedStyle(el).strokeDasharray))-frozen)<.1,'reading pauses the outline too');
-  await page.screenshot({path:path.join(OUT,edge+'-countdown.png')});
+  await page.evaluate(()=>notificationRim.clear());await page.screenshot({path:path.join(OUT,edge+'-countdown.png')});
   await page.evaluate(()=>holdSlivers(false));await page.waitForTimeout(150);
   assert.ok(await page.locator('.sliver-countdown').evaluate(el=>parseFloat(getComputedStyle(el).strokeDasharray))<frozen,'resume continues from the held fraction');
   await page.waitForTimeout(2000);assert.equal(await page.locator('.sliver-countdown').count(),0,'expiry removes the outline');
@@ -35,7 +50,7 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
   assert.ok(await page.locator('.notification-droplet').count()<=3);assert.equal(await page.locator('.notification-droplet').first().evaluate(el=>getComputedStyle(el).pointerEvents),'none');
   await page.waitForTimeout(120);await page.screenshot({path:path.join(OUT,edge+'-merge.png')});
   await page.waitForTimeout(1000);assert.equal(await page.locator('.notification-droplet').count(),0,'merged drops leave no persistent animation');
-  assert.equal(await page.evaluate(()=>slivers.get(FINISHED_ID).events.length),2,'visual merging preserves sessions');
+  assert.equal(await page.evaluate(()=>slivers.get(FINISHED_ID).events.length),2,'visual merging preserves sessions');await page.evaluate(()=>notificationRim.clear());await checkContour('__finished');await page.screenshot({path:path.join(OUT,edge+'-finished-contour.png')});
   await page.evaluate(()=>showSliver(FINISHED_ID,[...slivers.get(FINISHED_ID).events,{id:'merge-next',kind:'completion',account:'claude',session:'Next'}],6000));
   await page.waitForFunction(()=>document.querySelectorAll('.notification-droplet').length===1);
   await page.evaluate(()=>retract(slivers.get(FINISHED_ID)));assert.equal(await page.locator('.notification-droplet').count(),0,'closing the stack absorbs any in-flight drop');
@@ -70,7 +85,7 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
  await page.emulateMedia({reducedMotion:'reduce'});
  await page.evaluate(()=>{retractSlivers(true);__emit('edge_cursor',{edge:'right',perimeter:perimeterAt('right',.5)});__emit('release');showSliver(FINISHED_ID,[{id:'r-a',kind:'completion',account:'claude'},{id:'r-b',kind:'completion',account:'codex'}],2000);});
  await page.waitForTimeout(100);assert.equal(await page.locator('.notification-droplet').count(),0);assert.deepEqual(await page.evaluate(()=>[notchEffects.dock.value,notchEffects.dock.frame]),[0,0]);
- assert.equal(await page.locator('.sliver-countdown').evaluate(el=>el.getAnimations().length),0,'reduced motion keeps the countdown stationary');
+ assert.equal(await page.locator('.sliver-countdown').evaluate(el=>el.getAnimations().length),0,'reduced motion keeps the countdown stationary');await checkContour('__finished');
  await page.evaluate(()=>__emit('monitor_stow',{placement:99}));assert.equal(await page.locator('.sliver-countdown,.notification-droplet,.quota-renewal').count(),0);
  assert.deepEqual(errors,[]);console.log('Passed 5.0 motion: countdown pause/resume and expiry, docking settlement, stack droplets and cleanup on four edges, genuine quota renewals, initial/corrected/stale readings, combined frame sample, reduced motion and monitor stow.');
  }finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

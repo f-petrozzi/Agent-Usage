@@ -176,7 +176,7 @@ function drawSliver(s){
     u0=index===0?start:index===cells.length-1?end-span:Math.max(start,Math.min(end-span,center-span/2));
     u1=u0+span;d=SLIVER.flat*Math.min(1.25,t);
   }
-  if(d<.5){s.path.removeAttribute('d');s.el.style.opacity=0;if(s.account===UPDATE_ID)updateProgress.clear();return;}
+  if(d<.5){s.path.removeAttribute('d');s.countdown?.removeAttribute('d');s.el.style.opacity=0;if(s.account===UPDATE_ID)updateProgress.clear();return;}
   const inkDepth=d+depth-rootDepth;
   s.path.setAttribute('d',notificationRectPath(u0,u1,inkDepth));
   const rimRadius=Math.min(SHAPE.corner,(u1-u0)/2,inkDepth);
@@ -195,7 +195,7 @@ function drawSliver(s){
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
   if(s.countdown){
-    if(Math.abs(a[0]-b[0])>=8&&Math.abs(a[1]-b[1])>=8)s.countdown.setAttribute('d',sliverFramePath({x,y,width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1])}));else s.countdown.removeAttribute('d');
+    const outline=sliverContour(s.path);if(outline)s.countdown.setAttribute('d',outline);else s.countdown.removeAttribute('d');
     s.countdown.style.opacity=s.test?'0':String(.26*smooth((t-.74)/.26));
   }
   if(s.account===UPDATE_ID)updateProgress.draw(updateState,{path:s.path,opacity:smooth((t-.74)/.26)});
