@@ -4,7 +4,7 @@ const SESSION_SHORTCUT = 'Ctrl+Scrolllock';
 const shortcuts = { Scrolllock: [145, 0], 'Shift+F1': [112, 4], 'Ctrl+Shift+Space': [32, 6], F13: [124, 0], F14: [125, 0], F15: [126, 0] };
 // Native monitoring is owned by this boundary. An old child cannot reset a replacement.
 function createInputMonitor({ executable, owner, launch = spawn, schedule = setTimeout, cancel = clearTimeout,
-  onInput, onReset, onChild = () => {}, onProblem = () => {}, diagnose = () => {} }) {
+  onInput, onPointer = () => {}, onReset, onChild = () => {}, onProblem = () => {}, diagnose = () => {} }) {
   let child = null, retry = null, startup = null, generation = 0, closed = false, ready = false, key = null, failures = 0;
   function retire() {
     generation++; cancel(retry); cancel(startup); retry = startup = null; ready = false;
@@ -25,7 +25,7 @@ function createInputMonitor({ executable, owner, launch = spawn, schedule = setT
     try { current = launch(executable, [String(owner), ...key.map(String)], { windowsHide: true, stdio: ['ignore','pipe','pipe'] }); }
     catch (error) { fail(error); return; }
     child = current; onChild(current);
-    let status = '', input = '';
+    let status = '', input = '', pointerTime = -1;
     startup = schedule(() => fail(new Error('readiness timed out')), 5000); startup.unref?.();
     current.stderr.on('data', data => {
       if (revision !== generation) return;
@@ -44,12 +44,23 @@ function createInputMonitor({ executable, owner, launch = spawn, schedule = setT
     });
     current.stdout.on('data', data => {
       if (revision !== generation) return;
-      input += data.toString(); let end;
+      input += data.toString(); let end, newest = null;
+      if(input.length>65536){input='';return;}
       while ((end = input.indexOf('\n')) >= 0) {
         const value = input.slice(0,end).trim(); input = input.slice(end+1);
         if (/^[01]{3}$/.test(value)) onInput(value);
+        else {
+          const record=/^pointer (-?\d{1,7}) (-?\d{1,7}) (\d{1,15})$/.exec(value);
+          if(record){
+            const x=Number(record[1]),y=Number(record[2]),timestamp=Number(record[3]);
+            if(Math.abs(x)<=1000000&&Math.abs(y)<=1000000&&Number.isSafeInteger(timestamp)&&timestamp>pointerTime){
+              pointerTime=timestamp;newest={x,y,timestamp};
+            }
+          }
+        }
       }
       if (input.length > 4096) input = '';
+      if(newest)onPointer(newest);
     });
     current.on('error', fail);
     current.on('exit', (code, signal) => fail(new Error('code=' + code + ' signal=' + signal)));

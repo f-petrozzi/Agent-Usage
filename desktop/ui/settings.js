@@ -1,5 +1,6 @@
 'use strict';
 const api=window.agentUsage, $=id=>document.getElementById(id);
+let appearanceSettings={aliases:false,compactSessions:false};
 let flags={},slots=[],accounts=[],glyphs={},alertPrefs={muted:[]},colorTransition='hard_step',activeTab='';
 let notificationTestAccount=null;
 let focusAccounts=[],focusPending=0,focusRevision=0,focusSave=Promise.resolve();
@@ -27,7 +28,7 @@ function placeSeg(seg){
   const on=seg.querySelector('button.on');
   if(!on||!on.offsetWidth){seg.classList.remove('placed');return;}
   seg.style.setProperty('--seg-x',on.offsetLeft-2+'px');seg.style.setProperty('--seg-w',on.offsetWidth+'px');
-  if(!seg.classList.contains('placed'))requestAnimationFrame(()=>requestAnimationFrame(()=>seg.classList.add('placed')));
+  if(!seg.classList.contains('placed'))uiMotion.frame(()=>uiMotion.frame(()=>seg.classList.add('placed')));
 }
 addEventListener('resize',()=>{for(const seg of document.querySelectorAll('.seg'))placeSeg(seg);paintNotch();});
 function toggle(id,on){$(id).classList.toggle('on',on);$(id).setAttribute('aria-checked',String(on));}
@@ -43,22 +44,22 @@ function spring(x,apply,eps=.05){return {x,v:0,to:x,response:.34,damping:.86,eps
 function springTo(s,to,response=.34,damping=.86){
   s.to=to;s.response=response;s.damping=damping;
   if(reduced.matches){s.x=to;s.v=0;live.delete(s);s.apply();s.done?.();return;}
-  live.add(s);if(!springFrame){springLast=performance.now();springFrame=requestAnimationFrame(stepSprings);}
+  live.add(s);if(!springFrame){springLast=performance.now();springFrame=uiMotion.frame(stepSprings);}
 }
 // Direct manipulation: the value is wherever the pointer says, with no spring between
 function hold(s,x){s.x=x;s.to=x;s.v=0;live.delete(s);s.apply();}
 function stepSprings(now){
-  const dt=Math.min(.032,(now-springLast)/1000);springLast=now;
+  const dt=Math.min(.1,(now-springLast)/1000);springLast=now;
   const paint=new Set(),done=[];
   for(const s of live){
     const w=2*Math.PI/s.response;
-    s.v+=(-w*w*(s.x-s.to)-2*s.damping*w*s.v)*dt;s.x+=s.v*dt;
+    [s.x,s.v]=uiMotion.spring(s.x,s.v,s.to,w,s.damping,dt);
     if(Math.abs(s.x-s.to)<s.eps&&Math.abs(s.v)<s.eps*8){s.x=s.to;s.v=0;live.delete(s);if(s.done)done.push(s.done);}
     paint.add(s.apply);
   }
   for(const f of paint)f();
   for(const f of done)f();
-  springFrame=live.size?requestAnimationFrame(stepSprings):0;
+  springFrame=live.size?uiMotion.frame(stepSprings):0;
 }
 
 /* ---- usage readings, drawn the way the notch draws them ---- */
@@ -109,10 +110,10 @@ function createRow(id){
   const el=document.createElement('div');el.className='acct';el.tabIndex=0;el.dataset.id=id;
   el.setAttribute('role','listitem');el.setAttribute('aria-keyshortcuts','Alt+ArrowUp Alt+ArrowDown');
   el.innerHTML=`<span class="acct-mark"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"></svg><span class="glyph" aria-hidden="true"></span></span>
-    <span class="acct-text"><span class="acct-name"></span><span class="acct-detail" hidden></span></span>
+    <span class="acct-text"><span class="acct-name"></span><input class="acct-alias" maxlength="40" placeholder="Account alias" hidden><span class="acct-detail" hidden></span></span>
     <span class="acct-actions"><button class="account-focus" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg></button><button class="notification-test" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 4 7 6-7 6Z"/></svg></button><button class="bell" role="switch" aria-label="Usage warnings">${BELL}</button><button class="account-active switch" role="switch" aria-label="Show in notch"></button></span>`;
   const r={id,el,ringEl:el.querySelector('svg.ring'),glyph:el.querySelector('.glyph'),name:el.querySelector('.acct-name'),
-    detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),focus:el.querySelector('.account-focus'),bell:el.querySelector('.bell'),sw:el.querySelector('.account-active'),ringKey:''};
+    alias:el.querySelector('.acct-alias'),detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),focus:el.querySelector('.account-focus'),bell:el.querySelector('.bell'),sw:el.querySelector('.account-active'),ringKey:''};
   const paint=()=>paintRow(r);
   r.y=spring(0,paint,.08);r.x=spring(0,paint,.08);r.tilt=spring(0,paint,.004);r.lift=spring(0,paint,.002);
   r.lift.done=()=>{if(!r.lift.x&&drag?.r!==r)el.classList.remove('settling');};
@@ -137,12 +138,17 @@ function createRow(id){
     const available=focusAccounts.filter(x=>accounts.some(a=>a.id===x)),next=available.includes(id)?available.filter(x=>x!==id):[...available,id];
     await changeFocusSelection(next);
   });
+  r.alias.setAttribute('aria-label','Account alias');
+  r.alias.onchange=action(async()=>{accounts=await call('set_account_alias',{account:id,alias:r.alias.value.trim()});renderAccounts();});
   el.addEventListener('pointerdown',e=>press(r,e));
   el.addEventListener('keydown',e=>{if(e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')){e.preventDefault();nudge(id,e.key==='ArrowUp'?-1:1);}});
   rows.set(id,r);return r;
 }
 function updateRow(r,a,on){
   if(r.name.textContent!==a.name){r.name.textContent=a.name;r.el.setAttribute('aria-label',a.name);}
+  r.alias.hidden=!appearanceSettings.aliases||a.id==='collector';
+  r.alias.title=a.originalName||a.name;r.alias.setAttribute('aria-label',`Alias for ${a.originalName||a.name}`);
+  if(document.activeElement!==r.alias)r.alias.value=a.alias||'';
   paintGlyph(r.glyph,a);
   const used=usedOf(a), key=`${used}|${colorTransition}|${palette.ample}`;
   if(r.ringKey!==key){r.ringKey=key;r.ringEl.innerHTML=ring(used,36,16.2,2.6,palette);}
@@ -202,7 +208,7 @@ function nudge(id,delta){
 let drag=null;
 const GAP=6, rubber=o=>22*(1-Math.exp(-o/90));
 function press(r,e){
-  if(e.button!==0||drag||e.target.closest('button'))return;
+  if(e.button!==0||drag||e.target.closest('button,input'))return;
   drag={r,pointer:e.pointerId,x0:e.clientX,y0:e.clientY,px:e.clientX,py:e.clientY,vx:0,vy:0,t:e.timeStamp,moved:performance.now(),scroll0:$('body').scrollTop,lifted:false};
   r.el.setPointerCapture(e.pointerId);
   springTo(r.lift,-.4,.2,.9); // it gives a little under the pointer before it comes up
@@ -216,7 +222,7 @@ function lift(){
   d.step=own.h+GAP;d.min=-own.top;d.max=list.offsetHeight-own.top-own.h;
   document.documentElement.classList.add('dragging');d.r.el.classList.add('lifted','settling');
   springTo(d.r.lift,1,.3,.6);
-  d.frame=requestAnimationFrame(dragFrame);
+  d.frame=uiMotion.frame(dragFrame);
 }
 function follow(){
   const d=drag, raw=d.base+(d.py-d.y0)+($('body').scrollTop-d.scroll0);
@@ -243,7 +249,7 @@ function dragFrame(now){
   // A pointer held still has no speed, whatever its last move was
   if(now-d.moved>40){d.vx*=.8;d.vy*=.8;}
   follow();
-  d.frame=requestAnimationFrame(dragFrame);
+  d.frame=uiMotion.frame(dragFrame);
 }
 function move(e){
   const d=drag;if(!d||e.pointerId!==d.pointer)return;
@@ -255,7 +261,7 @@ function move(e){
 }
 function release(keep){
   const d=drag;if(!d)return;drag=null;
-  cancelAnimationFrame(d.frame);
+  uiMotion.cancel(d.frame);
   if(d.r.el.hasPointerCapture?.(d.pointer))d.r.el.releasePointerCapture(d.pointer);
   if(!d.lifted){springTo(d.r.lift,0,.3,.6);return;}
   document.documentElement.classList.remove('dragging');d.r.el.classList.remove('lifted');
@@ -387,7 +393,7 @@ const kept={'seg-transition':v=>{colorTransition=v;renderAccounts();}};
 for(const [id,get,set,key] of [['seg-size','get_scale','set_scale','scale'],['seg-theme','get_theme','set_theme','theme'],['seg-weekly','get_weekly_ring','set_weekly_ring','placement'],['seg-transition','get_color_transition','set_color_transition','style'],['seg-edge','get_notch_edge','set_notch_edge','edge']]){
   const show=v=>{selected(id,v);kept[id]?.(v);};
   action(async()=>show(await call(get)))();
-  $(id).onclick=e=>{const b=e.target.closest('button');if(b)action(async()=>{show(await call(set,{[key]:key==='scale'?Number(b.dataset.v):b.dataset.v}));})()};
+  $(id).onclick=e=>{const b=e.target.closest('button,input');if(b)action(async()=>{show(await call(set,{[key]:key==='scale'?Number(b.dataset.v):b.dataset.v}));})()};
 }
 api.on('color_transition',v=>{if(typeof v==='string'){selected('seg-transition',v);kept['seg-transition'](v);}});
 for(const [id,get,set] of [['sw-autostart','get_autostart','set_autostart']]){
@@ -442,3 +448,25 @@ function renderUpdate(state){
 $('update-action').onclick=action(()=>call(updateState.status==='ready'?'install_update':updateState.status==='available'?'download_update':'check_for_update'));
 api.on('update_state',renderUpdate);
 action(async()=>renderUpdate(await call('get_update_state')))();
+
+function renderAppearance(value){
+  appearanceSettings={aliases:value?.aliases===true,compactSessions:value?.compactSessions===true};
+  toggle('sw-account-labels',appearanceSettings.aliases);toggle('sw-compact-sessions',appearanceSettings.compactSessions);renderAccounts();
+}
+action(async()=>renderAppearance(await call('get_appearance')))();
+for(const [id,key] of [['sw-account-labels','aliases'],['sw-compact-sessions','compactSessions']])$(id).onclick=action(async()=>renderAppearance(await call('set_appearance',{[key]:!appearanceSettings[key]})));
+api.on('appearance',renderAppearance);
+
+let performanceState={status:'idle'};
+function renderPerformance(value){
+  performanceState=value||{status:'idle'};
+  const busy=['starting','recording','saving'].includes(performanceState.status);
+  $('performance-action').disabled=busy;
+  $('performance-open').hidden=performanceState.status!=='saved';
+  $('performance-status').textContent=({starting:'Starting recording…',recording:'Recording for 10 seconds…',saving:'Saving recording…',saved:'Performance recording saved',error:'Recording failed'})[performanceState.status]||'Performance recording';
+  if(performanceState.status==='error')error(performanceState.message||'Performance recording failed.');
+}
+$('performance-action').onclick=action(async()=>renderPerformance(await call('start_performance_capture')||performanceState));
+$('performance-open').onclick=action(()=>call('show_performance_capture'));
+api.on('performance_capture',renderPerformance);
+action(async()=>renderPerformance(await call('get_performance_capture')))();

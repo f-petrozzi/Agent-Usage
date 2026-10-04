@@ -16,7 +16,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
     app: { setName() {}, setAppUserModelId() {}, setPath() {}, getPath: () => root, commandLine: { appendSwitch() {} },
       requestSingleInstanceLock: () => true, on() {}, whenReady: () => new Promise(() => {}) },
     ipcMain: { handle: (_name, handler) => { command = handler; } },
-    screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => point, getDisplayNearestPoint: p => p.x < 0 ? displays[1] : displays[0] },
+    screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => point, screenToDipPoint:p=>({x:p.x/2,y:p.y/2}), getDisplayNearestPoint: p => p.x < 0 ? displays[1] : displays[0] },
     globalShortcut:{register:(key,callback)=>{calls.push(['shortcut',key,callback]);return true;},isRegistered:()=>false,unregister(){}},
   };
   const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
@@ -27,7 +27,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, recoverPlacement, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   t.after(()=>{context.monitorTest.closeTimers();fs.rmSync(root,{recursive:true,force:true});});
@@ -337,4 +337,38 @@ test('collector changes during a session lookup cannot open a session on the new
  const s=setup(t,true,{'./collector.cjs':{readSessionHistory:()=>pending},'./session-open.cjs':{openSession:async row=>opened.push(row)}});
  const click=s.command('open_history_session',{account:'codex-a',id:'chat'});s.config.sshTarget='other';resolve({sessions:[]});
  await assert.rejects(click,/Collector changed/);assert.equal(opened.length,0);
+});
+
+test('fresh verified live ancestry focuses immediately without waiting for history; stale snapshots use refresh',async t=>{
+ const account='codex-a',opened=[];let reads=0;
+ const live={account,id:'chat',sessionId:'12345678-1234-5678-abcd-123456789012',provider:'codex',terminalPids:[123],cwd:'/srv/project',state:'busy'};
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>{reads++;return {sessions:[{...live,agentHome:'/home/me/.codex'}]};}},'./session-open.cjs':{openSession:async target=>{opened.push(target);return true;}}});
+ s.test.setAccounts([{id:account,base:'codex',name:'Codex A'}]);s.test.setFresh([live]);
+ assert.equal(await s.command('open_working_session',{account,id:'chat'}),true);assert.equal(reads,0);
+ assert.equal(opened[0].focusOnly,true);assert.deepEqual(Array.from(opened[0].terminalPids),[123]);assert.equal(opened[0].sshTarget,'homelab');
+ s.test.setFresh([live],21000);await s.command('open_working_session',{account,id:'chat'});assert.equal(reads,1);
+ s.test.setFresh([{...live,terminalPids:[]}]);await s.command('open_working_session',{account,id:'chat'});assert.equal(reads,2);
+ s.test.setFresh([live]);s.config.sshTarget='other';await s.command('open_working_session',{account,id:'chat'});assert.equal(reads,3);
+ s.test.setFresh([live],-1000);await s.command('open_working_session',{account,id:'chat'});assert.equal(reads,4,'future timestamps cannot establish freshness');
+});
+test('native physical coordinates follow in DIP without running click-through or topmost work',async t=>{
+ const s=setup(t,false,{platform:'win32'});s.point({x:1200,y:300});s.test.inputLine('100');await stow(s);
+ const layout=s.calls.filter(c=>c[0]==='layout').at(-1)[1];await s.command('monitor_placed',{placement:layout.placement});
+ const before=s.calls.length;s.test.nativePointer({x:2500,y:720,timestamp:120});
+ const calls=s.calls.slice(before),target=calls.find(c=>c[0]==='edge_cursor')[1];
+ assert.equal(target.x,1250);assert.equal(target.y,360);assert.equal(target.timestamp,120);assert.equal(target.trackingStarted,true);
+ assert.equal(calls.some(c=>c[0]==='ignore'),false);s.test.tick();
+ assert.equal(s.calls.filter(c=>c[0]==='edge_cursor').length,1,'watchdog tick does not duplicate fresh native delivery');
+ s.test.nativePointer({x:2498,y:722,timestamp:124});assert.equal(s.calls.filter(c=>c[0]==='edge_cursor').at(-1)[1].trackingStarted,false);
+ s.test.inputLine('000');const count=s.calls.length;s.test.nativePointer({x:0,y:0,timestamp:124});assert.equal(s.calls.length,count);
+});
+test('account aliases and compact rows persist independently of account identity and focus',async t=>{
+ const s=setup(t);s.test.setAccounts([{id:'codex-a',base:'codex',name:'Codex a'}]);
+ await s.command('set_account_alias',{account:'codex-a',alias:'  Work  '});
+ const a=(await s.command('get_agent_accounts'))[0];assert.equal(a.id,'codex-a');assert.equal(a.name,'Work');assert.equal(a.originalName,'Codex a');
+ assert.equal((await s.command('set_appearance',{aliases:true,compactSessions:true})).compactSessions,true);
+ assert.equal(JSON.parse(fs.readFileSync(path.join(s.root,'settings.json'))).accountAliases['codex-a'],'Work');
+ await assert.rejects(s.command('set_account_alias',{account:'missing',alias:'Work'}),/alias/);
+ await assert.rejects(s.command('set_account_alias',{account:'codex-a',alias:'bad\nname'}),/alias/);
+ await s.command('set_account_alias',{account:'codex-a',alias:''});assert.equal((await s.command('get_agent_accounts'))[0].name,'Codex a');
 });

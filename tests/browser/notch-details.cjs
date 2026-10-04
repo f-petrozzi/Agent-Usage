@@ -46,7 +46,7 @@ const answers = {
 
   await page.waitForTimeout(1200);
   const sample=async t=>page.evaluate(t=>{
-    cancelAnimationFrame(frame);frame=0;cancelAnimationFrame(armsFrame);armsOut=1;
+    uiMotion.cancel(frame);frame=0;uiMotion.cancel(armsFrame);armsOut=1;
     window.agentTracking=true;
     position=target=(t+2*(innerWidth+innerHeight))%(2*(innerWidth+innerHeight));
     animate(performance.now());

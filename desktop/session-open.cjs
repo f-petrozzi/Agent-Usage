@@ -84,7 +84,7 @@ async function prepareHelper({locations=codeLocations(),exists=fs.existsSync,ens
   return executable?ensureHelper(executable,helper):false;
 }
 async function openSession(target, shell, { locations = codeLocations(), exists = fs.existsSync, launch = spawn,
-  protocolName = () => '', helper = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'agent-usage-link.vsix'), ensureHelper = installHelper, receiptFactory = createReceipt } = {}) {
+  protocolName = () => '', helper = path.join(process.resourcesPath || path.join(__dirname, 'resources'), 'agent-usage-link.vsix'), ensureHelper = installHelper, receiptFactory = createReceipt, validateTarget = () => {} } = {}) {
   let url = target?.resume ? resumeUrl(target) : sessionUrl(target);
   if (!url) return false;
   const executable = locations.find(exists);
@@ -95,7 +95,7 @@ async function openSession(target, shell, { locations = codeLocations(), exists 
     // Keep normal routing to the active Code window, including after helper installation. An older running
     // helper may need Reload Window once; forcing _blank here defeated the user's existing-window preference.
     // Fixed executable paths and validated session UUIDs; never pass a shell command or prompt.
-    try { await new Promise((resolve, reject) => {
+    try { validateTarget(); await new Promise((resolve, reject) => {
       const child = launch(executable, [...(target.resume?['--reuse-window']:[]),'--open-url', '--', url], { windowsHide: true, detached: true, stdio: 'ignore' });
       child.once('error', () => reject(new Error('VS Code could not be started.')));
       child.once('spawn', () => { child.unref(); resolve(); });

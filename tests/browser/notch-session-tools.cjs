@@ -50,7 +50,7 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    await page.waitForTimeout(600);await page.screenshot({path:path.join(OUT,edge+'-switcher.png')});
    await page.locator('.session-result').nth(2).hover();await page.waitForTimeout(400);
    assert.equal(await page.evaluate(()=>sessionIndex),2,'pointer selects the hovered chat');
-   assert.equal(await page.locator('.session-open').nth(2).getAttribute('aria-selected'),'true');
+   assert.equal(await page.locator('.session-result[role="row"]').nth(2).getAttribute('aria-selected'),'true');
    assert.ok(await page.locator('.session-selection').evaluate(el=>Math.abs(el.getBoundingClientRect().top-document.querySelector('.session-result[data-index="2"]').getBoundingClientRect().top)<1),'fluid highlight settles under the hovered chat');
    await page.locator('.session-result').nth(1).locator('.session-pin').hover();assert.equal(await page.evaluate(()=>sessionIndex),1,'hovering the pin selects its own row');
    await page.mouse.wheel(0,80);await page.waitForTimeout(300);

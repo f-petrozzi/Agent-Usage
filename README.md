@@ -7,11 +7,11 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.0.4**.
+The current release is **5.0.5**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
-All previews below are captured from the actual 5.0.4 frontend with fictional
+All previews below are captured from the actual 5.0.5 frontend with fictional
 accounts, usage and chats: **Codex · Atlas**, **Claude · Cedar**, **AGY · Drift**
 and **Codex · Harbor**.
 
@@ -24,20 +24,24 @@ and **Codex · Harbor**.
 - **Find any recent chat.** Search Sessions by title, workspace or session ID,
   filter by agent, pin favorites and keep the list fresh automatically. A quiet
   history icon opens that account's Sessions; Back returns to usage in the same
-  attached frame.
+  attached frame. Search highlights matches; refreshes retain keyboard focus.
+  Optional compact rows keep account and workspace on one secondary line.
 - **Return to VS Code.** Focus a session's existing terminal or resume a closed
   chat in a named terminal using its saved workspace and CLI account. Supports
   SSH and WSL, and can launch VS Code when it is closed.
 - **Focus on your accounts.** Keep one or several selected accounts unfolded at
   rest. Hover reveals the others. Reorder accounts and control their visibility,
-  notification muting and test notifications independently.
+  notification muting and test notifications independently. Optional account
+  labels and aliases distinguish accounts sharing the same provider.
 - **Keep useful notifications.** Usage warnings, input requests, completion
   alerts, optional sound and a saved alert log. Filters hide and restore retained
   alerts; Clear removes them. Several completions gather into one session stack.
 - **Fit your desktop.** All four screen edges, multiple monitors, size options,
   pinning, optional tray icon and sign-in startup.
 - **Fluid motion.** A perimeter shimmer, quota-reset sweeps, docking rebound and
-  merging droplets. Notification countdowns pause on hover and follow the
+  merging droplets. Shared frame scheduling and refresh-independent springs
+  keep geometry coordinated; Windows pointer following receives native events.
+  Notification countdowns pause on hover and follow the
   sliver's real contour. Reduced motion is supported.
 - **Updates when they arrive.** Signed release notices announce updates through
   a steady blue dot. Download progress follows the sliver's exposed edges;
@@ -156,6 +160,8 @@ scripts/install-agent-usage.sh --force
 ## Development and documentation
 
 - [Notch controls, G815 setup and build details](docs/notch.md)
+- [Windows performance recording and validation](docs/performance.md)
+- [Renderer state and geometry contracts](docs/renderer-contract.md)
 - [Release history and validation notes](docs/release-history.md)
 - [Shared platform architecture and Mac preparation](docs/platforms.md)
 - [Mac readiness audit of 5.0.1](docs/mac-readiness-audit.md)
@@ -173,3 +179,13 @@ VS Code. Images are captured at double resolution for crisp text.
 
 The Windows frontend builds on CodeNotch; its licenses and glyph notices are in
 [desktop/vendor](desktop/vendor). Agent Usage is available under the [MIT license](LICENSE).
+
+### Account labels and performance recording
+
+Settings → Appearance offers Account labels and aliases and Compact Sessions
+rows. With labels enabled, edit an account's alias in Settings → Accounts.
+Hover or focus a gauge to learn its quota window and used percentage.
+
+Settings → General → Performance recording → Record 10 seconds creates a local,
+bounded trace for testing on your Windows display. See the
+[performance guide](docs/performance.md) for native refresh-rate and mixed-DPI checks.

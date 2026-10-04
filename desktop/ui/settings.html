@@ -22,7 +22,7 @@
     --spring:cubic-bezier(.32,.72,.24,1); --bounce:cubic-bezier(.34,1.4,.64,1);
     color-scheme:dark;
   }
-  /* Rust says which appearance this is (get_theme_resolved), so a forced Light or Dark lands here
+  /* Main resolves this appearance (get_theme_resolved), so a forced Light or Dark lands here
      whatever Windows is set to. */
   :root[data-theme="light"]{
     --ground:#f1f1f3; --surface:#ffffff; --surface-hover:#fcfcfd; --raised:#ffffff; --well:rgba(0,0,0,.055); --well-hover:rgba(0,0,0,.09);
@@ -211,6 +211,7 @@
   #toast.show{opacity:1}
   [data-tauri-drag-region]{-webkit-app-region:drag}
   button,input,select{-webkit-app-region:no-drag}
+  .acct-alias{font:inherit;font-size:12px;color:var(--text);border:1px solid var(--edge);border-radius:5px;background:var(--well);padding:3px 6px;width:150px;max-width:100%;margin-top:4px}
 </style>
 </head>
 <body>
@@ -255,6 +256,8 @@
         </div>
         <div class="sec">Controls</div>
         <div class="group">
+          <div class="item"><span>Account labels and aliases</span><button class="switch" id="sw-account-labels" role="switch" aria-checked="false" aria-label="Account labels and aliases"></button></div>
+          <div class="item"><span>Compact Sessions rows</span><button class="switch" id="sw-compact-sessions" role="switch" aria-checked="false" aria-label="Compact Sessions rows"></button></div>
           <div class="item"><span>Pin button</span><button class="switch" id="sw-pin-button" role="switch" aria-checked="false" aria-label="Pin button"></button></div>
           <div class="item"><span>Alerts button</span><button class="switch" id="sw-alerts-button" role="switch" aria-checked="false" aria-label="Alerts button"></button></div>
           <div class="item"><span>Tray icon</span><button class="switch" id="sw-tray" role="switch" aria-checked="false" aria-label="Tray icon"></button></div>
@@ -285,6 +288,7 @@
         <div class="sec">About</div>
         <div class="group">
           <div class="item"><span>Version</span><span class="value" id="about-version" data-dynamic></span></div>
+          <div class="item"><span id="performance-status" role="status">Performance recording</span><span><button class="btn" id="performance-open" hidden>Open folder</button><button class="btn" id="performance-action">Record 10 seconds</button></span></div>
           <div class="item" id="update-row"><span id="update-progress" role="progressbar" aria-label="Update download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden></span><span id="update-status" role="status">Updates</span><button class="btn" id="update-action">Check</button></div>
           <div class="item"><span>Settings and data</span><button class="btn" id="btn-data">Open folder</button></div>
         </div>
@@ -295,6 +299,7 @@
 </div>
 <div id="toast" data-dynamic>Saved</div>
 
+<script src="runtime.js"></script>
 <script src="bridge.js"></script>
 <script src="settings.js"></script>
 </body></html>

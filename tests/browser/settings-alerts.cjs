@@ -10,9 +10,14 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.addInitScript(()=>{
       let accounts=['Codex B','Claude','Antigravity'].map((name,i)=>({id:String(i),base:i===0?'codex':i===1?'claude':'gemini',name,snap:{status:'ok',windows:[]}}));
       let prefs={quota:true,waiting:false,completion:false,sound:false,muted:[]},slots=[{provider:'0'},{provider:'1'}],testAccount=null,focusAccounts=[];
-      const listeners={};window.__calls=[];
+      let appearance={aliases:false,compactSessions:false};const listeners={};window.__calls=[];window.__emit=(name,value)=>(listeners[name]||[]).forEach(fn=>fn(value));
       window.agentUsage={on:(event,cb)=>{(listeners[event]??=[]).push(cb);},invoke:async(cmd,args={})=>{
         window.__calls.push({cmd,args});
+        if(cmd==='get_appearance')return appearance;
+        if(cmd==='set_appearance'){appearance={...appearance,...args};return appearance;}
+        if(cmd==='set_account_alias'){accounts=accounts.map(a=>a.id===args.account?{...a,originalName:a.originalName||a.name,alias:args.alias,name:args.alias||a.originalName||a.name}:a);return accounts;}
+        if(cmd==='get_performance_capture')return {status:'idle'};
+        if(cmd==='start_performance_capture')return {status:'recording'};
         if(cmd==='set_account_order'){accounts=args.ids.map(id=>accounts.find(a=>a.id===id));return accounts;}
         if(cmd==='set_notch_slots'){slots=args.slots;return slots;}
         if(cmd==='set_alert_preferences'){prefs={...prefs,...args};return prefs;}
@@ -86,7 +91,21 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     assert.equal(await page.getByRole('switch',{name:'Alerts button',exact:true}).getAttribute('aria-checked'),'true','the notch bell is on unless turned off');
     await page.getByRole('switch',{name:'Alerts button',exact:true}).click();
     await page.waitForFunction(()=>window.__calls.some(c=>c.cmd==='set_notch_buttons'&&c.args.alerts===false));
+    await page.locator('#sw-account-labels').click();await page.locator('#sw-compact-sessions').click();
+    assert.equal(await page.locator('#sw-account-labels').getAttribute('aria-checked'),'true');
+    assert.equal(await page.locator('#sw-compact-sessions').getAttribute('aria-checked'),'true');
+    await page.getByRole('tab',{name:'Accounts',exact:true}).click();
+    const alias=page.getByRole('textbox',{name:'Alias for Codex B',exact:true});await alias.click();
+    assert.ok(await page.evaluate(()=>drag===null),'editing an alias never lifts an account');
+    await alias.fill('Atlas');await page.keyboard.press('Tab');
+    await page.waitForFunction(()=>__calls.some(c=>c.cmd==='set_account_alias'&&c.args.alias==='Atlas'));
+    assert.ok((await names()).includes('Atlas'));
+    await page.getByRole('tab',{name:'General',exact:true}).click();await page.locator('#performance-action').click();
+    assert.equal(await page.locator('#performance-action').isDisabled(),true);
+    await page.evaluate(()=>__emit('performance_capture',{status:'saved',file:'/synthetic/trace.json'}));
+    assert.equal(await page.locator('#performance-action').isDisabled(),false);
+    await page.locator('#performance-open').click();assert.ok(await page.evaluate(()=>__calls.some(c=>c.cmd==='show_performance_capture')));
     assert.deepEqual(errors,[]);
-    console.log('PASS: reorder, drag, visibility, per-account muting and alert preferences');
+    console.log('PASS: reorder, drag, visibility, per-account muting, aliases, compact preferences and explicit performance recording.');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

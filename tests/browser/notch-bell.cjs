@@ -244,7 +244,7 @@ const answers = {
     assert.ok(swapping.length > 20 && swapping.every(s => s.value > .95), 'the drop stays out through the whole swap: ' + JSON.stringify(swapping.map(s => +s.value.toFixed(2))));
     assert.ok(swapping.at(-1).glyph > .95, 'with its new glyph showing when the swap ends');
     const after = leave.slice(leave.indexOf(swapping.at(-1)) + 1);
-    assert.ok(after.at(-1).value === 0 && Math.max(...after.map((s, i) => i ? s.width - after[i - 1].width : 0).map(Math.abs)) < 8, 'then melts back into the arm, never in one jump');
+    assert.ok(after.at(-1).value === 0 && Math.max(...after.map((s, i) => i ? s.width - after[i - 1].width : 0).map(Math.abs)) < 8, 'then melts back into the arm, never in one jump: '+JSON.stringify({last:after.at(-1),maxDelta:Math.max(...after.map((s,i)=>i?Math.abs(s.width-after[i-1].width):0)),samples:after.length}));
     await page.mouse.wheel(0, 0);
     await page.mouse.move(pocket.x, pocket.y); await page.waitForTimeout(700); await page.mouse.wheel(0, 100); await page.waitForTimeout(1800);
     await page.mouse.move(640, 400); await page.waitForTimeout(600);
@@ -275,7 +275,8 @@ const answers = {
         assert.ok(geometry.c.w>=228&&geometry.c.w<300);
         assert.ok(Math.abs(geometry.c.y - geometry.r.y + 12) < 2, 'preserves top alignment');
       }
-      assert.equal(await page.locator('[title], svg title').count(), 0, 'tooltips removed, including generated controls');
+      assert.equal(await page.locator('#card [title], #card svg title').count(), 0, 'alert log controls keep their existing tooltip policy');
+      assert.equal(await page.locator('.cell[title]').count(),2,'gauges explain each account and quota window');
       assert.equal(await page.locator('.a-row').count(),40,'the entire retained history remains reachable');
       const history=await page.locator('.a-log').boundingBox();assert.ok(history.height<=228.5,'history stops at the default notch length: '+JSON.stringify(history)+edge);
       const titleTop=await page.locator('.c-head').evaluate(e=>e.getBoundingClientRect().top);

@@ -1,11 +1,12 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session, contentTracing, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { createInputMonitor, shortcuts, SESSION_SHORTCUT } = require('./platform-input.cjs');
 const { openSession, resumeUrl, prepareHelper } = require('./session-open.cjs');
+const { createPerformanceCapture } = require('./performance-capture.cjs');
 const { createUpdates } = require('./updates.cjs');
 const windowPolicy = require('./platform-window.cjs');
 const { canInstallUpdates } = require('./platform-runtime.cjs');
@@ -26,7 +27,8 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
   });
 }
 let win, settings, tray, input, collector, feed, config, configPath, timer, updates, quotaAlerts, sessionAlerts;
-let trayTimer, nativeInput;
+let trayTimer, nativeInput, performanceCapture;
+let liveSnapshot = [], liveSnapshotAt = 0, liveSnapshotScope = '';
 let historyCache = null, historyPending = null, historyAt = 0, historyGeneration = 0;
 async function recentHistory(refresh = false) {
   if (!refresh && historyCache && Date.now() - historyAt < 60000) return historyCache;
@@ -42,6 +44,7 @@ let visible = false, held = false, mouseDown = false, carrying = false, dismisse
 // alerting: the page is showing an alert, which decides for itself how long it stays (notify.js); expanded: a card
 // is open, and the notch never goes before it has closed
 let expanded = false, alerting = false, pinned = false, menuOpen = false, visibleUntil = 0, monitor, cursor, stage = { x: 0, y: 0 }, hot = [], inside = false;
+let nativePointerAt = 0;
 let controls = {}, lastControl = { name: '', at: 0 }, lastCursor = '';
 let notificationTestAccount = null;
 let switcherRequested=false,switcherFocused=false,sessionKeyHeld=false,sessionShortcutAt=0,sessionShortcutSource='',sessionFollowUntil=0;
@@ -86,6 +89,16 @@ async function sessionLibrary(refresh=false){
 async function openResolvedSession(identity, alert = null) {
   const scope = sessionScope(config);
   const matches = s => s.account === identity.account && (identity.sessionId ? s.sessionId === identity.sessionId : s.id === identity.id);
+  // A heartbeat is fresh for one 15 s feed period plus transport allowance. Only
+  // collector-verified writer ancestry permits bypassing history; focusOnly cannot spawn.
+  const age=Date.now()-liveSnapshotAt;
+  const fresh=liveSnapshotScope===scope&&age>=0&&age<20000;
+  const live=fresh&&liveSnapshot.find(s=>matches(s)&&s.terminalPids?.some(pid=>Number.isInteger(pid)&&pid>1));
+  if(live&&accounts().some(a=>a.id===identity.account)){
+    const target=resolveSession({rows:[],active:[live],config,...identity});
+    target.focusOnly=true;
+    releaseSwitcherFocus();return openSession(target,shell,{validateTarget:()=>{if(scope!==sessionScope(config))throw new Error('Collector changed. Open Sessions and try again.');}});
+  }
   let active = [...(sessionAlerts.previous?.values() || []), ...(feed?.sessions || [])], rows;
   try { rows = await sessionLibrary(true); }
   catch (error) { if (!active.some(matches)) throw error; rows = []; }
@@ -100,11 +113,13 @@ async function openResolvedSession(identity, alert = null) {
     if (scope !== sessionScope(config)) throw new Error('Collector changed. Open Sessions and try again.');
   }
   const target = resolveSession({rows,active,config,...identity});
-  releaseSwitcherFocus();return openSession(target,shell);
+  releaseSwitcherFocus();return openSession(target,shell,{validateTarget:()=>{if(scope!==sessionScope(config))throw new Error('Collector changed. Open Sessions and try again.');}});
 }
 function currentSessionPins(){
   return normalizePins(config.sessionPins).filter(s=>s.source===config.source&&(s.source==='ssh'?s.sshTarget===config.sshTarget:s.wslDistro===config.lastWslDistro)).map(s=>({id:s.id,account:s.account}));
 }
+/** Native visibility and transfer phase; panel and input state remain independent.
+ * @type {'hidden'|'hiding'|'shown'|'transfer'} */
 let phase = 'hidden', frameReady = false, hotkeyProblem = '', lastRaise = 0, replacements = 0, pageViewport = null, lastPlacedAt = 0;
 let placementTimer = null, placementFailures = 0;
 let placementSerial = 0, pendingPlacement = null, pendingPlacementEdge = null, pendingPlacementStage = null, pendingPlacementAtPointer = false;
@@ -115,7 +130,7 @@ const accounts = () => {
   const values = collector?.accounts.length ? collector.accounts : [placeholder()];
   const order = config?.accountOrder || [];
   const rank = id => order.includes(id) ? order.indexOf(id) : order.length;
-  return [...values].sort((a, b) => rank(a.id) - rank(b.id));
+  return [...values].sort((a, b) => rank(a.id) - rank(b.id)).map(a=>({...a,originalName:a.name,alias:config?.accountAliases?.[a.id]||'',name:config?.accountAliases?.[a.id]||a.name}));
 };
 const broadcast = (name, payload) => { for (const w of [win, settings]) if (w && !w.isDestroyed()) w.webContents.send('event', name, payload); };
 const send = (name, payload) => { if (win && !win.isDestroyed()) win.webContents.send('event', name, payload); };
@@ -164,6 +179,8 @@ async function start() {
   config.buttons = { pin: config.buttons?.pin !== false, refresh: config.buttons?.refresh !== false, alerts: config.buttons?.alerts !== false };
   config.alertLog = alertLog(config.alertLog);
   config.sessionPins=normalizePins(config.sessionPins);
+  config.appearance=appearancePreferences(config.appearance);
+  config.accountAliases=accountAliases(config.accountAliases);
   config.focusAccounts=normalizeFocusAccounts(config.focusAccounts??(config.focusAccount?[config.focusAccount]:[]));
   delete config.focusAccount;
   if (!shortcuts[config.shortcut]) config.shortcut = 'Scrolllock';
@@ -202,6 +219,7 @@ async function start() {
     beforeInstall: () => { save(); }
   });
   updates.start();
+  performanceCapture=createPerformanceCapture({tracing:contentTracing,onChange:value=>broadcast('performance_capture',value)});
   restartCollector();
   try { registerShortcut(config.shortcut); } catch (error) { hotkeyProblem = error.message; }
   if(!registerSessionShortcut()&&process.platform!=='win32')broadcast('notice','Ctrl + Scroll Lock is already in use. Open Sessions from the notch menu.');
@@ -218,6 +236,7 @@ async function start() {
 }
 function restartCollector() {
   historyCache = null; historyPending = null; historyAt = 0; historyGeneration++;
+  liveSnapshot=[];liveSnapshotAt=0;liveSnapshotScope='';
   broadcast('session_history_reset', null);
   sessionAlerts.reset();
   collector?.close();
@@ -235,8 +254,11 @@ function restartCollector() {
   broadcast('activity', []);
   feed = new SessionFeed(() => config);
   feed.on('change', value => broadcast('activity', value));
-  feed.on('snapshot', value => showAlerts(sessionAlerts.update(value, config.alerts)));
-  feed.on('disconnected', () => sessionAlerts.reset());
+  feed.on('snapshot', value => {
+    liveSnapshot=value;liveSnapshotAt=Date.now();liveSnapshotScope=sessionScope(config);
+    showAlerts(sessionAlerts.update(value, config.alerts));
+  });
+  feed.on('disconnected', () => {liveSnapshot=[];liveSnapshotAt=0;sessionAlerts.reset();});
   feed.start();
 }
 function useMonitor(display) {
@@ -324,23 +346,34 @@ function tick() {
   // Windows lets a topmost window sink behind the taskbar and other topmost windows; keep reasserting it
   if (visible && Date.now() - lastRaise > 2000) { lastRaise = Date.now(); raise(); }
   cursor = screen.getCursorScreenPoint();
-  if ((held || carrying) && Date.now()>=sessionFollowUntil && !dismissed && !menuOpen) {
-    reveal();
-    const display = screen.getDisplayNearestPoint(cursor);
-    if (display.id !== monitor.id && pendingPlacement === null) switchMonitor(display, { atPointer: true });
-    const b = monitor.bounds;
-    const at=cursorPlacement(cursor),edge=at.edge;
-    config.edge = edge;config.along=at.along;
-    const signature=`${display.id}:${cursor.x}:${cursor.y}:${edge}`;
-    if (phase !== 'transfer' && signature !== lastCursor) {
-      lastCursor=signature;send('edge_cursor', { x: cursor.x - b.x, y: cursor.y - b.y, edge, perimeter:at.position, tracking: true });
-    }
-    visibleUntil = Date.now() + 1800;
-  }
+  if(Date.now()-nativePointerAt>32)followPointer(cursor);
   const hit = visible && phase !== 'transfer' && overNotch(cursor);
   if (hit !== inside) { inside = hit; send('notch_pointer', hit); win.setIgnoreMouseEvents(!hit, { forward: true }); }
   if (hit || alerting || expanded || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
   if (visible && !pinned && !held && !carrying && !menuOpen && Date.now() > visibleUntil) hide();
+}
+// Fast input updates only the target; click-through, topmost and hiding stay on tick().
+function followPointer(point,timestamp=null){
+  if(!win||win.isDestroyed())return;
+  if ((held || carrying) && Date.now()>=sessionFollowUntil && !dismissed && !menuOpen) {
+    reveal();
+    const display = screen.getDisplayNearestPoint(point);
+    if (display.id !== monitor.id && pendingPlacement === null) switchMonitor(display, { atPointer: true });
+    const b = monitor.bounds;
+    const at=cursorPlacement(point),edge=at.edge;
+    config.edge = edge;config.along=at.along;
+    const signature=`${display.id}:${point.x}:${point.y}:${edge}`;
+    if (phase !== 'transfer' && signature !== lastCursor) {
+      const trackingStarted=lastCursor==='';lastCursor=signature;send('edge_cursor', { x: point.x - b.x, y: point.y - b.y, edge, perimeter:at.position, tracking: true, trackingStarted, timestamp });
+    }
+    visibleUntil = Date.now() + 1800;
+  }
+}
+function nativePointer(record){
+  if(process.platform!=='win32'||!(held||carrying)||!win||win.isDestroyed())return;
+  const point=screen.screenToDipPoint({x:record.x,y:record.y});
+  if(!Number.isFinite(point.x)||!Number.isFinite(point.y))return;
+  nativePointerAt=Date.now();cursor=point;followPointer(point,record.timestamp);
 }
 // The one test of whether a screen point is over the notch, its card or its controls, from the page's hot rectangles
 function overNotch(point) {
@@ -357,8 +390,8 @@ function registerShortcut(value) {
   if (process.platform !== 'win32') return; // preview callback; native Mac monitoring is a separate implementation
   if (!nativeInput) nativeInput = createInputMonitor({
     executable: resource('InputMonitor.exe'), owner: process.pid, launch: spawn,
-    onInput: inputLine, onChild: child => { input = child; }, diagnose,
-    onReset: () => { inputLine('000'); endMove(); },
+    onInput: inputLine, onPointer: nativePointer, onChild: child => { input = child; }, diagnose,
+    onReset: () => { nativePointerAt=0;inputLine('000'); endMove(); },
     onProblem: problem => { hotkeyProblem = problem; if(problem)broadcast('notice',problem); }
   });
   nativeInput.configure(value);
@@ -378,6 +411,12 @@ function inputLine(value){
   if(!held&&previous){visibleUntil=Date.now()+1800;send('release');broadcast('ui_flags',flags());save();}
   if(mouseDown&&!previousMouse&&visible&&!held&&!carrying)physicalPress(screen.getCursorScreenPoint());
   if(!mouseDown&&previousMouse)physicalRelease(screen.getCursorScreenPoint());
+}
+function appearancePreferences(value){return {aliases:value?.aliases===true,compactSessions:value?.compactSessions===true};}
+function accountAliases(value){
+  const result={};if(!value||typeof value!=='object'||Array.isArray(value))return result;
+  for(const [key,text] of Object.entries(value).slice(0,40))if(key.length<=120&&typeof text==='string'&&text.trim()&&text.length<=40&&!/[\x00-\x1f\x7f]/.test(text))Object.defineProperty(result,key,{value:text.trim(),enumerable:true,writable:true,configurable:true});
+  return result;
 }
 function normalizeFocusAccounts(value){return Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&id.length<=120))].slice(0,40):[];}
 function setFocusAccounts(value){
@@ -638,6 +677,12 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'get_theme_resolved': return theme();
     case 'get_theme': return config.theme;
     case 'set_theme': config.theme = enumValue(args.theme, ['system','light','dark']); save(); broadcast('theme_resolved', theme()); return config.theme;
+    case 'get_appearance': return appearancePreferences(config.appearance);
+    case 'set_appearance': config.appearance=appearancePreferences({...config.appearance,...args});save();broadcast('appearance',config.appearance);return config.appearance;
+    case 'set_account_alias': {
+      if(!accounts().some(a=>a.id===args.account&&a.id!=='collector')||typeof args.alias!=='string'||args.alias.length>40||/[\x00-\x1f\x7f]/.test(args.alias))throw new Error('Use an account alias of up to 40 characters.');
+      config.accountAliases=accountAliases({...config.accountAliases,[args.account]:args.alias});save();broadcast('agent_accounts',accounts());return accounts();
+    }
     case 'get_scale': return config.scale;
     case 'set_scale': config.scale = enumValue(args.scale, [0.8,1,1.25]); win.webContents.setZoomFactor(config.scale); save(); sendLayout(); return config.scale;
     case 'get_weekly_ring': return config.weekly;
@@ -676,6 +721,18 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'check_for_update': void updates?.check(); return null;
     case 'download_update': void updates?.download(); return null;
     case 'install_update': updates?.install(); return null;
+    case 'get_performance_capture': return performanceCapture?.get()||{status:'idle'};
+    case 'start_performance_capture': {
+      if(event.sender!==settings?.webContents)throw new Error('Start performance recording from Settings.');
+      if(['starting','recording','saving'].includes(performanceCapture?.get().status))return performanceCapture.get();
+      const choice=await dialog.showSaveDialog(settings,{title:'Save 10-second performance recording',defaultPath:path.join(app.getPath('downloads'),'AgentUsage-Performance-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json'),filters:[{name:'Performance trace',extensions:['json']}]});
+      if(choice.canceled)return performanceCapture.get();
+      return performanceCapture.start(choice.filePath);
+    }
+    case 'show_performance_capture': {
+      if(event.sender!==settings?.webContents)throw new Error('Open the recording from Settings.');
+      const state=performanceCapture?.get();if(state?.status==='saved')shell.showItemInFolder(state.file);return null;
+    }
     case 'get_version': return app.getVersion();
     case 'get_collector': return { source: config.source, sshTarget: config.sshTarget, shortcut: config.shortcut, error: hotkeyProblem };
     case 'set_collector': {
@@ -700,4 +757,4 @@ ipcMain.handle('command', async (event, command, args = {}) => {
   }
 });
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer);clearTimeout(placementTimer); globalShortcut.unregisterAll(); nativeInput?.close(); collector?.close(); feed?.close(); updates?.close(); });
+app.on('before-quit', () => { clearInterval(timer); clearInterval(trayTimer);clearTimeout(placementTimer); globalShortcut.unregisterAll(); nativeInput?.close(); performanceCapture?.close(); collector?.close(); feed?.close(); updates?.close(); });

@@ -21,8 +21,8 @@ function restingAlong(edge,along){
 function aim(edge,along,snap=false){
   target=perimeterAt(edge,restingAlong(edge,along));
   if(position===null||snap) position=target;
-  if(snap){cancelAnimationFrame(frame);frame=0;last=0;animate(performance.now());return;}
-  if(!frame) frame=requestAnimationFrame(animate);
+  if(snap){uiMotion.cancel(frame);frame=0;last=0;animate(performance.now());return;}
+  if(!frame) frame=uiMotion.frame(animate);
 }
 /* Carried round a corner, each ring keeps its offset from the notch's middle along
    the border, clockwise, and follows a line half the notch's depth in that takes the corner on one cubic
@@ -42,7 +42,7 @@ function trackPoint(t){
   }
   return inset(t);
 }
-let carriedRound=false;
+let carriedRound=false,materialStretch=0;
 function carryItems(pass,px,py,vertical,L){
   const items=[...pill.querySelectorAll('.cell')];
   if(!pass){
@@ -51,10 +51,10 @@ function carryItems(pass,px,py,vertical,L){
   }
   carriedRound=true;
   const w=innerWidth,h=innerHeight,total=2*(w+h), cornerAt={tr:w,br:w+h,bl:2*w+h,tl:0}[pass.corner];
-  for(const el of items){
-    el.style.transform='';
-    const cx=px+el.offsetLeft+el.offsetWidth/2, cy=py+el.offsetTop+el.offsetHeight/2;
-    const a=CLOCKWISE[notchEdge]*((vertical?el.offsetTop+el.offsetHeight/2:el.offsetLeft+el.offsetWidth/2)-L/2);
+  const boxes=items.map(el=>({el,x:el.offsetLeft+el.offsetWidth/2,y:el.offsetTop+el.offsetHeight/2}));
+  for(const {el,x:cx0,y:cy0} of boxes){
+    const cx=px+cx0,cy=py+cy0;
+    const a=CLOCKWISE[notchEdge]*((vertical?cy0:cx0)-L/2);
     const t=position+a, [tx,ty]=trackPoint(t);
     el.style.transform=`translate(${(tx-cx).toFixed(1)}px,${(ty-cy).toFixed(1)}px)`;
     // The line in from the border is shorter round the bend than the border, so rings would crowd there:
@@ -65,10 +65,13 @@ function carryItems(pass,px,py,vertical,L){
 }
 function animate(now){
   frame=0;
-  const w=innerWidth,h=innerHeight,total=2*(w+h), dt=Math.min(40,now-(last||now-16));last=now;
+  const w=innerWidth,h=innerHeight,total=2*(w+h), dt=Math.min(100,now-(last||now-16));last=now;
   let delta=((target-position+total*1.5)%total)-total/2;
-  position=(position+(reduced.matches?delta:delta*(1-Math.exp(-dt/65)))+total)%total;
+  const previousPosition=position;
+  position=(position+(reduced.matches?delta:delta*(1-Math.exp(-dt/(window.agentTracking?28:65))))+total)%total;
   if(Math.abs(delta)<.3) position=target;
+  const moved=((position-previousPosition+total*1.5)%total)-total/2;
+  materialStretch=reduced.matches||Math.abs(delta)<.3?0:Math.min(.03,Math.abs(moved)/Math.max(1,dt)/20);
   let edge,x,y;
   if(position<w){edge='top';x=position;y=0;}
   else if(position<w+h){edge='right';x=w;y=position-w;}
@@ -102,7 +105,7 @@ function animate(now){
   root.style.setProperty('--hf',near.toFixed(3));
   if(card.classList.contains('show')) placeCard();
   reportHot();
-  if(Math.abs(delta)>.3) frame=requestAnimationFrame(animate);else last=0;
+  if(Math.abs(delta)>.3) frame=uiMotion.frame(animate);else last=0;
 }
 function loadAccounts(value){const renewals=notchEffects.renewals(agentAccounts,value||[]);agentAccounts=value||[];renderRing();notchEffects.renewed(renewals);if(card.classList.contains('show'))renderCard();aim(layout.edge,layout.along);}
 window.agentUsage.on('agent_accounts',loadAccounts);
@@ -110,7 +113,7 @@ invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
 let placementRevision=0, placing=false;
 function stowPlacement(){
   placing=true;document.getElementById('root').classList.add('placing');
-  cancelAnimationFrame(frame);frame=0;position=null;last=0;
+  uiMotion.cancel(frame);frame=0;position=null;last=0;
   document.body.classList.add('no-motion');setShown(false);hideCard();setHovered(null);
   setDetailsShown(false,true);setExtraShown(false,true);stowShape();
   void pill.offsetWidth;document.body.classList.remove('no-motion');
@@ -118,7 +121,7 @@ function stowPlacement(){
 window.agentUsage.on('monitor_stow',value=>{
   const revision=++placementRevision;stowPlacement();
   // Two frame boundaries ensure the previous fully opened surface has been replaced by transparent pixels.
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  uiMotion.frame(()=>uiMotion.frame(()=>{
     if(revision===placementRevision)invoke('monitor_stowed',{placement:value.placement}).catch(e=>notice(String(e)));
   }));
 });
@@ -134,42 +137,40 @@ window.agentUsage.on('layout',value=>{
     const ready=()=>{
       if(revision!==placementRevision)return;
       const resized=Math.abs(innerWidth-value.width/value.scale)<=2&&Math.abs(innerHeight-value.height/value.scale)<=2;
-      if(!resized){paints=0;requestAnimationFrame(ready);return;}
+      if(!resized){paints=0;uiMotion.frame(ready);return;}
       if(!paints){
         setShown(!!value.visible,value.edge);document.getElementById('root').classList.remove('placing');
-        if(value.visible)requestAnimationFrame(()=>{if(revision===placementRevision)for(const p of providers())turnReading(p.id,true);});
+        if(value.visible)uiMotion.frame(()=>{if(revision===placementRevision)for(const p of providers())turnReading(p.id,true);});
       }
       aim(value.edge,value.along,true);
-      if(++paints<3){requestAnimationFrame(ready);return;}
+      if(++paints<3){uiMotion.frame(ready);return;}
       invoke('monitor_placed',{placement:value.placement}).then(accepted=>{if(accepted!==false&&revision===placementRevision)placing=false;}).catch(e=>notice(String(e)));
     };
-    requestAnimationFrame(ready);return;
+    uiMotion.frame(ready);return;
   }
   const appearing=!!value.visible&&!shown; // arrives just before `appear`: place it now, never glide in from where it was hidden
   aim(value.edge,value.along,position===null||appearing);setShown(!!value.visible,value.edge);
 });
 window.agentUsage.on('edge_cursor',value=>{
   if(placing)return;
+  const starting=!window.agentTracking||value.trackingStarted!==false;
   window.agentTracking=true;layout.edge=value.edge;
   if(Number.isFinite(value.perimeter)){
     target=value.perimeter/layout.scale;
     const w=innerWidth,h=innerHeight;
     layout.along=value.edge==='top'?target/w:value.edge==='right'?(target-w)/h:value.edge==='bottom'?(2*w+h-target)/w:(2*(w+h)-target)/h;
     if(position===null)position=target;
-    if(!frame)frame=requestAnimationFrame(animate);
+    if(!frame)frame=uiMotion.frame(animate);
   }else{
     layout.along=['top','bottom'].includes(value.edge)?value.x/layout.scale/innerWidth:value.y/layout.scale/innerHeight;
     aim(value.edge,layout.along);
   }
-  hideCard();
+  if(starting)hideCard();
 });
-window.agentUsage.on('appear',()=>{if(placing)return;position=null;setShown(true,layout.edge);aim(layout.edge,layout.along,true);requestAnimationFrame(()=>{for(const p of providers())turnReading(p.id,true);});});
+window.agentUsage.on('appear',()=>{if(placing)return;position=null;setShown(true,layout.edge);aim(layout.edge,layout.along,true);uiMotion.frame(()=>{for(const p of providers())turnReading(p.id,true);});});
 window.agentUsage.on('disappear',()=>{hideCard();setShown(false);});
 window.agentUsage.on('release',()=>{window.agentTracking=false;aim(layout.edge,layout.along);});
 window.addEventListener('resize',()=>aim(layout.edge,layout.along,true));
 // Keep an arbitrary number of accounts accessible without clipping the screen.
-let accountOffset=0;
-const originalProviders=providers;
-providers=function(){const all=originalProviders();const capacity=Math.max(1,Math.floor((edgeIsVertical()?innerHeight-150:innerWidth-150)/90));accountOffset=Math.min(accountOffset,Math.max(0,all.length-capacity));return all.slice(accountOffset,accountOffset+capacity);};
 pill.addEventListener('wheel',event=>{event.preventDefault();accountOffset=Math.max(0,accountOffset+Math.sign(event.deltaY));hideCard();renderRing();aim(layout.edge,layout.along);},{passive:false});
 invoke('ready').catch(e=>notice(String(e)));

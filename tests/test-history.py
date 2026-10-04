@@ -183,5 +183,35 @@ class HistoryTests(unittest.TestCase):
         (process / 'fd' / '4').symlink_to(lock)
         self.assertEqual(usage.rollout_processes(proc),{str(lock):[101]})
 
+class HistoryIndexTests(unittest.TestCase):
+    def test_warm_index_avoids_archive_stats_and_detects_new_deleted_and_old_edited_files(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"AGENT_USAGE_CACHE_DIR": str(Path(temp) / "cache")}):
+            root = Path(temp) / "sessions"
+            directory = root / "2026/10/04"
+            directory.mkdir(parents=True)
+            paths = []
+            for i in range(600):
+                path = directory / ("rollout-%04d.jsonl" % i)
+                path.write_text('{"message":"private chat must never enter the index"}\n')
+                os.utime(path, (1000 + i, 1000 + i)); paths.append(path)
+            first = usage.recent_history_files(root, "*/*/*/rollout-*.jsonl", 2000)
+            self.assertEqual(len(first), 256); self.assertEqual(first[0], paths[-1])
+            original = Path.stat; stats = []
+            def counted(path, *args, **kwargs):
+                if path.suffix == ".jsonl": stats.append(path)
+                return original(path, *args, **kwargs)
+            with patch.object(Path, "stat", counted):
+                second = usage.recent_history_files(root, "*/*/*/rollout-*.jsonl", 2001)
+            self.assertEqual(second, first); self.assertEqual(len(stats), 256)
+            created = directory / "rollout-new.jsonl"; created.write_text('{}'); os.utime(created, (2002, 2002))
+            self.assertEqual(usage.recent_history_files(root, "*/*/*/rollout-*.jsonl", 2002)[0], created)
+            created.unlink(); self.assertNotIn(created, usage.recent_history_files(root, "*/*/*/rollout-*.jsonl", 2003))
+            os.utime(paths[0], (3000, 3000))
+            self.assertEqual(usage.recent_history_files(root, "*/*/*/rollout-*.jsonl", 2061)[0], paths[0])
+            cache = next((Path(temp) / "cache").glob("history-*.json"))
+            self.assertNotIn("private chat", cache.read_text()); cache.write_text('broken')
+            self.assertEqual(usage.recent_history_files(root, "*/*/*/rollout-*.jsonl", 2062)[0], paths[0])
+
+
 if __name__=='__main__':
     unittest.main()

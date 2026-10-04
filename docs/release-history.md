@@ -412,3 +412,47 @@ Update the design notes, README and fictional-account previews to match. The
 history browser suite retains four-edge attachment, typing, account filters,
 Back, resume, scrolling, interruption, small-screen control targets and reduced
 motion checks. Update through Settings → General → Update → Restart.
+
+
+## Coordinate motion and clarify Sessions (5.0.5)
+
+The renderer now shares simulation frames and paints each changing surface once
+per scheduler frame. Analytic springs preserve velocity through reversals and
+have consistent trajectories at 60/120/144 Hz. Faster hover response, shorter
+pointer smoothing, restrained silhouette stretch and coupled flare motion keep
+controls connected. Text and gauge geometry remain crisp. The decorative
+Sessions bead stays removed.
+
+Windows pointer delivery uses a nonblocking mouse hook and timestamped,
+coalesced coordinates while held/pressed. Main converts physical pixels to DIPs
+and follows separately from click-through, topmost and visibility work. The
+existing 16 ms watchdog and display-transfer token checks remain active.
+
+Sessions highlights search matches, offers optional compact two-line rows and
+uses an accessible grid with open/pin actions and arrow-key navigation. Keyed
+rows preserve focused controls during refresh and reordering. Optional labels
+and account aliases are under Appearance; gauges explain their quota window.
+A recent collector-verified live terminal can focus immediately without waiting
+for history; this route cannot spawn a duplicate, and collector scope is checked
+again before VS Code launch. History discovery caches metadata only, detects
+new/deleted files immediately and reconciles old edits each minute.
+
+General offers an explicit ten-second local performance trace with a 16 MiB
+buffer. Translation catalogs, base styles and shared motion utilities have
+explicit boundaries documented in the renderer contract.
+
+In the review's same fictional 1920×1080 headless fixture, stationary Sessions
+rim layout passes fell from 221 to 1 over the 1.8-second sample. Usage opening
+fell from 173 to 102 layout passes. Overlapping handles made 123 shape requests
+but only 71 actual body paints, at most one per frame in that scenario. Settled
+and hidden samples remained at zero layouts. These are structural headless
+measurements, not Windows FPS certification or hardware latency guarantees.
+
+
+Validation: 131 desktop tests and all six collector suites passed. The full
+15-suite browser set passed across the final run and focused reruns after
+account-focus/ink fixes, including the new structural performance checks and
+Settings alias/capture controls. The real Electron tracing API saved a valid
+filtered trace from an isolated synthetic window and stopped automatically. Native compilation and Windows
+session/input checks also run in the release workflow. See the performance
+guide for the remaining hardware acceptance matrix.

@@ -277,3 +277,12 @@ test('executed Claude resume unsets inherited custom configuration only for the 
     assert.deepEqual(output,[home===defaultHome?'unset':home,'--resume',id,'']);
   }
 });
+
+test('collector scope is revalidated after asynchronous helper setup and the receipt is closed on rejection',async()=>{
+ let ready=false,launched=false,closed=false;
+ await assert.rejects(openSession({...target,resume:true},{},{locations:['/code'],exists:()=>true,
+  ensureHelper:async()=>{ready=true;},validateTarget:()=>{assert.equal(ready,true);throw new Error('Collector changed');},
+  receiptFactory:async()=>({reply:'http://127.0.0.1:3456/'+('a'.repeat(32)),result:Promise.resolve(true),close:()=>closed=true}),
+  launch:()=>{launched=true;throw new Error('must not launch');}}),/Collector changed/);
+ assert.equal(launched,false);assert.equal(closed,true);
+});

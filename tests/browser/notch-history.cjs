@@ -82,6 +82,27 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
       assert.ok(await page.evaluate(()=>orb.inert&&pinHandle.inert),'retracted controls are also removed from keyboard focus');
       await page.locator('.session-back').click();assert.equal(await page.locator('#card').getAttribute('data-account'),'antigravity');await page.evaluate(()=>hideCard());
     }
+    await page.setViewportSize({width:1280,height:800});
+    await page.evaluate(()=>{hideCard();__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge:'top',along:.5,visible:true,tracking:false,pinned:false});requestSessionSwitcher();});await page.waitForTimeout(300);
+    assert.equal(await page.locator('.session-results').getAttribute('role'),'grid');
+    assert.equal(await page.locator('.session-search').getAttribute('aria-haspopup'),'grid');
+    await page.locator('.session-search').fill('Inspect');await page.waitForTimeout(80);
+    assert.ok(await page.locator('.session-name mark').count()>0,'search matches are highlighted');
+    await page.locator('.session-search').fill('');await page.waitForTimeout(80);
+    const stable=await page.evaluate(()=>{
+      const pin=card.querySelector('.session-pin'),row=pin.closest('.session-result'),key=row.dataset.key;pin.focus();
+      library=library.map((s,i)=>i===0?{...s,name:s.name+' refreshed'}:s);updateSessionList();
+      return {same:[...card.querySelectorAll('.session-result')].find(el=>el.dataset.key===key).querySelector('.session-pin')===pin,focused:document.activeElement===pin};
+    });assert.deepEqual(stable,{same:true,focused:true},'a feed refresh retains the focused pin node');
+    await page.keyboard.press('ArrowDown');assert.ok(await page.evaluate(()=>document.activeElement.classList.contains('session-pin')),'grid arrows keep the current action column');
+    await page.keyboard.press('ArrowLeft');assert.ok(await page.evaluate(()=>document.activeElement.classList.contains('session-open')));
+    await page.evaluate(()=>applyAppearance({aliases:true,compactSessions:true}));
+    assert.ok(await page.locator('#card').evaluate(el=>el.classList.contains('compact-sessions')));
+    assert.equal(await page.locator('.session-workspace').first().evaluate(el=>getComputedStyle(el).display),'none');
+    assert.ok(await page.locator('.session-open').first().getAttribute('title'),'compact rows retain full workspace details on demand');
+    const label=await page.locator('.account-alias').first().boundingBox(),notch=await page.locator('#pill').boundingBox();
+    assert.ok(label.y+label.height<=notch.y+notch.height+.5,'account labels fit inside the existing surface');
+    await page.screenshot({path:path.join(OUT,'compact-sessions.png')});
     assert.deepEqual(errors,[]);console.log('Passed attached history: four edges, immediate search, account filter, Back, keyboard resume, bounded scroll, global shortcut, AGY Working, cancellation, reduced motion and small viewports.');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

@@ -6,13 +6,13 @@ const {createInputMonitor}=require('../desktop/platform-input.cjs');
 const {collectorCommand,canInstallUpdates}=require('../desktop/platform-runtime.cjs');
 const {codeLocations,codeCli}=require('../desktop/platform-vscode.cjs');
 function harness(){
- const children=[],timers=new Set(),inputs=[],problems=[];let resets=0,current;
+ const children=[],timers=new Set(),inputs=[],pointers=[],problems=[];let resets=0,current;
  const schedule=(fn,delay)=>{const timer={fn,delay,unref(){}};timers.add(timer);return timer;};
  const cancel=t=>timers.delete(t);
  const monitor=createInputMonitor({executable:'InputMonitor.exe',owner:100,schedule,cancel,
   launch:()=>{const c=new EventEmitter();c.stderr=new EventEmitter();c.stdout=new EventEmitter();c.kill=()=>c.emit('exit',null,'killed');children.push(c);return c;},
-  onChild:c=>current=c,onInput:v=>inputs.push(v),onReset:()=>resets++,onProblem:p=>problems.push(p)});
- return {monitor,children,timers,inputs,problems,get resets(){return resets;},get current(){return current;},run(){const t=[...timers][0];assert.ok(t);timers.delete(t);t.fn();return t.delay;},ready(){children.at(-1).stderr.emit('data','sessions-ready hotkey=1 hook=1 thread=20\n');}};
+  onChild:c=>current=c,onInput:v=>inputs.push(v),onPointer:v=>pointers.push(v),onReset:()=>resets++,onProblem:p=>problems.push(p)});
+ return {monitor,children,timers,inputs,pointers,problems,get resets(){return resets;},get current(){return current;},run(){const t=[...timers][0];assert.ok(t);timers.delete(t);t.fn();return t.delay;},ready(){children.at(-1).stderr.emit('data','sessions-ready hotkey=1 hook=1 thread=20\n');}};
 }
 test('a failed input helper resets held state, loses readiness and reconnects without stale child reports',()=>{
  const h=harness();h.monitor.configure('Scrolllock');assert.equal(h.monitor.ready,false);h.ready();assert.equal(h.monitor.ready,true);
@@ -48,4 +48,15 @@ test('VS Code discovery resolves Windows and Mac bundle layouts without changing
  const mac=codeLocations({HOME:'/Users/test'},'darwin');assert.equal(mac.length,2);assert.equal(mac[0],'/Applications/Visual Studio Code.app/Contents/MacOS/Electron');
  const cli=path.join(path.dirname(mac[0]),'..','Resources','app','out','cli.js');
  assert.equal(codeCli(mac[0],{exists:p=>p===cli,read:()=>{throw new Error('no Windows wrapper');}}),cli);
+});
+
+test('pointer records are bounded, timestamped, coalesced across a chunk and isolated from obsolete helpers',()=>{
+ const h=harness();h.monitor.configure('Scrolllock');h.ready();const old=h.current;
+ old.stdout.emit('data','100\npointer -2400 100 100\npointer -2300 110 104\npoin');
+ assert.deepEqual(h.inputs,['100']);assert.deepEqual(h.pointers,[{x:-2300,y:110,timestamp:104}]);
+ old.stdout.emit('data','ter -2200 120 108\npointer -2500 120 107\npointer 9999999 0 109\npointer 0 0 NaN\n');
+ assert.deepEqual(h.pointers.at(-1),{x:-2200,y:120,timestamp:108});assert.equal(h.pointers.length,2);
+ old.stdout.emit('data','x'.repeat(70000));assert.equal(h.pointers.length,2);
+ h.monitor.configure('Shift+F1');h.ready();old.stdout.emit('data','pointer 0 0 112\n');
+ h.current.stdout.emit('data','pointer 2 3 1\n');assert.deepEqual(h.pointers.at(-1),{x:2,y:3,timestamp:1});h.monitor.close();
 });

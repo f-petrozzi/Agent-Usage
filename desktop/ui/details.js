@@ -2,7 +2,7 @@
 // Account details deepen and widen the notch itself, retaining its edge flares.
 // Its ink grows first; readable HTML follows once there is black underneath it.
 const detailSvg=document.createElementNS(SVG_NS,'svg');
-detailSvg.id='detail-shape';detailSvg.setAttribute('aria-hidden','true');
+detailSvg.id='detail-shape';uiMotion.attr(detailSvg,'aria-hidden','true');
 const detailPath=document.createElementNS(SVG_NS,'path');detailSvg.append(detailPath);pill.before(detailSvg);
 let detailOpen=0,detailVelocity=0,detailFrame=0,detailLast=0,detailTarget=0;
 let detailBox=null,detailAim=null;
@@ -14,7 +14,7 @@ function changeDetailAccount(){
   // Keep the lobe's momentum. Switching readings must not kick an already open notch shut.
   detailReading=1;card.style.setProperty('--detail-reading',1);
   if(!reducedDetails()&&detailOpen>.985)card.animate([{opacity:.55},{opacity:1}],{duration:180,easing:'cubic-bezier(.22,1,.36,1)'});
-  if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
+  if(!detailFrame)detailFrame=uiMotion.frame(detailStep);
 }
 
 // Change the existing frame promptly without adding a separate decorative shape.
@@ -31,11 +31,12 @@ function detailGeometry(){
   return {u0:Math.min(a[0],b[0]),u1:Math.max(a[0],b[0]),v0:Math.min(a[1],b[1]),v1:Math.max(a[1],b[1]),
     a0:along,a1:along+length,depth:edgeDepth(notchEdge),edge:notchEdge};
 }
-function drawDetails(){
-  drawShape(); // The arms merge home as the widened flares grow around them.
+function drawDetails(){drawShape();uiMotion.paint('details',paintDetails,20);}
+function paintDetails(){
+  // // The arms merge home as the widened flares grow around them.
   if(!detailBox||detailOpen<.001){detailPath.removeAttribute('d');return;}
-  detailSvg.setAttribute('width',innerWidth);detailSvg.setAttribute('height',innerHeight);
-  detailPath.setAttribute('transform',`matrix(${edgeMatrix(detailBox.edge,innerWidth,innerHeight).join(' ')})`);
+  uiMotion.attr(detailSvg,'width',innerWidth);uiMotion.attr(detailSvg,'height',innerHeight);
+  uiMotion.attr(detailPath,'transform',`matrix(${edgeMatrix(detailBox.edge,innerWidth,innerHeight).join(' ')})`);
   const {a0,a1,depth}=detailBox,t=Math.max(0,detailOpen);
   const matrix=edgeMatrix(detailBox.edge,innerWidth,innerHeight);
   const point=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
@@ -56,7 +57,7 @@ function drawDetails(){
   // One outline starts at the bezel, grows around the readings, and returns to the bezel.
   // There is no second rectangle or narrow connector beneath the original notch.
   const radius=SHAPE.corner+(26-SHAPE.corner)*Math.min(1,t);
-  detailPath.setAttribute('d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
+  uiMotion.attr(detailPath,'d',partPath(u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare));
   detailPath.rimPart=[u0,u1,expandedDepth,radius,handleMetrics().flare,radius,handleMetrics().flare,-SHAPE.bleed];
   // While it grows or draws back in, the lobe is liquid: blurred and cut back, so its corners round and it swells
   // like a drop leaving the notch. Settled, it is sharp again.
@@ -65,8 +66,8 @@ function drawDetails(){
   const goo=reducedDetails()?0:Math.max(4.2*Math.sin(Math.PI*Math.min(1,t)),Math.min(3.6,resizing*.06)),detailFilter=detailSvg.querySelector('#detail-goo');
   if(goo>.25&&detailFilter){
     setGooBlur(detailFilter,goo);
-    for(const [key,value] of Object.entries({x:Math.min(u0,a0)-60,y:-SHAPE.bleed-60,width:Math.max(u1,a1)-Math.min(u0,a0)+120,height:expandedDepth+SHAPE.bleed+120}))detailFilter.setAttribute(key,n(value));
-    detailPath.setAttribute('filter','url(#detail-goo)');
+    for(const [key,value] of Object.entries({x:Math.min(u0,a0)-60,y:-SHAPE.bleed-60,width:Math.max(u1,a1)-Math.min(u0,a0)+120,height:expandedDepth+SHAPE.bleed+120}))uiMotion.attr(detailFilter,key,n(value));
+    uiMotion.attr(detailPath,'filter','url(#detail-goo)');
   }else detailPath.removeAttribute('filter');
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
@@ -85,15 +86,13 @@ function detailContains(x,y){
   return detailPath.isPointInFill(new DOMPoint(x,y).matrixTransform(detailPath.getScreenCTM().inverse()));
 }
 function detailStep(now){
-  const dt=Math.min(.032,(now-(detailLast||now-16))/1000);detailLast=now;
+  const dt=Math.min(.1,(now-(detailLast||now-16))/1000);detailLast=now;
   const omega=2*Math.PI/(detailTarget?.74:.38),damping=detailTarget?.78:1;
-  detailVelocity+=(-omega*omega*(detailOpen-detailTarget)-2*damping*omega*detailVelocity)*dt;
-  detailOpen+=detailVelocity*dt;
+  [detailOpen,detailVelocity]=uiMotion.spring(detailOpen,detailVelocity,detailTarget,omega,damping,dt);
   let settled=Math.abs(detailOpen-detailTarget)<.002&&Math.abs(detailVelocity)<.025;
   if(settled){detailOpen=detailTarget;detailVelocity=0;}
   const spring=(value,velocity,target,frequency,damping)=>{
-    velocity+=(-frequency*frequency*(value-target)-2*damping*frequency*velocity)*dt;
-    value+=velocity*dt;
+    [value,velocity]=uiMotion.spring(value,velocity,target,frequency,damping,dt);
     if(Math.abs(value-target)<.001&&Math.abs(velocity)<.015)return [target,0];
     settled=false;return [value,velocity];
   };
@@ -109,7 +108,7 @@ function detailStep(now){
   if(detailReading<1)settled=false;
   card.style.setProperty('--detail-open',Math.max(0,detailOpen));drawDetails();reportHot();
   if(!detailTarget&&detailOpen===0&&typeof completeSessionFollow==='function')completeSessionFollow();
-  if(!settled){detailFrame=requestAnimationFrame(detailStep);return;}
+  if(!settled){detailFrame=uiMotion.frame(detailStep);return;}
   detailFrame=0;detailLast=0;
   if(!detailTarget)card.classList.remove('closing');
 }
@@ -120,7 +119,7 @@ function syncDetails(){
   if(reducedDetails()){
     detailBox={...detailAim};drawDetails();return;
   }
-  if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
+  if(!detailFrame)detailFrame=uiMotion.frame(detailStep);
 }
 function reducedDetails(){return matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function setDetailsShown(on,instant=false){
@@ -129,15 +128,15 @@ function setDetailsShown(on,instant=false){
   syncAccountFocus(on);
   if(on)syncDetails();
   if(instant||reducedDetails()){
-    cancelAnimationFrame(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;detailArm=detailTarget;detailArmVelocity=0;
+    uiMotion.cancel(detailFrame);detailFrame=0;detailLast=0;detailVelocity=0;detailOpen=detailTarget;detailArm=detailTarget;detailArmVelocity=0;
     card.style.setProperty('--detail-open',detailOpen);drawDetails();
     if(!on){card.classList.remove('closing');if(typeof completeSessionFollow==='function')completeSessionFollow();}return;
   }
-  if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
+  if(!detailFrame)detailFrame=uiMotion.frame(detailStep);
 }
 
 // Account metadata and secondary model quotas unfold as their own frame; it never changes the main notch outline.
-const extraCard=document.createElement('div');extraCard.id='extra-card';extraCard.setAttribute('aria-hidden','true');
+const extraCard=document.createElement('div');extraCard.id='extra-card';uiMotion.attr(extraCard,'aria-hidden','true');
 card.parentElement.append(extraCard);
 const extraPath=document.createElementNS(SVG_NS,'path');detailSvg.append(extraPath);
 detailSvg.insertAdjacentHTML('afterbegin',`<defs>${gooDefinition('extra-goo')}${gooDefinition('detail-goo')}</defs>`);
@@ -175,11 +174,11 @@ function drawExtra(){
   // The bridge rounds and thins as the growing frame separates from the usage view.
   const neck=32*(1-smooth((t-.25)/.65));
   const bridge=neck>.1?`M${n(mid-neck)} ${n(anchor)}Q${n(mid-neck*.35)} ${n((anchor+near)/2)} ${n(mid-neck)} ${n(near)}H${n(mid+neck)}Q${n(mid+neck*.35)} ${n((anchor+near)/2)} ${n(mid+neck)} ${n(anchor)}Z`:'';
-  extraPath.setAttribute('d',rect+bridge);
+  uiMotion.attr(extraPath,'d',rect+bridge);
   const blur=3*Math.sin(Math.PI*Math.min(1,t));
   setGooBlur(extraFilter,blur);
-  for(const [key,value] of Object.entries({x:left-24,y:Math.min(top,anchor)-24,width:right-left+48,height:Math.max(bottom,anchor)-Math.min(top,anchor)+48}))extraFilter.setAttribute(key,n(value));
-  if(blur>.2)extraPath.setAttribute('filter','url(#extra-goo)');else extraPath.removeAttribute('filter');
+  for(const [key,value] of Object.entries({x:left-24,y:Math.min(top,anchor)-24,width:right-left+48,height:Math.max(bottom,anchor)-Math.min(top,anchor)+48}))uiMotion.attr(extraFilter,key,n(value));
+  if(blur>.2)uiMotion.attr(extraPath,'filter','url(#extra-goo)');else extraPath.removeAttribute('filter');
   extraCard.style.setProperty('--extra-rise',`${(anchor-(above?y+h:y))*(1-Math.min(1,t))}px`);
 }
 function extraBridgeRect(){
@@ -190,24 +189,23 @@ function extraContains(x,y){
   const r=extraBridgeRect();return x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3];
 }
 function setExtraShown(on,instant=false){
-  extraTarget=on&&extraCard.textContent?1:0;extraCard.setAttribute('aria-hidden',String(!extraTarget));
+  extraTarget=on&&extraCard.textContent?1:0;uiMotion.attr(extraCard,'aria-hidden',String(!extraTarget));
   card.querySelector('.metadata-trigger')?.setAttribute('aria-expanded',String(!!extraTarget));
   placeExtraCard();
   if(instant||reducedDetails()){
-    cancelAnimationFrame(extraFrame);extraFrame=0;extraLast=0;extraVelocity=0;extraOpen=extraTarget;drawExtra();reportHot();return;
+    uiMotion.cancel(extraFrame);extraFrame=0;extraLast=0;extraVelocity=0;extraOpen=extraTarget;drawExtra();reportHot();return;
   }
   if(extraFrame)return;
   const step=now=>{
-    const dt=Math.min(.032,(now-(extraLast||now-16))/1000);extraLast=now;
+    const dt=Math.min(.1,(now-(extraLast||now-16))/1000);extraLast=now;
     const omega=2*Math.PI/.58,damping=extraTarget?.78:1;
-    extraVelocity+=(-omega*omega*(extraOpen-extraTarget)-2*damping*omega*extraVelocity)*dt;
-    extraOpen+=extraVelocity*dt;
+    [extraOpen,extraVelocity]=uiMotion.spring(extraOpen,extraVelocity,extraTarget,omega,damping,dt);
     const settled=Math.abs(extraOpen-extraTarget)<.002&&Math.abs(extraVelocity)<.025;
     if(settled){extraOpen=extraTarget;extraVelocity=0;}
     drawExtra();reportHot();
-    if(settled){extraFrame=0;extraLast=0;}else extraFrame=requestAnimationFrame(step);
+    if(settled){extraFrame=0;extraLast=0;}else extraFrame=uiMotion.frame(step);
   };
-  extraFrame=requestAnimationFrame(step);
+  extraFrame=uiMotion.frame(step);
 }
 extraCard.addEventListener('mouseenter',()=>{clearTimeout(hideTimer);});
 extraCard.addEventListener('mouseleave',()=>{setTimeout(()=>{if(!extraCard.matches(':hover')&&!card.matches(':hover'))setExtraShown(false);},220);});

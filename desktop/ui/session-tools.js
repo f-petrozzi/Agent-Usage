@@ -64,10 +64,10 @@ function returnSessionUsage(){
 }
 function focusSessionSearch(){
   card.querySelector('.session-search')?.focus({preventScroll:true});
-  invoke('session_switcher_focus').then(()=>{if(sessionSwitcherShowing())requestAnimationFrame(()=>card.querySelector('.session-search')?.focus({preventScroll:true}));}).catch(()=>{});
+  invoke('session_switcher_focus').then(()=>{if(sessionSwitcherShowing())uiMotion.frame(()=>card.querySelector('.session-search')?.focus({preventScroll:true}));}).catch(()=>{});
 }
 listen('session_switcher',e=>requestSessionSwitcher(e.payload!==false)).catch(()=>{});
-for(const name of ['appear','layout','release'])listen(name,()=>{if(switcherPending)requestAnimationFrame(()=>requestSessionSwitcher());}).catch(()=>{});
+for(const name of ['appear','layout','release'])listen(name,()=>{if(switcherPending)uiMotion.frame(()=>requestSessionSwitcher());}).catch(()=>{});
 listen('disappear',()=>{switcherPending=false;clearResumeEffects();}).catch(()=>{});
 listen('monitor_stow',()=>clearResumeEffects()).catch(()=>{});
 function closeSessionTools(){
@@ -99,9 +99,9 @@ function renderSessionToolsCard(){
   if(hoverId===SESSION_ID){
     if(switched||!card.querySelector('.session-search')){
       card.innerHTML=`<div class="session-head"><button type="button" class="session-back session-tool-action" aria-label="Back to usage" title="Back to usage"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.5 5-5 5 5 5M7 10h9"/></svg></button><span>Sessions</span></div>
-        <div class="session-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.2 4.2"/></svg><input class="session-search" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" placeholder="Find a chat or workspace" aria-label="Find a chat or workspace" aria-controls="session-results" autocomplete="off" spellcheck="false"></div>
+        <div class="session-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.2 4.2"/></svg><input class="session-search" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-haspopup="grid" aria-describedby="session-keyboard-hint" placeholder="Find a chat or workspace" aria-label="Find a chat or workspace" aria-controls="session-results" autocomplete="off" spellcheck="false"></div>
         <div class="session-filter-row"><button type="button" class="session-account session-tool-action" aria-label="Filter sessions by agent" aria-haspopup="listbox" aria-expanded="false" aria-controls="session-agents"><span>All agents</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><div class="session-agent-menu" id="session-agents" role="listbox" aria-label="Agents" inert></div></div>
-        <div class="session-results" id="session-results" role="listbox" aria-label="Saved sessions"></div><div class="session-status" role="status" aria-live="polite"></div>`;
+        <div class="session-results" id="session-results" role="grid" aria-colcount="2" aria-label="Saved sessions"></div><div class="session-keyboard-hint" id="session-keyboard-hint">↑↓ Choose · Enter Open · Tab Actions</div><div class="session-status" role="status" aria-live="polite"></div>`;
       const search=card.querySelector('.session-search');search.value=sessionQuery;
       search.addEventListener('input',()=>{sessionQuery=search.value;sessionIndex=0;queueSessionRender();});
       const filter=card.querySelector('.session-account');
@@ -133,35 +133,64 @@ function renderSessionToolsCard(){
   }
   placeCard();syncAccountFocus(false);if(switched)changeDetailAccount();return true;
 }
-function queueSessionRender(){if(!sessionRenderFrame)sessionRenderFrame=requestAnimationFrame(()=>{sessionRenderFrame=0;updateSessionList();});}
+function queueSessionRender(){if(!sessionRenderFrame)sessionRenderFrame=uiMotion.frame(()=>{sessionRenderFrame=0;updateSessionList();});}
 function updateSessionList(){
   if(!sessionSwitcherShowing())return;
   updateSessionAgents();
   const selected=sessionMatches[sessionIndex],words=sessionQuery.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
-  sessionMatches=library.filter(s=>(!sessionAccount||s.account===sessionAccount)&&words.every(word=>[s.name,s.accountName,s.workspace,s.sessionId].join(' ').toLocaleLowerCase().includes(word)))
+  sessionMatches=library.filter(s=>(!sessionAccount||s.account===sessionAccount)&&words.every(word=>[s.name,agentAccounts.find(a=>a.id===s.account)?.name||s.accountName,s.workspace,s.sessionId].join(' ').toLocaleLowerCase().includes(word)))
     .sort((a,b)=>Number(isSessionPinned(b.account,b.id)||b.pinned)-Number(isSessionPinned(a.account,a.id)||a.pinned)||b.since-a.since);
   if(selected){const found=sessionMatches.findIndex(s=>s.account===selected.account&&s.id===selected.id);if(found>=0)sessionIndex=found;}
   sessionIndex=Math.max(0,Math.min(119,sessionIndex,sessionMatches.length-1));
   const rows=sessionMatches.slice(0,120),list=card.querySelector('.session-results'),status=card.querySelector('.session-status');
-  const signature=JSON.stringify(rows.map(s=>[s.id,s.account,s.name,s.workspace,s.live,s.state,isSessionPinned(s.account,s.id)||s.pinned,s.canOpen]));
+  card.classList.toggle('compact-sessions',appearanceSettings.compactSessions);
+  const signature=JSON.stringify([sessionQuery,appearanceSettings,agentAccounts.map(a=>[a.id,a.name]),rows.map(s=>[s.id,s.account,s.accountName,s.name,s.workspace,s.live,s.state,isSessionPinned(s.account,s.id)||s.pinned,s.canOpen])]);
   if(signature!==sessionListSignature){
-    sessionListSignature=signature;const scroll=list.scrollTop;
-    let previousPinned=null;
-      list.innerHTML='<div class="session-selection" aria-hidden="true"></div>'+rows.map((s,i)=>{
-      const pinned=isSessionPinned(s.account,s.id)||s.pinned,section=pinned!==previousPinned?`<div class="session-section">${pinned?'Pinned chats':'Recent chats'}</div>`:'';previousPinned=pinned;
-      const account=agentAccounts.find(a=>a.id===s.account),state=s.live?(s.state==='busy'?'Working':s.state==='waiting'?'Waiting':'Open'):'';
-      const workspace=s.workspace?.split('/').filter(Boolean).slice(-2).join('/')||'Saved chat';
-      return `${section}<div class="session-result" data-index="${i}"><button type="button" class="session-open session-tool-action" role="option" id="session-option-${i}" data-index="${i}" aria-selected="false" ${s.canOpen?'':'disabled'}><span class="session-mark">${account?glyphHtml(account):esc((s.accountName||'A').slice(0,1))}</span><span class="session-row-copy"><span class="session-name">${esc(s.name)}</span><span class="session-meta">${esc(s.accountName||s.account)}${state?' · '+esc(state):''}</span><span class="session-workspace">${esc(workspace)}</span></span></button>${s.canOpen?sessionPinButton(s):''}</div>`;
-    }).join('');list.scrollTop=scroll;
+    sessionListSignature=signature;reconcileSessionRows(list,rows,words);
   }
   status.textContent=libraryError||(!rows.length?(libraryLoading?'Loading saved sessions…':sessionQuery?'No matching chats.':'No saved chats yet.'):
     sessionMatches.length>120?'Showing 120 chats. Search to see more.':!libraryLoaded&&libraryLoading?'Loading sessions…':`${sessionMatches.length} ${sessionMatches.length===1?'chat':'chats'}`);
   status.classList.toggle('error',!!libraryError);paintSessionSelection();placeCard();
 }
+// Reconcile by account + session identity. Refreshes keep the actual focused controls.
+function highlightSession(text,words){
+  text=String(text||'');if(!words.length)return esc(text);
+  const expression=new RegExp('('+words.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')','gi');
+  return text.split(expression).map((part,i)=>i%2?'<mark>'+esc(part)+'</mark>':esc(part)).join('');
+}
+function reconcileSessionRows(list,rows,words){
+  const scroll=list.scrollTop,focused=document.activeElement,existing=new Map([...list.querySelectorAll('.session-result')].map(el=>[el.dataset.key,el]));
+  let ink=list.querySelector('.session-selection');if(!ink){ink=document.createElement('div');ink.className='session-selection';ink.setAttribute('aria-hidden','true');list.prepend(ink);}
+  const ordered=[ink];let previousPinned=null;
+  rows.forEach((s,i)=>{
+    const pinned=isSessionPinned(s.account,s.id)||s.pinned===true;
+    if(pinned!==previousPinned){
+      const header=document.createElement('div');header.className='session-section';header.setAttribute('role','row');
+      header.innerHTML='<span role="gridcell" aria-colspan="2">'+(pinned?'Pinned chats':'Recent chats')+'</span>';ordered.push(header);previousPinned=pinned;
+    }
+    const key=sessionKey(s.account,s.id);let row=existing.get(key);
+    if(!row){row=document.createElement('div');row.className='session-result';row.dataset.key=key;row.setAttribute('role','row');row.innerHTML='<div class="session-main-cell" role="gridcell"><button type="button" class="session-open session-tool-action"><span class="session-mark"></span><span class="session-row-copy"><span class="session-name"></span><span class="session-meta"></span><span class="session-workspace"></span></span></button></div><div class="session-pin-cell" role="gridcell">'+sessionPinButton(s)+'</div>';}
+    existing.delete(key);row.dataset.index=i;
+    const open=row.querySelector('.session-open'),cell=row.querySelector('.session-main-cell'),pin=row.querySelector('.session-pin');
+    cell.id='session-option-'+i;open.dataset.index=i;open.disabled=!s.canOpen;
+    open.title=[s.name,s.accountName||s.account,s.workspace].filter(Boolean).join(' · ');
+    const account=agentAccounts.find(a=>a.id===s.account),state=s.live?(s.state==='busy'?'Working':s.state==='waiting'?'Waiting':'Open'):'';
+    const workspace=s.workspace?.split('/').filter(Boolean).slice(-2).join('/')||'Saved chat';
+    const contents={'.session-mark':account?glyphHtml(account):esc((s.accountName||'A').slice(0,1)),'.session-name':highlightSession(s.name,words),'.session-meta':highlightSession(account?.name||s.accountName||s.account,words)+(state?' · '+esc(state):'')+(appearanceSettings.compactSessions?' · <span class="session-inline-workspace">'+highlightSession(workspace,words)+'</span>':''),'.session-workspace':highlightSession(workspace,words)};
+    for(const [selector,html] of Object.entries(contents)){const el=row.querySelector(selector);if(el.dataset.markup!==html){el.innerHTML=html;el.dataset.markup=html;}}
+    pin.disabled=!s.canOpen;pin.setAttribute('aria-disabled',String(!s.canOpen||pinPending.has(key)));pin.hidden=!s.canOpen;pin.classList.toggle('pinned',pinned);pin.setAttribute('aria-pressed',String(pinned));pin.setAttribute('aria-label',(pinned?'Unpin ':'Pin ')+(s.name||'chat'));pin.title=pinned?'Unpin chat':'Pin chat';
+    ordered.push(row);
+  });
+  for(const el of [...list.children])if(!ordered.includes(el))el.remove();
+  ordered.forEach((el,i)=>{if(list.children[i]!==el){if(list.moveBefore&&el.parentNode===list)list.moveBefore(el,list.children[i]||null);else list.insertBefore(el,list.children[i]||null);}});
+  if(focused?.isConnected&&document.activeElement!==focused)focused.focus({preventScroll:true});
+  list.scrollTop=scroll;list.setAttribute('aria-rowcount',String(ordered.length-1));
+}
 function paintSessionSelection(scroll=false){
   const ink=card.querySelector('.session-selection');
   for(const row of card.querySelectorAll('.session-result')){
-    const on=Number(row.dataset.index)===sessionIndex;row.classList.toggle('active',on);row.querySelector('.session-open').setAttribute('aria-selected',String(on));
+    const on=Number(row.dataset.index)===sessionIndex;row.classList.toggle('active',on);row.setAttribute('aria-selected',String(on));
+    row.querySelector('.session-open').tabIndex=on?0:-1;row.querySelector('.session-pin').tabIndex=on?0:-1;
     if(on&&ink){ink.style.transform=`translateY(${row.offsetTop}px)`;ink.style.height=row.offsetHeight+'px';}
     if(on&&scroll)row.scrollIntoView({block:'nearest'});
   }
@@ -177,10 +206,10 @@ const pinPending=new Set();
 card.addEventListener('click',async e=>{
   const pin=e.target.closest('.session-pin');
   if(pin){
-    e.stopPropagation();const {session:id,account}=pin.dataset,key=sessionKey(account,id);if(pinPending.has(key))return;pinPending.add(key);pin.disabled=true;
+    e.stopPropagation();const {session:id,account}=pin.dataset,key=sessionKey(account,id);if(pinPending.has(key))return;pinPending.add(key);pin.setAttribute('aria-disabled','true');
     try{await invoke('set_session_pin',{id,account,on:pin.getAttribute('aria-pressed')!=='true'});}
     catch(error){if(sessionSwitcherShowing()){card.querySelector('.session-status').textContent=error.message||'This chat could not be pinned.';}else notice(error.message||'This chat could not be pinned.');}
-    finally{pinPending.delete(key);pin.disabled=false;}return;
+    finally{pinPending.delete(key);pin.setAttribute('aria-disabled','false');}return;
   }
   if(e.target.closest('.session-back')){returnSessionUsage();return;}
   if(e.target.closest('.session-close')){hideCard();return;}
@@ -200,9 +229,14 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();hideCard();return;}
   if(e.target.closest('.session-account')){if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();setSessionFilterOpen(true);}return;}
-  if(!sessionSwitcherShowing()||e.target.closest('.session-agent-menu,.session-account,.session-pin,.session-close,.session-back'))return;
+  if(!sessionSwitcherShowing()||e.target.closest('.session-agent-menu,.session-account,.session-close,.session-back'))return;
+  const gridButton=e.target.closest('.session-open,.session-pin');
+  if(gridButton&&['ArrowLeft','ArrowRight'].includes(e.key)){
+    e.preventDefault();const row=gridButton.closest('.session-result');row.querySelector(e.key==='ArrowRight'?'.session-pin':'.session-open')?.focus({preventScroll:true});return;
+  }
   if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
     e.preventDefault();sessionIndex=e.key==='Home'?0:e.key==='End'?Math.min(119,sessionMatches.length-1):Math.max(0,Math.min(119,sessionMatches.length-1,sessionIndex+(e.key==='ArrowDown'?1:-1)));paintSessionSelection(true);
+    if(gridButton)card.querySelector(`.session-result[data-index="${sessionIndex}"] ${gridButton.classList.contains('session-pin')?'.session-pin':'.session-open'}`)?.focus({preventScroll:true});
   }else if(e.key==='Enter'&&e.target.classList.contains('session-search')){e.preventDefault();resumeSwitcherSession(sessionIndex);}
 },true);
 function openCompletionStack(events){
@@ -245,7 +279,7 @@ function applyFocusLayout(){
 function setFocusExpanded(on){
   clearTimeout(focusTimer);focusExpanded=on;applyFocusLayout();
   if(focusMotion.matches){
-    cancelAnimationFrame(focusFrame);focusFrame=0;
+    uiMotion.cancel(focusFrame);focusFrame=0;
     for(const state of focusCells.values()){state.value=state.target;state.velocity=0;}
     applyFocusLayout();aim(layout.edge,layout.along,true);return;
   }
@@ -255,28 +289,28 @@ function startFocusAnimation(){
   if(focusFrame||[...focusCells.values()].every(s=>s.value===s.target&&s.velocity===0))return;
   focusLast=performance.now();
   const step=now=>{
-    const elapsed=Math.min(.04,(now-focusLast)/1000);focusLast=now;
-    const steps=Math.max(1,Math.ceil(elapsed*120)),dt=elapsed/steps,omega=2*Math.PI/.54;
+    const elapsed=Math.min(.1,(now-focusLast)/1000);focusLast=now;
+    const omega=2*Math.PI/.54;
     let settled=true;
     for(const state of focusCells.values()){
-      for(let i=0;i<steps;i++){state.velocity+=(-omega*omega*(state.value-state.target)-2*.95*omega*state.velocity)*dt;state.value+=state.velocity*dt;}
+      [state.value,state.velocity]=uiMotion.spring(state.value,state.velocity,state.target,omega,.95,elapsed);
       if(Math.abs(state.value-state.target)<.001&&Math.abs(state.velocity)<.015){state.value=state.target;state.velocity=0;}else settled=false;
     }
     applyFocusLayout();aim(layout.edge,layout.along);for(const s of slivers.values())drawSliver(s);
-    focusFrame=settled?0:requestAnimationFrame(step);
+    focusFrame=settled?0:uiMotion.frame(step);
   };
-  focusFrame=requestAnimationFrame(step);
+  focusFrame=uiMotion.frame(step);
 }
 function scheduleFocusRest(){clearTimeout(focusTimer);focusTimer=setTimeout(()=>{if(!pointerIn&&!card.classList.contains('show')&&!slivering())setFocusExpanded(false);},700);}
 function setFocusAccounts(value){
   focusAccounts=new Set(Array.isArray(value)?value:[]);window.sessionFocusAccounts=[...focusAccounts];
-  const all=originalProviders(),index=all.findIndex(a=>focusAccounts.has(a.id)),capacity=Math.max(1,Math.floor((edgeIsVertical()?innerHeight-150:innerWidth-150)/90));
+  const all=availableProviders(),index=all.findIndex(a=>focusAccounts.has(a.id)),capacity=Math.max(1,Math.floor((edgeIsVertical()?innerHeight-150:innerWidth-150)/90));
   if(index>=0&&!all.slice(accountOffset,accountOffset+capacity).some(a=>focusAccounts.has(a.id)))accountOffset=index;
   renderRing();setFocusExpanded(pointerIn||card.classList.contains('show'));
 }
 invoke('get_focus_accounts').then(setFocusAccounts).catch(()=>{});listen('focus_accounts',e=>setFocusAccounts(e.payload)).catch(()=>{});
 listen('notch_pointer',e=>{if(e.payload)setFocusExpanded(true);else scheduleFocusRest();}).catch(()=>{});
-listen('edge_cursor',()=>setFocusExpanded(false)).catch(()=>{});
+listen('edge_cursor',e=>{if(e.payload?.trackingStarted!==false)setFocusExpanded(false);}).catch(()=>{});
 listen('move_begin',()=>setFocusExpanded(false)).catch(()=>{});
 listen('release',()=>scheduleFocusRest()).catch(()=>{});
 listen('activity',()=>{if(focusAccounts.size&&!focusExpanded)scheduleFocusRest();}).catch(()=>{});

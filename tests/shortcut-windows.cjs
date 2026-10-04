@@ -47,6 +47,8 @@ public static class ShortcutKeys {
   [StructLayout(LayoutKind.Sequential)] public struct Mouse { public int x,y; public uint data,flags,time; public UIntPtr extra; }
   [StructLayout(LayoutKind.Explicit)] public struct Union { [FieldOffset(0)] public Keyboard keyboard; [FieldOffset(0)] public Mouse mouse; }
   [StructLayout(LayoutKind.Sequential)] public struct Input { public uint type; public Union value; }
+  [DllImport("user32.dll",SetLastError=true)] public static extern bool SetCursorPos(int x,int y);
+  public static void Move(int x,int y) { if(!SetCursorPos(x,y))throw new Exception("SetCursorPos failed"); }
   [DllImport("user32.dll",SetLastError=true)] public static extern uint SendInput(uint count,Input[] input,int size);
   [DllImport("user32.dll",SetLastError=true)] public static extern bool PostThreadMessage(uint thread,uint message,UIntPtr word,IntPtr data);
   public static void Hotkey(uint thread) { if(!PostThreadMessage(thread,0x312,new UIntPtr(1),new IntPtr(0x910002)))throw new Exception("PostThreadMessage failed: "+Marshal.GetLastWin32Error()); }
@@ -60,6 +62,7 @@ public static class ShortcutKeys {
 while ($null -ne ($line = [Console]::ReadLine())) {
   $parts = $line.Split(' ')
   if ($parts[0] -eq 'hotkey') { [ShortcutKeys]::Hotkey([System.UInt32]$parts[1]) }
+  elseif ($parts[0] -eq 'move') { [ShortcutKeys]::Move([int]$parts[1], [int]$parts[2]) }
   else { [ShortcutKeys]::Send([System.UInt16]$parts[0], $parts[1] -eq 'up') }
   [Console]::WriteLine('sent ' + $line)
 }
@@ -71,6 +74,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
   const showing=()=>main.window.webContents.executeJavaScript('sessionSwitcherShowing() && document.activeElement === card.querySelector(".session-search")');
   const nativeLog=()=>console.log('Native reports:',JSON.stringify(helperLines.join('')));
   await until(()=>/sessions-ready hotkey=1 hook=[01] thread=\d+/.test(helperStatus),'Native Windows hotkey did not register');
+  await until(()=>/pointer-ready hook=1/.test(helperStatus),'Native pointer hook did not register');
   const thread=helperStatus.match(/thread=(\d+)/)[1];
   async function hotkey(){const token='hotkey '+thread,offset=output.length;injector.stdin.write(token+'\n');await until(()=>output.slice(offset).includes('sent '+token),'Native message injection failed: '+errors);}
   main.hide();await wait(600);await hotkey();
@@ -88,6 +92,14 @@ while ($null -ne ($line = [Console]::ReadLine())) {
   await key(0x91);
   await wait(300);
   const interactive=helperLines.join('').includes('100');
+  if(interactive){
+    const originalPoint=electron.screen.getCursorScreenPoint(),display=electron.screen.getPrimaryDisplay();
+    const destination=electron.screen.dipToScreenPoint({x:display.bounds.x+100,y:display.bounds.y+100});
+    const token=`move ${destination.x} ${destination.y}`,offset=helperLines.join('').length;injector.stdin.write(token+'\n');
+    await until(()=>new RegExp('pointer '+destination.x+' '+destination.y+' \\d+').test(helperLines.join('').slice(offset)),'Compiled helper did not emit timestamped pointer coordinates while held');
+    const restore=electron.screen.dipToScreenPoint(originalPoint);injector.stdin.write(`move ${restore.x} ${restore.y}\n`);
+    console.log('PASS: compiled pointer hook streams timestamped physical coordinates while held');
+  }
   await key(0x91,true);await wait(300);if(interactive)console.log('PASS: Windows runner delivers real Scroll Lock input');
   if(!interactive)console.log('SKIP: physical SendInput checks; the runner has no interactive keyboard desktop (native message-to-renderer checks passed)');
   for(const control of interactive?[0xa2,0xa3]:[]){

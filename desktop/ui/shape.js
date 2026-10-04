@@ -15,7 +15,7 @@ const SHAPE={depth:70,flare:38.7,corner:20,bleed:40,arm:28.5,armStroke:8.8};
 const edgeDepth=edge=>edge==='top'||edge==='bottom'?90:70;
 const SVG_NS='http://www.w3.org/2000/svg';
 const shapeSvg=document.createElementNS(SVG_NS,'svg');
-shapeSvg.id='shape';shapeSvg.setAttribute('aria-hidden','true');
+shapeSvg.id='shape';uiMotion.attr(shapeSvg,'aria-hidden','true');
 const gooDefinition=id=>`<filter id="${id}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
   <feGaussianBlur in="SourceGraphic" stdDeviation="0"/>
   <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -12"/></filter>`;
@@ -62,19 +62,18 @@ function morphHandles(){
   for(const h of handles){
     const to=!absorbing&&shown&&!carrying&&h.el.classList.contains('hover')?1:0;
     if(absorbing||h.swapping||to===h.target) continue;
-    cancelAnimationFrame(h.frame);h.target=to;
+    uiMotion.cancel(h.frame);h.target=to;
     if(matchMedia('(prefers-reduced-motion: reduce)').matches){h.value=to;h.velocity=0;drawShape();continue;}
     let last=performance.now();
     const step=now=>{
-      const dt=Math.min(.032,(now-last)/1000);last=now;
-      const omega=2*Math.PI/.74,damping=to?.73:.86;
-      h.velocity+=(-omega*omega*(h.value-to)-2*damping*omega*h.velocity)*dt;
-      h.value+=h.velocity*dt;
+      const dt=Math.min(.1,(now-last)/1000);last=now;
+      const omega=2*Math.PI/(to?.56:.64),damping=to?.76:.9;
+      [h.value,h.velocity]=uiMotion.spring(h.value,h.velocity,to,omega,damping,dt);
       const settled=Math.abs(h.value-to)<.002&&Math.abs(h.velocity)<.025;
       if(settled){h.value=to;h.velocity=0;}
-      drawShape();h.frame=settled?0:requestAnimationFrame(step);
+      drawShape();h.frame=settled?0:uiMotion.frame(step);
     };
-    h.frame=requestAnimationFrame(step);
+    h.frame=uiMotion.frame(step);
   }
   morphSprout();
 }
@@ -83,22 +82,21 @@ function morphHandles(){
 function morphSprout(){
   const to=sprout.available&&shown&&!carrying&&!absorbing&&!passage&&(hovered==='sprout'||sprout.focused)?1:0;
   if(to===sprout.target)return;
-  cancelAnimationFrame(sprout.frame);sprout.target=to;
+  uiMotion.cancel(sprout.frame);sprout.target=to;
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){sprout.value=to;sprout.velocity=0;sprout.frame=0;drawShape();reportHot();return;}
   let last=performance.now();
   const step=now=>{
-    const dt=Math.min(.032,(now-last)/1000);last=now;
+    const dt=Math.min(.1,(now-last)/1000);last=now;
     const omega=2*Math.PI/(to?.78:.56),damping=to?.6:.9;
-    sprout.velocity+=(-omega*omega*(sprout.value-to)-2*damping*omega*sprout.velocity)*dt;
-    sprout.value+=sprout.velocity*dt;
+    [sprout.value,sprout.velocity]=uiMotion.spring(sprout.value,sprout.velocity,to,omega,damping,dt);
     const settled=Math.abs(sprout.value-to)<.002&&Math.abs(sprout.velocity)<.025;
     if(settled){sprout.value=to;sprout.velocity=0;}
     drawShape();
     if(sprout.target!==to)return; // turned round while drawing: the new spring has the frames now
-    sprout.frame=!settled||sprout.snapAt&&now-sprout.snapAt<1200?requestAnimationFrame(step):0;
+    sprout.frame=!settled||sprout.snapAt&&now-sprout.snapAt<1200?uiMotion.frame(step):0;
     if(!sprout.frame){sprout.snapAt=0;drawShape();reportHot();}
   };
-  sprout.frame=requestAnimationFrame(step);
+  sprout.frame=uiMotion.frame(step);
 }
 // A corner being rounded ({corner, first, second, before, after}), and how close to one the notch is (0 to 1)
 let passage=null, cornerNear=0, pillTransform='';
@@ -119,30 +117,36 @@ function edgeMatrix(edge,w,h){
 }
 function setGoo(blur,x,y,w,h){
   setGooBlur(gooFilter,blur);
-  for(const [k,v] of Object.entries({x,y,width:w,height:h})) gooFilter.setAttribute(k,n(v));
-  if(blur>0.3) shapeBody.setAttribute('filter','url(#goo)'); else shapeBody.removeAttribute('filter');
+  for(const [k,v] of Object.entries({x,y,width:w,height:h})) uiMotion.attr(gooFilter,k,n(v));
+  if(blur>0.3) uiMotion.attr(shapeBody,'filter','url(#goo)'); else shapeBody.removeAttribute('filter');
 }
 
-function drawShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof placeUnreadDot==='function')placeUnreadDot(); if(typeof notificationRim!=='undefined')notificationRim.refresh(); }
+function drawShape(){uiMotion.paint('shape',paintShape,10);}
+function paintShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof placeUnreadDot==='function')placeUnreadDot(); if(typeof notificationRim!=='undefined')notificationRim.refresh(); }
 
 /* On an edge: one part the length of the pill, and an arm off each end. At 0 an arm lies a full stroke
    past its flare, inside the black; going out it swells from the flare on a neck of goo and lets go. */
 function drawStraight(){
   const w=pill.offsetWidth, h=pill.offsetHeight, hgt=h;
+  const origin=document.getElementById('root').getBoundingClientRect();
+  const translation=pillTransform.match(/translate\(([-.\d]+)px,\s*([-.\d]+)px\)/);
+  const matrix=edgeMatrix(notchEdge,w,h);matrix[4]+=origin.left+Number(translation?.[1]||0);matrix[5]+=origin.top+Number(translation?.[2]||0);
   if(!w||!h) return;
   const vertical=notchEdge==='left'||notchEdge==='right', L=vertical?h:w;
   const proportions=handleMetrics(),depth=edgeDepth(notchEdge),pull=typeof notchEffects==='undefined'?0:notchEffects.dock.value;
-  const d=Math.max(0,depth*openness+pull), grown=Math.min(1,d/depth);
+  const stretch=typeof materialStretch==='number'?materialStretch:0;
+  const d=Math.max(0,(depth*openness+pull)/(1+stretch)), grown=Math.min(1,d/depth);
   const spread=Math.min(1.02,.75+.25*openness); // opening, it spreads along the edge a little too
-  const Ls=L*spread+pull*.8, u0=(L-Ls)/2, u1=u0+Ls, F=proportions.flare*grown, r=SHAPE.corner*grown;
+  const Ls=L*spread*(1+stretch)+pull*.8, u0=(L-Ls)/2, u1=u0+Ls, F=proportions.flare*grown, r=SHAPE.corner*grown;
   shapeSvg.style.transform=pillTransform;
-  shapeSvg.setAttribute('width',w);shapeSvg.setAttribute('height',h);
-  shapeBody.setAttribute('transform',`matrix(${edgeMatrix(notchEdge,w,h).join(' ')})`);
+  uiMotion.attr(shapeSvg,'width',w);uiMotion.attr(shapeSvg,'height',h);
+  uiMotion.attr(shapeBody,'transform',`matrix(${edgeMatrix(notchEdge,w,h).join(' ')})`);
   // Passage parts have page-space transforms. Clear them before applying the local edge matrix
   // to their parent, otherwise left/bottom parts rotate or reflect a second time after a corner.
   partA.removeAttribute('transform');partB.removeAttribute('transform');
-  partA.setAttribute('d',partPath(u0,u1,d,r,F,r,F)); partB.removeAttribute('d');
-  partA.rimPart=[u0,u1,d,r,F,r,F,-SHAPE.bleed];
+  const flares=handles.map(h=>F*(1+(matchMedia('(prefers-reduced-motion: reduce)').matches?0:Math.max(-.035,Math.min(.035,h.velocity/80)))));
+  uiMotion.attr(partA,'d',partPath(u0,u1,d,r,flares[0],r,flares[1])); partB.removeAttribute('d');
+  partA.rimPart=[u0,u1,d,r,flares[0],r,flares[1],-SHAPE.bleed];
   // Arms: drawn in with the notch as it nears a corner, and each gives way to its button under the pointer
   const detailRetreat=typeof detailArm==='number'?1-smooth(Math.max(0,Math.min(1,detailArm))):1;
   const mergingAll=absorbing||(typeof detailTarget==='number'&&detailTarget===1&&detailRetreat<1);
@@ -154,14 +158,14 @@ function drawStraight(){
     const filter=handleFilters[i], group=liquids[i];
     // A handle changing what it holds takes the same way home and back out as the arms do when absorbed
     const out=armsOutAll*h.swap, merging=mergingAll||h.swapping;
-    bands[i].setAttribute('d',partA.getAttribute('d'));
-    for(const [key,value] of Object.entries({x:cx-90,y:-60,width:180,height:190}))bandClips[i].setAttribute(key,value);
+    uiMotion.attr(bands[i],'d',partA.getAttribute('d'));
+    for(const [key,value] of Object.entries({x:cx-90,y:-60,width:180,height:190}))uiMotion.attr(bandClips[i],key,value);
     necks[i].removeAttribute('d');
     if((!i&&!showPin)||grown<.5){h.ink.removeAttribute('d');bands[i].removeAttribute('d');group.removeAttribute('filter');return;}
     if(h.swapping){drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetreat,w,hgt);return;}
     drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,detailRetreat,w,hgt,grown);
   });
-  drawSprout(u0,d,r,proportions,grown);
+  drawSprout(u0,d,r,proportions,grown,matrix);
 }
 
 /* The unread dot's own way to the log. The dot rests in the notch's leading front corner, on the bisector of its
@@ -175,10 +179,9 @@ function clearSprout(){
   for(const el of [sproutInk.band,sproutInk.neck,sproutInk.drop])el.removeAttribute('d');
   sproutInk.group.removeAttribute('filter');sprout.geo=null;
 }
-function drawSprout(u0,d,r,proportions,grown){
+function drawSprout(u0,d,r,proportions,grown,matrix){
   if(grown<.5){clearSprout();return;}
-  const ctm=shapeBody.getScreenCTM();if(!ctm){clearSprout();return;}
-  const page=p=>{const q=new DOMPoint(p[0],p[1]).matrixTransform(ctm);return [q.x,q.y];};
+  const page=([x,y])=>[matrix[0]*x+matrix[2]*y+matrix[4],matrix[1]*x+matrix[3]*y+matrix[5]];
   const s=sprout.value,Rb=proportions.disc*.4,stroke=proportions.stroke*grown,len=r+SPROUT.gap+Rb,C=[u0+r,d-r];
   // Along the edge, page space runs the same way as u, so the room before the screen's corner is one subtraction
   const along=p=>page(p)[edgeIsVertical()?1:0], room=along(C)-Rb-6;
@@ -188,9 +191,9 @@ function drawSprout(u0,d,r,proportions,grown){
   const P0=at(Math.max(0,r-SPROUT.rest)), P1=at(len);
   sprout.geo={P0:page(P0),P1:page(P1),D:page(D),rho,Rb,s,glyph:proportions.glyph*.84};
   if(s<.004){for(const el of [sproutInk.band,sproutInk.neck,sproutInk.drop])el.removeAttribute('d');sproutInk.group.removeAttribute('filter');return;}
-  sproutInk.drop.setAttribute('d',`M${n(D[0]-rho)} ${n(D[1])}a${n(rho)} ${n(rho)} 0 1 0 ${n(2*rho)} 0a${n(rho)} ${n(rho)} 0 1 0 ${n(-2*rho)} 0Z`);
-  sproutInk.band.setAttribute('d',partA.getAttribute('d'));
-  for(const [key,value] of Object.entries({x:u0-4,y:d-r-14,width:r+44,height:r+28}))sproutInk.clip.setAttribute(key,n(value));
+  uiMotion.attr(sproutInk.drop,'d',`M${n(D[0]-rho)} ${n(D[1])}a${n(rho)} ${n(rho)} 0 1 0 ${n(2*rho)} 0a${n(rho)} ${n(rho)} 0 1 0 ${n(-2*rho)} 0Z`);
+  uiMotion.attr(sproutInk.band,'d',partA.getAttribute('d'));
+  for(const [key,value] of Object.entries({x:u0-4,y:d-r-14,width:r+44,height:r+28}))uiMotion.attr(sproutInk.clip,key,n(value));
   // The strand: joined while the drop is drawn off; going out, past the snap its tail whips back into the corner;
   // coming home, the corner reaches out to take the drop before it is swallowed
   const outward=sprout.target===1, joined=s<=SPROUT.snap, src=at(r-stroke*1.1);
@@ -203,15 +206,15 @@ function drawSprout(u0,d,r,proportions,grown){
     const dx=end[0]-src[0],dy=end[1]-src[1],l=Math.hypot(dx,dy)||1,g=[dx/l,dy/l],left=[],right=[];
     for(let k=0;k<=20;k++){const f=k/20,t=f*tip,q=[src[0]+dx*t,src[1]+dy*t],hw=half(f);
       left.push(`${n(q[0]-g[1]*hw)} ${n(q[1]+g[0]*hw)}`);right.push(`${n(q[0]+g[1]*hw)} ${n(q[1]-g[0]*hw)}`);}
-    sproutInk.neck.setAttribute('d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
+    uiMotion.attr(sproutInk.neck,'d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
   }else sproutInk.neck.removeAttribute('d');
   // Liquid while it moves, sharp once it is out or home
   if(outward&&s>SPROUT.snap&&!sprout.snapAt)sprout.snapAt=performance.now();
   if(!outward||s<.5)sprout.snapAt=0;
   const blur=stroke*.72*Math.pow(Math.sin(Math.PI*Math.min(1,s)),.7);
   setGooBlur(sproutInk.filter,blur);
-  for(const [key,value] of Object.entries({x:C[0]-100,y:C[1]-100,width:200,height:200}))sproutInk.filter.setAttribute(key,n(value));
-  if(blur>.3)sproutInk.group.setAttribute('filter','url(#goo-sprout)');else sproutInk.group.removeAttribute('filter');
+  for(const [key,value] of Object.entries({x:C[0]-100,y:C[1]-100,width:200,height:200}))uiMotion.attr(sproutInk.filter,key,n(value));
+  if(blur>.3)uiMotion.attr(sproutInk.group,'filter','url(#goo-sprout)');else sproutInk.group.removeAttribute('filter');
 }
 
 /* The resting arm is an inset of the notch's own outline round its pocket: a leg along the screen edge, a corner
@@ -250,7 +253,7 @@ function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,d
   const along=t=>{const x=2*(1-t)*(sc[0]-src[0])+2*t*(bead[0]-sc[0]),y=2*(1-t)*(sc[1]-src[1])+2*t*(bead[1]-sc[1]),l=Math.hypot(x,y)||1;return [x/l,y/l];};
   const extent=H*(.45+.55*risen)*(1-gather);
   const pts=[];for(let k=0;k<=40;k++){const q=contour(-extent+2*extent*k/40,radius);pts.push(`${k?'L':'M'}${n(q[0]+shift[0])} ${n(q[1]+shift[1])}`);}
-  h.ink.setAttribute('d',pts.join(''));
+  uiMotion.attr(h.ink,'d',pts.join(''));
   const beadR=(stroke*.75+(R-stroke*.75)*smooth(lift))*(merging&&disc?.3+.7*out:1);
   let width=stroke*(1+.5*gather)+(2*beadR-stroke*(1+.5*gather))*smooth(lift);
   if(merging&&!disc)width*=.6+.4*smooth(out/.35);
@@ -269,12 +272,12 @@ function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,d
     const half=f=>f<.55?base+(pinch-base)*smooth(f/.55):pinch+(end-pinch)*smooth((f-.55)/.45);
     const left=[],right=[];
     for(let k=0;k<=20;k++){const f=k/20,t=f*tip,q=at(t),g=along(t),hw=half(f);left.push(`${n(q[0]-g[1]*hw)} ${n(q[1]+g[0]*hw)}`);right.push(`${n(q[0]+g[1]*hw)} ${n(q[1]-g[0]*hw)}`);}
-    necks[i].setAttribute('d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
+    uiMotion.attr(necks[i],'d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
   }
   // Goo: peeling out of or into the flare, and through the lift; nothing at rest
   const peel=stroke*.62*(1-smooth((out-.25)/.6))*smooth(out/.06);
   const blur=Math.max(peel,stroke*.72*Math.pow(Math.sin(Math.PI*lift),.7));
-  h.ink.setAttribute('stroke-width',n(width+blur*.4));
+  uiMotion.attr(h.ink,'stroke-width',n(width+blur*.4));
   // The glyph rides the bead at its size, sharpening as it arrives, swinging from the snap
   const [a,b,c,e]=edgeMatrix(notchEdge,w,hgt),du=bead[0]-O[0],dv=bead[1]-O[1];
   h.el.style.setProperty('--glyph-x',`${n(a*du+c*dv)}px`);h.el.style.setProperty('--glyph-y',`${n(b*du+e*dv)}px`);
@@ -283,14 +286,14 @@ function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,d
   const since=h.hoverSnapAt?(performance.now()-h.hoverSnapAt)/1000:9;
   h.el.style.setProperty('--sway',since<1.2?`${n(side*14*Math.exp(-since/.26)*Math.sin(2*Math.PI*since/.38))}deg`:'0deg');
   setGooBlur(filter,blur);
-  for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
-  if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
+  for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))uiMotion.attr(filter,key,value);
+  if(blur>.3)uiMotion.attr(group,'filter',`url(#${filter.id})`);else group.removeAttribute('filter');
 }
 // The swing from the snap outlives the spring that caused it, so it keeps its own frames until it dies away
 function swayFor(h){
-  cancelAnimationFrame(h.swayFrame);
-  const step=()=>{drawShape();h.swayFrame=h.hoverSnapAt&&performance.now()-h.hoverSnapAt<1200?requestAnimationFrame(step):0;};
-  h.swayFrame=requestAnimationFrame(step);
+  uiMotion.cancel(h.swayFrame);
+  const step=()=>{drawShape();h.swayFrame=h.hoverSnapAt&&performance.now()-h.hoverSnapAt<1200?uiMotion.frame(step):0;};
+  h.swayFrame=uiMotion.frame(step);
 }
 
 /* Round a corner: the part still on the edge it is leaving, shortening, and the part on the edge it is
@@ -302,7 +305,7 @@ function notchAlongLength(){return notchEdge==='top'||notchEdge==='bottom'?pill.
 function drawPassage(){
   const W=innerWidth, H=innerHeight, D=Math.max(edgeDepth(passage.first),edgeDepth(passage.second)), L=passage.before+passage.after;
   shapeSvg.style.transform='none';
-  shapeSvg.setAttribute('width',W);shapeSvg.setAttribute('height',H);
+  uiMotion.attr(shapeSvg,'width',W);uiMotion.attr(shapeSvg,'height',H);
   shapeBody.removeAttribute('transform');
   const {corner,first,second,before,after}=passage, bleed=SHAPE.bleed;
   const part=(el,edge,length,other,cornerAtStart)=>{
@@ -315,7 +318,7 @@ function drawPassage(){
     const d=cornerAtStart
       ? partPath(at-ext,at+length,depth,rc,fc,rf,ff)
       : partPath(at-length,at+ext,depth,rf,ff,rc,fc);
-    el.setAttribute('d',d); el.setAttribute('transform',`matrix(${edgeMatrix(edge,W,H).join(' ')})`);
+    uiMotion.attr(el,'d',d); uiMotion.attr(el,'transform',`matrix(${edgeMatrix(edge,W,H).join(' ')})`);
   };
   // Where the corner is along each edge: at its start (u = 0) or its end
   const atStart={tr:{top:false,right:true},br:{right:false,bottom:false},bl:{bottom:true,left:false},tl:{left:true,top:true}}[corner];
@@ -337,40 +340,39 @@ function setOpenness(v){ openness=v; document.getElementById('root').style.setPr
 // Monitor transfers discard every arm/open/pocket tween while the renderer's whole surface is masked.
 function stowShape(){
   if(typeof notificationRim!=='undefined')notificationRim.clear();
-  cancelAnimationFrame(openFrame);cancelAnimationFrame(armsFrame);openFrame=armsFrame=0;
+  uiMotion.cancel(openFrame);uiMotion.cancel(armsFrame);openFrame=armsFrame=0;
   openVelocity=openLast=0;armsOut=0;absorbing=false;
   for(const h of handles){
-    cancelAnimationFrame(h.frame);cancelAnimationFrame(h.swapFrame);h.frame=h.swapFrame=0;
+    uiMotion.cancel(h.frame);uiMotion.cancel(h.swapFrame);h.frame=h.swapFrame=0;
     h.value=h.target=h.velocity=0;h.swap=1;h.swapping=false;h.snapAt=0;
     h.el.classList.remove('hover','swapping');
   }
-  cancelAnimationFrame(sprout.frame);sprout.frame=0;sprout.value=sprout.target=sprout.velocity=0;sprout.snapAt=0;
+  uiMotion.cancel(sprout.frame);sprout.frame=0;sprout.value=sprout.target=sprout.velocity=0;sprout.snapAt=0;
   setOpenness(0);
 }
 function openShape(){
-  cancelAnimationFrame(openFrame); openFrame=0;
-  cancelAnimationFrame(armsFrame); armsOut=0;
+  uiMotion.cancel(openFrame); openFrame=0;
+  uiMotion.cancel(armsFrame); armsOut=0;
   absorbing=false;
-  for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;h.value=0;h.target=0;h.velocity=0;}
+  for(const h of handles){uiMotion.cancel(h.frame);h.frame=0;h.value=0;h.target=0;h.velocity=0;}
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=1; setOpenness(1); return; }
   openVelocity=0; openLast=0; setOpenness(0);
   const omega=2*Math.PI/0.62, zeta=0.72;
   let armsStarted=false;
   const step=now=>{
-    const dt=Math.min(.032,(now-(openLast||now-16))/1000); openLast=now;
-    openVelocity+=(-omega*omega*(openness-1)-2*zeta*omega*openVelocity)*dt;
-    const next=openness+openVelocity*dt;
+    const dt=Math.min(.1,(now-(openLast||now-16))/1000); openLast=now;
+    const [next,velocity]=uiMotion.spring(openness,openVelocity,1,omega,zeta,dt);openVelocity=velocity;
     if(!armsStarted&&next>.78){ armsStarted=true; moveArms(1,.56,smooth); }
     if(Math.abs(next-1)<.0015&&Math.abs(openVelocity)<.02){ openFrame=0; setOpenness(1); reportHot(); return; }
-    setOpenness(next); openFrame=requestAnimationFrame(step);
+    setOpenness(next); openFrame=uiMotion.frame(step);
   };
-  openFrame=requestAnimationFrame(step);
+  openFrame=uiMotion.frame(step);
 }
 // Arms out to `to` over `seconds`: out easing off as they arrive, back in accelerating as they are taken in
 function moveArms(to,seconds,ease=t=>t*t){
-  cancelAnimationFrame(armsFrame);
+  uiMotion.cancel(armsFrame);
   absorbing=to===0;
-  if(absorbing) for(const h of handles){cancelAnimationFrame(h.frame);h.frame=0;}
+  if(absorbing) for(const h of handles){uiMotion.cancel(h.frame);h.frame=0;}
   else morphHandles();
   const finish=()=>{
     if(absorbing){for(const h of handles){h.value=0;h.target=0;h.velocity=0;}absorbing=false;}
@@ -380,10 +382,10 @@ function moveArms(to,seconds,ease=t=>t*t){
   const from=armsOut, t0=performance.now();
   const step=now=>{
     const t=Math.min(1,(now-t0)/(seconds*1000)); armsOut=from+(to-from)*ease(t); drawShape();
-    armsFrame=t<1?requestAnimationFrame(step):0;
+    armsFrame=t<1?uiMotion.frame(step):0;
     if(t===1) finish();
   };
-  armsFrame=requestAnimationFrame(step);
+  armsFrame=uiMotion.frame(step);
 }
 /* Goo pulled out of the notch. While a pocket changes what it holds, its drop travels a bowed path between the
    pocket and just inside the notch's flare, on a strand of the notch's own ink: wide where it leaves the black,
@@ -400,8 +402,8 @@ function drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetrea
   const at=t=>[(1-t)*(1-t)*src[0]+2*(1-t)*t*ctl[0]+t*t*home[0],(1-t)*(1-t)*src[1]+2*(1-t)*t*ctl[1]+t*t*home[1]];
   const along=t=>{const x=2*(1-t)*(ctl[0]-src[0])+2*t*(home[0]-ctl[0]),y=2*(1-t)*(ctl[1]-src[1])+2*t*(home[1]-ctl[1]),l=Math.hypot(x,y)||1;return [x/l,y/l];};
   const drop=at(s),r=R*(.26+.74*smooth(s));
-  h.ink.setAttribute('d',`M${n(drop[0])} ${n(drop[1])}L${n(drop[0])} ${n(drop[1])}`);
-  h.ink.setAttribute('stroke-width',n(2*r));
+  uiMotion.attr(h.ink,'d',`M${n(drop[0])} ${n(drop[1])}L${n(drop[0])} ${n(drop[1])}`);
+  uiMotion.attr(h.ink,'stroke-width',n(2*r));
   // How far along the path the strand reaches: to the drop while they are joined; after the snap its tail whips
   // back into the notch; coming in, it reaches out from the notch to take the drop
   const outward=h.swapDir>0;let tip=s,joined=s<=PULL_SNAP;
@@ -415,7 +417,7 @@ function drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetrea
       const f=k/24,t=f*tip,p=at(t),g=along(t),hw=half(f);
       left.push(`${n(p[0]-g[1]*hw)} ${n(p[1]+g[0]*hw)}`);right.push(`${n(p[0]+g[1]*hw)} ${n(p[1]-g[0]*hw)}`);
     }
-    necks[i].setAttribute('d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
+    uiMotion.attr(necks[i],'d',`M${left.join('L')}L${right.reverse().join('L')}Z`);
   }
   // The glyph rides the drop at its size, sharpening as it arrives, and swings from the snap until it dies away
   const [a,b,c,e]=edgeMatrix(notchEdge,w,hgt),du=drop[0]-home[0],dv=drop[1]-home[1];
@@ -427,8 +429,8 @@ function drawPull(h,i,cx,F,stroke,proportions,mid,filter,group,disc,detailRetrea
   // Liquid through the pull, sharp once the drop is home
   const blur=stroke*.72*Math.pow(Math.sin(Math.PI*s),.7);
   setGooBlur(filter,blur);
-  for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))filter.setAttribute(key,value);
-  if(blur>.3)group.setAttribute('filter',`url(#${filter.id})`);else group.removeAttribute('filter');
+  for(const [key,value] of Object.entries({x:cx-100,y:-80,width:200,height:230}))uiMotion.attr(filter,key,value);
+  if(blur>.3)uiMotion.attr(group,'filter',`url(#${filter.id})`);else group.removeAttribute('filter');
 }
 
 /* Scrolling over a handle changes what it holds: the disc flows back into the notch along the arm's own way
@@ -438,12 +440,12 @@ function swapHandle(i,onHome,onSettled){
   const h=handles[i];
   if(h.swapping)return false;
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){onHome();drawShape();onSettled?.();return true;}
-  h.swapping=true;cancelAnimationFrame(h.swapFrame);
+  h.swapping=true;uiMotion.cancel(h.swapFrame);
   const leg=(to,seconds,ease,done)=>{
     const from=h.swap,t0=performance.now();
     const step=now=>{const t=Math.min(1,(now-t0)/(seconds*1000));h.swap=from+(to-from)*ease(t);drawShape();
-      if(t<1)h.swapFrame=requestAnimationFrame(step);else{h.swapFrame=0;done();}};
-    h.swapFrame=requestAnimationFrame(step);
+      if(t<1)h.swapFrame=uiMotion.frame(step);else{h.swapFrame=0;done();}};
+    h.swapFrame=uiMotion.frame(step);
   };
   // In, accelerating as the notch takes it; out, slow while the goo resists, quick once it gives, easing home. The
   // swing from the snap outlasts the pull a little, then everything is at rest together.
@@ -461,12 +463,12 @@ function swapHandle(i,onHome,onSettled){
       h.swap=pullAt(t);
       if(!h.snapAt&&h.swap>PULL_SNAP)h.snapAt=now;
       drawShape();
-      if(t<1||now-h.snapAt<720){h.swapFrame=requestAnimationFrame(step);return;}
+      if(t<1||now-h.snapAt<720){h.swapFrame=uiMotion.frame(step);return;}
       h.swap=1;h.swapping=false;h.snapAt=0;h.swapFrame=0;h.el.classList.remove('swapping');
       h.el.style.setProperty('--sway','0deg');h.el.style.setProperty('--swell','1');h.el.style.setProperty('--glyph-blur','0');
       drawShape();morphHandles();onSettled?.();
     };
-    h.swapFrame=requestAnimationFrame(step);
+    h.swapFrame=uiMotion.frame(step);
   });
   return true;
 }

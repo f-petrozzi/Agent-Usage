@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-// Reports only the chosen shortcut, Ctrl + Scroll Lock and the left mouse button, never typed text.
+// Reports shortcut/button state and coalesced pointer coordinates while interacting, never typed text.
 internal static class InputMonitor
 {
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
@@ -20,6 +20,21 @@ internal static class InputMonitor
     [DllImport("user32.dll")] private static extern bool TranslateMessage(ref Message message);
     [DllImport("user32.dll")] private static extern IntPtr DispatchMessage(ref Message message);
     private static readonly KeyboardProc sessionCallback = SessionKey;
+    private static readonly KeyboardProc pointerCallback = PointerMoved;
+    private static readonly AutoResetEvent pointerWake = new AutoResetEvent(false);
+    private static int pointerSequence, pointerX, pointerY, pointerActive;
+    private static long pointerTime;
+    private static IntPtr PointerMoved(int code, IntPtr message, IntPtr data)
+    {
+        // Lock-free snapshot; never write to the pipe or wait in a low-level hook.
+        if (code >= 0 && message.ToInt32() == 0x200) {
+            Interlocked.Increment(ref pointerSequence);
+            pointerX = Marshal.ReadInt32(data, 0); pointerY = Marshal.ReadInt32(data, 4);
+            Interlocked.Exchange(ref pointerTime, Stopwatch.GetTimestamp());
+            Interlocked.Increment(ref pointerSequence); if (Volatile.Read(ref pointerActive) != 0) pointerWake.Set();
+        }
+        return CallNextHookEx(IntPtr.Zero, code, message, data);
+    }
     private static int sessionPresses;
     private static int controlMask;
     private static bool scrollPressed;
@@ -51,7 +66,9 @@ internal static class InputMonitor
         // Own the Windows hotkey in this message loop. Electron must not register the same chord.
         bool registered = RegisterHotKey(IntPtr.Zero, 1, 0x4002, 0x91); // Ctrl + no repeat
         IntPtr hook = SetWindowsHookEx(13, sessionCallback, GetModuleHandle(null), 0);
+        IntPtr mouseHook = SetWindowsHookEx(14, pointerCallback, GetModuleHandle(null), 0);
         Console.Error.WriteLine("sessions-ready hotkey=" + (registered ? "1" : "0") + " hook=" + (hook != IntPtr.Zero ? "1" : "0") + " thread=" + GetCurrentThreadId());
+        Console.Error.WriteLine("pointer-ready hook=" + (mouseHook != IntPtr.Zero ? "1" : "0"));
         Console.Error.Flush();
         try {
             Message message;
@@ -63,8 +80,9 @@ internal static class InputMonitor
                 TranslateMessage(ref message); DispatchMessage(ref message);
             }
         }
-        finally { if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook); if (registered) UnregisterHotKey(IntPtr.Zero, 1); }
+        finally { if (mouseHook != IntPtr.Zero) UnhookWindowsHookEx(mouseHook); if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook); if (registered) UnregisterHotKey(IntPtr.Zero, 1); }
     }
+    private static long Milliseconds(long time) { return (time / Stopwatch.Frequency) * 1000 + (time % Stopwatch.Frequency) * 1000 / Stopwatch.Frequency; }
     private static bool Down(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
     private static bool ControlDown() { return Down(0x11) || Down(0xA2) || Down(0xA3); }
     private static void Main(string[] args)
@@ -78,12 +96,14 @@ internal static class InputMonitor
             {
                 new Thread(WatchSessionKey) { IsBackground = true }.Start();
                 string previous = "";
-                int tick = 0;
+                long checkedOwner = 0, lastPointer = 0;
+                int sentSequence = 0;
                 bool suppressScroll = false;
                 long sessionUntil = 0;
                 while (true)
                 {
-                    if (++tick % 50 == 0 && owner.HasExited) return;
+                    long checkedAt = Stopwatch.GetTimestamp();
+                    if (checkedAt - checkedOwner > Stopwatch.Frequency / 2) { checkedOwner = checkedAt; if (owner.HasExited) return; }
                     bool tapped = Interlocked.Exchange(ref sessionPresses, 0) > 0;
                     if (tapped) { Console.Error.WriteLine("sessions-event detected"); Console.Error.Flush(); }
                     long now = Stopwatch.GetTimestamp();
@@ -95,9 +115,27 @@ internal static class InputMonitor
                         && ((modifiers & 4) == 0 || Down(0x10)) && ((modifiers & 1) == 0 || Down(0x12));
                     // Ctrl + Scroll Lock belongs to the session switcher, not the held reveal shortcut.
                     if (key == 0x91 && modifiers == 0 && (control || suppressScroll)) held = false;
-                    string value = (held ? "1" : "0") + (sessions ? "1" : "0") + (Down(1) ? "1" : "0");
+                    bool mouse = Down(1);
+                    Volatile.Write(ref pointerActive, held || mouse ? 1 : 0);
+                    string value = (held ? "1" : "0") + (sessions ? "1" : "0") + (mouse ? "1" : "0");
                     if (value != previous) { Console.WriteLine(value); Console.Out.Flush(); previous = value; }
-                    Thread.Sleep(8);
+                    if ((held || mouse) && now - lastPointer >= Stopwatch.Frequency / 250) {
+                        int sequence = Volatile.Read(ref pointerSequence);
+                        if ((sequence & 1) == 0 && sequence != sentSequence) {
+                            int x = pointerX, y = pointerY; long time = Interlocked.Read(ref pointerTime);
+                            if (sequence == Volatile.Read(ref pointerSequence)) {
+                                Console.WriteLine("pointer " + x + " " + y + " " + Milliseconds(time));
+                                Console.Out.Flush(); sentSequence = sequence; lastPointer = now;
+                            }
+                        }
+                    }
+                    // Wake on input, with a 4 ms delivery ceiling. Key polling remains a fallback.
+                    int wait = (held || mouse) ? 4 : 8;
+                    pointerWake.WaitOne(wait);
+                    if (held || mouse) {
+                        long remaining = Stopwatch.Frequency / 250 - (Stopwatch.GetTimestamp() - lastPointer);
+                        if (remaining > 0) Thread.Sleep((int)Math.Ceiling(remaining * 1000.0 / Stopwatch.Frequency));
+                    }
                 }
             }
         }

@@ -13,11 +13,11 @@ const notchEffects=(()=>{
   }
   function clear(){
     for(const effect of [...effects])remove(effect);
-    for(const wait of pending){cancelAnimationFrame(wait.frame);}pending.clear();
-    cancelAnimationFrame(dock.frame);dock.frame=0;dock.value=0;
+    for(const wait of pending){uiMotion.cancel(wait.frame);}pending.clear();
+    uiMotion.cancel(dock.frame);dock.frame=0;dock.value=0;
   }
   function dismiss(owner){
-    for(const wait of [...pending])if(wait.owner===owner){cancelAnimationFrame(wait.frame);pending.delete(wait);}
+    for(const wait of [...pending])if(wait.owner===owner){uiMotion.cancel(wait.frame);pending.delete(wait);}
     for(const effect of [...effects])if(effect.owner===owner)remove(effect);
   }
   function renewals(before,after,now=Date.now()){
@@ -48,12 +48,12 @@ const notchEffects=(()=>{
   }
   function merge(s,events){
     if(motion.matches||!shown||window.agentTracking||carrying)return;
-    if(pending.size>=4){const old=pending.values().next().value;cancelAnimationFrame(old.frame);pending.delete(old);}
+    if(pending.size>=4){const old=pending.values().next().value;uiMotion.cancel(old.frame);pending.delete(old);}
     const wait={frame:0,owner:s},start=performance.now();pending.add(wait);
     const launch=()=>{
       pending.delete(wait);
       if(!s.to||!s.el.isConnected||!shown||window.agentTracking||carrying||motion.matches)return;
-      if(s.t<.85&&performance.now()-start<700){pending.add(wait);wait.frame=requestAnimationFrame(launch);return;}
+      if(s.t<.85&&performance.now()-start<700){pending.add(wait);wait.frame=uiMotion.frame(launch);return;}
       const end=s.el.getBoundingClientRect(),origin=root.getBoundingClientRect();
       if(!end.width||!end.height)return;
       const ids=[...new Set(events.map(e=>e.account))].slice(0,3);
@@ -68,18 +68,18 @@ const notchEffects=(()=>{
           {offsetDistance:'75%',transform:'scale(.85,1.1)',opacity:1,offset:.72},{offsetDistance:'100%',transform:'scale(.12)',opacity:0}],{duration:620,delay:i*65,easing:'cubic-bezier(.22,.7,.2,1)',fill:'backwards'},s);
       });
     };
-    wait.frame=requestAnimationFrame(launch);
+    wait.frame=uiMotion.frame(launch);
   }
   function dockRelease(){
-    if(!moved)return;moved=false;cancelAnimationFrame(dock.frame);dock.frame=0;dock.value=0;
+    if(!moved)return;moved=false;uiMotion.cancel(dock.frame);dock.frame=0;dock.value=0;
     if(motion.matches||!shown||root.classList.contains('placing'))return;
     const started=performance.now();
     const step=now=>{
       const t=Math.min(1,(now-started)/680);
       dock.value=t===1?0:9*Math.sin(t*Math.PI*2)*Math.exp(-3.8*t);drawShape();
-      dock.frame=t===1?0:requestAnimationFrame(step);
+      dock.frame=t===1?0:uiMotion.frame(step);
     };
-    dock.frame=requestAnimationFrame(step);
+    dock.frame=uiMotion.frame(step);
   }
   for(const name of ['edge_cursor','move_begin'])listen(name,()=>{moved=true;clear();}).catch(()=>{});
   listen('release',dockRelease).catch(()=>{});

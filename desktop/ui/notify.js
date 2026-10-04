@@ -12,7 +12,7 @@ let updateState={status:'idle'}, updatePending=false, updateAction=false, update
 const updateVisible=()=>['available','downloading','ready','installing','error'].includes(updateState.status);
 const updateDot=document.getElementById('update-dot');
 const updateActionable=()=>['available','ready','error'].includes(updateState.status);
-const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';sliverSvg.setAttribute('aria-hidden','true');
+const sliverSvg=document.createElementNS(SVG_NS,'svg');sliverSvg.id='sliver-shape';uiMotion.attr(sliverSvg,'aria-hidden','true');
 pill.before(sliverSvg);
 const slivering=()=>slivers.size>0;
 let notificationTestTimer=0;
@@ -101,13 +101,13 @@ function showSliver(account,events,hold){
   const arriving=!s||!s.to;
   if(!s){
     const el=document.createElement('div');el.className='sliver';el.dataset.account=account;
-    const path=document.createElementNS(SVG_NS,'path');path.setAttribute('class','sliver-ink');
+    const path=document.createElementNS(SVG_NS,'path');uiMotion.attr(path,'class','sliver-ink');
     const id='sliver-goo-'+(++sliverSerial);sliverSvg.insertAdjacentHTML('beforeend',`<defs>${gooDefinition(id)}</defs>`);
     const filter=sliverSvg.querySelector('#'+id);sliverSvg.append(path);
     card.parentElement.append(el);
     s={account,el,path,filter,events:[],t:0,v:0,to:1,frame:0,timer:0,length:0};slivers.set(account,s);placeUnreadDot();
-    if(account!==UPDATE_ID){s.countdown=document.createElementNS(SVG_NS,'path');s.countdown.setAttribute('class','sliver-countdown');s.countdown.setAttribute('pathLength','100');sliverSvg.append(s.countdown);}
-    el.setAttribute('role','button');el.tabIndex=0;
+    if(account!==UPDATE_ID){s.countdown=document.createElementNS(SVG_NS,'path');uiMotion.attr(s.countdown,'class','sliver-countdown');uiMotion.attr(s.countdown,'pathLength','100');sliverSvg.append(s.countdown);}
+    uiMotion.attr(el,'role','button');el.tabIndex=0;
     const activate=()=>{if(s.account===UPDATE_ID){activateUpdate();return;}if(typeof FINISHED_ID!=='undefined'&&s.account===FINISHED_ID){markSeen(s);openCompletionStack(s.events);return;}markSeen(s);retractSlivers();openNotifiedAlert(s.events.find(e=>e.target)||s.events[0],s.account);};
     el.addEventListener('click',activate);
     el.addEventListener('mouseenter',()=>{if(typeof FINISHED_ID!=='undefined'&&s.account===FINISHED_ID&&s.to){markSeen(s);openCompletionStack(s.events);}});
@@ -116,7 +116,7 @@ function showSliver(account,events,hold){
   s.test=events.every(e=>e.test===true);
   const stack=typeof FINISHED_ID!=='undefined'&&account===FINISHED_ID;
   s.events=account===UPDATE_ID||stack?events.slice(0,40):[...events,...s.events.filter(e=>!e.test)].slice(0,6);s.to=1;s.seen=false;
-  s.el.classList.toggle('sliver-stack',stack);if(stack)s.el.setAttribute('aria-label',`${s.events.length} finished sessions. Show sessions`);
+  s.el.classList.toggle('sliver-stack',stack);if(stack)uiMotion.attr(s.el,'aria-label',`${s.events.length} finished sessions. Show sessions`);
   if(typeof setFocusExpanded==='function')setFocusExpanded(true);
   s.scroll?.cancel();s.scroll=null;s.scrollDistance=null;
   s.el.innerHTML=sliverLine(s.events);
@@ -135,16 +135,16 @@ function springSliver(s){
   if(s.frame)return;
   let last=performance.now();
   const step=now=>{
-    const dt=Math.min(.032,(now-last)/1000);last=now;
+    const dt=Math.min(.1,(now-last)/1000);last=now;
     // Out on a loose spring that stretches past its length and settles; back in quickly, without a bounce
     const omega=2*Math.PI/(s.to?.54:.3),zeta=s.to?.56:1;
-    s.v+=(-omega*omega*(s.t-s.to)-2*zeta*omega*s.v)*dt;s.t+=s.v*dt;
+    [s.t,s.v]=uiMotion.spring(s.t,s.v,s.to,omega,zeta,dt);
     const settled=Math.abs(s.t-s.to)<.002&&Math.abs(s.v)<.02;
     if(settled){s.t=s.to;s.v=0;}
     drawSliver(s);
-    if(settled){s.frame=0;if(!s.to)dropSliver(s);reportHot();}else s.frame=requestAnimationFrame(step);
+    if(settled){s.frame=0;if(!s.to)dropSliver(s);reportHot();}else s.frame=uiMotion.frame(step);
   };
-  s.frame=requestAnimationFrame(step);
+  s.frame=uiMotion.frame(step);
 }
 // Rounded rectangles share the notch's 20px corners and overlap its front so their roots stay seamless.
 function notificationRectPath(u0,u1,d){
@@ -152,7 +152,8 @@ function notificationRectPath(u0,u1,d){
   return `M${n(u0)} ${-SHAPE.bleed}V${n(d-rad)}A${n(rad)} ${n(rad)} 0 0 0 ${n(u0+rad)} ${n(d)}`
     +`H${n(u1-rad)}A${n(rad)} ${n(rad)} 0 0 0 ${n(u1)} ${n(d-rad)}V${-SHAPE.bleed}Z`;
 }
-function drawSliver(s){
+function drawSliver(s){uiMotion.paint(s,()=>{if(slivers.get(s.account)===s)paintSliver(s);},30);}
+function paintSliver(s){
   const origin=document.getElementById('root').getBoundingClientRect(), W=innerWidth, H=innerHeight;
   const matrix=edgeMatrix(notchEdge,W,H), local=(x,y)=>[matrix[0]*(x-matrix[4])+matrix[1]*(y-matrix[5]),matrix[2]*(x-matrix[4])+matrix[3]*(y-matrix[5])];
   const screen=(u,v)=>[matrix[0]*u+matrix[2]*v+matrix[4],matrix[1]*u+matrix[3]*v+matrix[5]];
@@ -178,24 +179,24 @@ function drawSliver(s){
   }
   if(d<.5){s.path.removeAttribute('d');s.countdown?.removeAttribute('d');s.el.style.opacity=0;if(s.account===UPDATE_ID)updateProgress.clear();return;}
   const inkDepth=d+depth-rootDepth;
-  s.path.setAttribute('d',notificationRectPath(u0,u1,inkDepth));
+  uiMotion.attr(s.path,'d',notificationRectPath(u0,u1,inkDepth));
   const rimRadius=Math.min(SHAPE.corner,(u1-u0)/2,inkDepth);
   s.path.rimPart=[u0,u1,inkDepth,rimRadius,0,rimRadius,0,-SHAPE.bleed];
-  s.path.setAttribute('transform',`matrix(${matrix.join(' ')}) translate(0 ${n(rootDepth)})`);
+  uiMotion.attr(s.path,'transform',`matrix(${matrix.join(' ')}) translate(0 ${n(rootDepth)})`);
   // Liquid while it moves, sharp at rest
   const goo=matchMedia('(prefers-reduced-motion: reduce)').matches?0:4.4*Math.sin(Math.PI*grown)*(s.t===s.to?0:1);
   if(goo>.25){
     setGooBlur(s.filter,goo);
     const ink0=u0, ink1=u1;
-    for(const [key,value] of Object.entries({x:ink0-40,y:-SHAPE.bleed-40,width:ink1-ink0+80,height:inkDepth+SHAPE.bleed+80}))s.filter.setAttribute(key,n(value));
-    s.path.setAttribute('filter',`url(#${s.filter.id})`);
+    for(const [key,value] of Object.entries({x:ink0-40,y:-SHAPE.bleed-40,width:ink1-ink0+80,height:inkDepth+SHAPE.bleed+80}))uiMotion.attr(s.filter,key,n(value));
+    uiMotion.attr(s.path,'filter',`url(#${s.filter.id})`);
   }else s.path.removeAttribute('filter');
   // Its words sit on the black once there is black to hold them
   const a=screen(u0,depth+SLIVER.pad*.4),b=screen(u1,depth+d-SLIVER.pad*.4);
   const x=Math.min(a[0],b[0]),y=Math.min(a[1],b[1]);
   Object.assign(s.el.style,{left:x+'px',top:y+'px',width:Math.abs(a[0]-b[0])+'px',height:Math.abs(a[1]-b[1])+'px',opacity:smooth((t-.74)/.26).toFixed(3)});
   if(s.countdown){
-    const outline=sliverContour(s.path);if(outline)s.countdown.setAttribute('d',outline);else s.countdown.removeAttribute('d');
+    const outline=sliverContour(s.path);if(outline)uiMotion.attr(s.countdown,'d',outline);else s.countdown.removeAttribute('d');
     s.countdown.style.opacity=s.test?'0':String(.26*smooth((t-.74)/.26));
   }
   if(s.account===UPDATE_ID)updateProgress.draw(updateState,{path:s.path,opacity:smooth((t-.74)/.26)});
@@ -220,7 +221,7 @@ function armSliver(s,duration,fraction=1){
   clearTimeout(s.timer);s.countdownAnimation?.cancel();s.remaining=duration;s.deadline=performance.now()+duration;
   s.countdownSpan=duration;s.countdownFraction=fraction;
   if(s.countdown){
-    s.countdown.setAttribute('stroke-dasharray',`${fraction*100} 100`);
+    uiMotion.attr(s.countdown,'stroke-dasharray',`${fraction*100} 100`);
     if(duration>0&&!s.test&&!matchMedia('(prefers-reduced-motion: reduce)').matches)s.countdownAnimation=s.countdown.animate(
       [{strokeDasharray:`${fraction*100} 100`},{strokeDasharray:'0 100'}],{duration,easing:'linear',fill:'forwards'});
   }
@@ -234,7 +235,7 @@ function pauseSliver(s,fresh=false){
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',()=>{
   for(const s of slivers.values()){const running=!!s.timer;pauseSliver(s);if(running&&s.to&&!s.test)armSliver(s,s.remaining,s.countdownFraction);}
 });
-function dropSliver(s){notchEffects.dismiss(s);cancelAnimationFrame(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.countdownAnimation?.cancel();s.countdown?.remove();s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);if(s.account===UPDATE_ID)updateProgress.clear();placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
+function dropSliver(s){notchEffects.dismiss(s);uiMotion.cancel(s.frame);s.scroll?.cancel();clearTimeout(s.timer);s.countdownAnimation?.cancel();s.countdown?.remove();s.el.remove();s.path.remove();s.filter.parentElement.remove();slivers.delete(s.account);if(s.account===UPDATE_ID)updateProgress.clear();placeUnreadDot();reportHot();if(!slivers.size){ringBell();if(typeof scheduleFocusRest==='function')scheduleFocusRest();}if(window.notificationTestAccount)notificationTestTimer=setTimeout(queueNotificationTest,200);if(alertQueue.length||updatePending){clearTimeout(pumpTimer);pumpTimer=setTimeout(pumpAlert,0);}}
 function retract(s){notchEffects.dismiss(s);pauseSliver(s);s.to=0;springSliver(s);}
 // Everything back in at once: a card opening over them, or the notch going away (then without the motion)
 function retractSlivers(now=false){for(const s of [...slivers.values()]){if(now){dropSliver(s);continue;}retract(s);}}
@@ -279,8 +280,8 @@ function placeUpdateDot(){
   // Releases take the unread notification's corner, including its existing rounded-edge padding.
   Object.assign(updateDot.style,{left:g.P0[0]-o.left+'px',top:g.P0[1]-o.top+'px'});
   updateDot.dataset.status=updateState.status;
-  const [word,text]=updateCopy();updateDot.setAttribute('aria-label',`${word}: ${text}. Show update options`);
-  updateDot.setAttribute('aria-expanded',String(!!slivers.get(UPDATE_ID)?.to));
+  const [word,text]=updateCopy();uiMotion.attr(updateDot,'aria-label',`${word}: ${text}. Show update options`);
+  uiMotion.attr(updateDot,'aria-expanded',String(!!slivers.get(UPDATE_ID)?.to));
 }
 function updateDotRect(){if(updateDot.hidden)return null;const r=updateDot.getBoundingClientRect();return [r.left,r.top,r.width,r.height];}
 function updateDotHit(x,y){const r=updateDotRect();return !!r&&x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3];}
@@ -323,13 +324,13 @@ function renderUpdate(){
   showSliver(UPDATE_ID,[{kind:'update'}],9000);
   const s=slivers.get(UPDATE_ID), [word,text]=updateCopy();
   s.el.classList.add('sliver-update');s.el.id='update-notification';
-  updateDot.setAttribute('aria-expanded','true');
+  uiMotion.attr(updateDot,'aria-expanded','true');
   if(updateHovered||s.el.contains(document.activeElement)||document.activeElement===updateDot)holdSlivers(true);
   if(!s.focusBound){s.focusBound=true;s.el.addEventListener('focusin',()=>holdSlivers(true));s.el.addEventListener('focusout',()=>{if(!updateHovered)holdSlivers(false);});}
   s.el.dataset.status=updateState.status;
-  s.el.setAttribute('aria-label',`${word}: ${text}`);
-  s.el.setAttribute('aria-disabled',String(!updateActionable()));
-  s.el.setAttribute('aria-busy',String(['downloading','installing'].includes(updateState.status)));
+  uiMotion.attr(s.el,'aria-label',`${word}: ${text}`);
+  uiMotion.attr(s.el,'aria-disabled',String(!updateActionable()));
+  uiMotion.attr(s.el,'aria-busy',String(['downloading','installing'].includes(updateState.status)));
   s.el.title=updateState.status==='error'?String(updateState.error||'Check for updates again'):`${word}: ${text}`;
 }
 function pumpUpdate(){
@@ -452,7 +453,7 @@ function placeUnreadDot(){
   const since=sprout.snapAt?(performance.now()-sprout.snapAt)/1000:9;
   st.setProperty('--sway',since<1.2?`${(16*Math.exp(-since/.26)*Math.sin(2*Math.PI*since/.38)).toFixed(2)}deg`:'0deg');
   sproutButton.classList.add('placed');
-  const count=unreadCount(),label=count?`Alerts, ${count} new`:'Alerts';if(sproutButton.getAttribute('aria-label')!==label)sproutButton.setAttribute('aria-label',label);
+  const count=unreadCount(),label=count?`Alerts, ${count} new`:'Alerts';if(sproutButton.getAttribute('aria-label')!==label)uiMotion.attr(sproutButton,'aria-label',label);
 }
 // The bell under the dot: hit and reported as hot. At rest only the dot itself; once it is coming out, the way from the
 // dot to the bell, so the pointer can follow it out; drawn back in, the drop where it is now.
@@ -563,7 +564,7 @@ function pourRows(list){
   const t0=performance.now();
   const go=()=>{
     if(!list.isConnected){held.forEach(a=>a.cancel());return;}
-    if(detailOpen<.82&&performance.now()-t0<700){requestAnimationFrame(go);return;}
+    if(detailOpen<.82&&performance.now()-t0<700){uiMotion.frame(go);return;}
     rows.forEach((row,i)=>{
       // Lower rows come out from under the ones above them, so they clear before they are seen
       const dy=-(row.offsetTop+row.offsetHeight*.5)*.48;
@@ -571,7 +572,7 @@ function pourRows(list){
       row.animate([{opacity:0},{opacity:1}],{duration:220,delay:i*22,easing:'ease-out',fill:'backwards'});held[i].cancel();
     });
   };
-  requestAnimationFrame(go);
+  uiMotion.frame(go);
 }
 // An alert arriving while the log is open: the rows below make way on a spring and the new one wells up in its place
 function flowRows(list,before){
@@ -606,20 +607,22 @@ const inkState={},neckState={},TAIL=.42,NECK={R:.34,Rmax:.95,least:.2,stretch:1.
 function inkFor(button){
   const key=button.dataset.pref,to=button.classList.contains('on')?1:0;
   const s=inkState[key]||(inkState[key]={f:to,v:0,to});
-  if(s.to!==to){s.to=to;if(logReduced()){s.f=to;s.v=0;}else if(!inkFrame)inkFrame=requestAnimationFrame(stepInk);}
+  if(s.to!==to){s.to=to;if(logReduced()){s.f=to;s.v=0;}else if(!inkFrame)inkFrame=uiMotion.frame(stepInk);}
   return s;
 }
 function stepInk(now){
-  const dt=Math.max(0,Math.min(.032,(now-(inkLast||now-16))/1000));inkLast=now;let moving=false;
+  const dt=Math.max(0,Math.min(.1,(now-(inkLast||now-16))/1000));inkLast=now;let moving=false;
   for(const s of Object.values(inkState)){
     // In on a loose spring that swells a little past the well; out without a bounce, slowly enough to see the neck
     // stretch, pinch and give
     const omega=2*Math.PI/(s.to?.5:.94),zeta=s.to?.5:.9;
-    s.v+=(-omega*omega*(s.f-s.to)-2*zeta*omega*s.v)*dt;s.f+=s.v*dt;
+    [s.f,s.v]=uiMotion.spring(s.f,s.v,s.to,omega,zeta,dt);
     if(Math.abs(s.f-s.to)<.002&&Math.abs(s.v)<.02){s.f=s.to;s.v=0;}else moving=true;
   }
-  if(drawInk(now))moving=true; // a parted neck's tails are still whipping home
-  if(moving)inkFrame=requestAnimationFrame(stepInk);else{inkFrame=0;inkLast=0;}
+  uiMotion.paint('ink',()=>{
+    const tails=paintInk(now); // a parted neck's tails are still whipping home
+    if(moving||tails)inkFrame=uiMotion.frame(stepInk);else{inkFrame=0;inkLast=0;}
+  },35);
 }
 const pillPath=(cx,cy,w,h)=>{const r=h/2,x0=cx-w/2+r,x1=cx+w/2-r;
   return `M${n(x0)} ${n(cy-r)}H${n(x1)}A${n(r)} ${n(r)} 0 0 1 ${n(x1)} ${n(cy+r)}H${n(x0)}A${n(r)} ${n(r)} 0 0 1 ${n(x0)} ${n(cy-r)}Z`;};
@@ -657,21 +660,23 @@ function neckBetween(c1,r1,c2,r2,rest,h){
   for(let i=0;i<22;i++){const mid=(lo+hi)/2,w=bridge(c1,r1,c2,r2,mid)?.waist??-1;if(w<want)lo=mid;else hi=mid;}
   return bridge(c1,r1,c2,r2,hi);
 }
-function drawInk(now=performance.now()){
+function drawInk(now=performance.now()){uiMotion.paint('ink',()=>paintInk(now),35);}
+function paintInk(now=performance.now()){
   let tails=false;
-  for(const box of card.querySelectorAll('.a-ink')){
-    const svg=box.querySelector('.a-ink-svg');if(!svg)continue;
+  const measurements=[...card.querySelectorAll('.a-ink')].map(box=>({svg:box.querySelector('.a-ink-svg'),W:box.clientWidth,H:box.clientHeight,
+    buttons:[...box.querySelectorAll('[data-pref]')].map(b=>({b,x:b.offsetLeft,y:b.offsetTop,w:b.offsetWidth,h:b.offsetHeight}))}));
+  for(const {svg,W,H,buttons} of measurements){
+    if(!svg)continue;
     if(!svg.firstChild){
       const id='a-ink-goo-'+(++inkSerial);
       // Necks are a path of their own inside the drops' goo, wound the same way as the drops so they only ever add to
       // them: the junctions melt together while it moves, and a neck parts before it is thin enough for the goo to eat
       svg.innerHTML=`<defs>${gooDefinition(id)}</defs><path class="a-well"/><g class="a-drops"><path class="a-drop"/><path class="a-drop a-neck"/></g>`;
     }
-    const W=box.clientWidth,H=box.clientHeight;
-    svg.setAttribute('width',W);svg.setAttribute('height',H);svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+    uiMotion.attr(svg,'width',W);uiMotion.attr(svg,'height',H);uiMotion.attr(svg,'viewBox',`0 0 ${W} ${H}`);
     let wells='',ink='',necks='',blur=0;
-    const drops=[...box.querySelectorAll('[data-pref]')].map(b=>{
-      const s=inkFor(b),x=b.offsetLeft,y=b.offsetTop,w=b.offsetWidth,h=b.offsetHeight,cx=x+w/2,cy=y+h/2,f=Math.max(0,s.f);
+    const drops=buttons.map(({b,x,y,w,h})=>{
+      const s=inkFor(b),cx=x+w/2,cy=y+h/2,f=Math.max(0,s.f);
       b.style.setProperty('--ink',Math.min(1,f).toFixed(3));
       wells+=pillPath(cx,cy,w,h);
       if(s.f!==s.to)blur=Math.max(blur,1.8*Math.sin(Math.PI*Math.min(1,f)));
@@ -707,16 +712,16 @@ function drawInk(now=performance.now()){
         ink+=pillPath((base+tip)/2,cap[1],Math.abs(tip-base)+2*drip,2*drip);
       }
     }
-    svg.querySelector('.a-well').setAttribute('d',wells);
+    uiMotion.attr(svg.querySelector('.a-well'),'d',wells);
     const group=svg.querySelector('.a-drops'),filter=svg.querySelector('filter');
-    svg.querySelector('.a-drop').setAttribute('d',ink);svg.querySelector('.a-neck').setAttribute('d',necks);
+    uiMotion.attr(svg.querySelector('.a-drop'),'d',ink);uiMotion.attr(svg.querySelector('.a-neck'),'d',necks);
     if(blur>.3){
       setGooBlur(filter,blur);
-      for(const [key,value] of Object.entries({x:-20,y:-20,width:W+40,height:H+40}))filter.setAttribute(key,value);
-      group.setAttribute('filter',`url(#${filter.id})`);
+      for(const [key,value] of Object.entries({x:-20,y:-20,width:W+40,height:H+40}))uiMotion.attr(filter,key,value);
+      uiMotion.attr(group,'filter',`url(#${filter.id})`);
     }else group.removeAttribute('filter');
   }
-  if(tails&&!inkFrame)inkFrame=requestAnimationFrame(stepInk);
+  if(tails&&!inkFrame)inkFrame=uiMotion.frame(stepInk);
   return tails;
 }
 
@@ -732,15 +737,15 @@ function setBead(row){
   bead.key=key;
   if(fresh){const mid=row.offsetTop+row.offsetHeight/2;bead.top=bead.bottom=mid;bead.vt=bead.vb=0;}
   if(logReduced()){const r=beadRow();if(r){bead.top=r.offsetTop;bead.bottom=r.offsetTop+r.offsetHeight;}else bead.top=bead.bottom=(bead.top+bead.bottom)/2;placeBead();return;}
-  if(!bead.frame)bead.frame=requestAnimationFrame(stepBead);
+  if(!bead.frame)bead.frame=uiMotion.frame(stepBead);
 }
 const beadRow=()=>bead.key==null?null:card.querySelector(`.a-row[data-key="${CSS.escape(bead.key)}"]`);
 function stepBead(now){
-  const dt=Math.min(.032,(now-(bead.last||now-16))/1000);bead.last=now;
+  const dt=Math.min(.1,(now-(bead.last||now-16))/1000);bead.last=now;
   const row=beadRow(),mid=(bead.top+bead.bottom)/2;
   const top=row?row.offsetTop:mid,bottom=row?row.offsetTop+row.offsetHeight:mid;
   const down=top>bead.top+.5,up=top<bead.top-.5;
-  const spring=(x,v,to,period,zeta)=>{const w=2*Math.PI/period;v+=(-w*w*(x-to)-2*zeta*w*v)*dt;return [x+v*dt,v];};
+  const spring=(x,v,to,period,zeta)=>{return uiMotion.spring(x,v,to,2*Math.PI/period,zeta,dt);};
   // The edge in the direction of travel leads; the other follows on a softer spring
   [bead.top,bead.vt]=spring(bead.top,bead.vt,top,row?(up?.24:.4):.3,row?(up?.8:.9):1);
   [bead.bottom,bead.vb]=spring(bead.bottom,bead.vb,bottom,row?(down?.24:.4):.3,row?(down?.8:.9):1);
@@ -748,7 +753,7 @@ function stepBead(now){
   const settled=Math.abs(bead.top-top)<.3&&Math.abs(bead.bottom-bottom)<.3&&Math.abs(bead.vt)<.05&&Math.abs(bead.vb)<.05;
   if(settled){bead.top=top;bead.bottom=bottom;bead.vt=bead.vb=0;}
   placeBead();
-  bead.frame=settled?0:requestAnimationFrame(stepBead);if(settled)bead.last=0;
+  bead.frame=settled?0:uiMotion.frame(stepBead);if(settled)bead.last=0;
 }
 function placeBead(){
   const el=card.querySelector('.a-bead');if(!el)return;
@@ -784,7 +789,7 @@ card.addEventListener('click',e=>{
   const toggle=e.target.closest('[data-pref]');
   if(toggle){
     const key=toggle.dataset.pref,on=!toggle.classList.contains('on');
-    toggle.classList.toggle('on',on);toggle.setAttribute('aria-pressed',String(on));
+    toggle.classList.toggle('on',on);uiMotion.attr(toggle,'aria-pressed',String(on));
     if(key==='sound')toggle.innerHTML=SOUND_MARK(on);
     drawInk();
     invoke('set_alert_preferences',{[key]:on}).then(applyAlertPreferences).catch(()=>{});return;
@@ -814,6 +819,6 @@ function showSessionLinkError(message){
   message=message.replace(/^Error invoking remote method 'command': Error: /,'');
   sessionLinkError={account:card.dataset.account,message};
   let note=card.querySelector('.session-link-error');
-  if(!note){note=document.createElement('div');note.className='session-link-error';note.setAttribute('role','status');card.append(note);}
+  if(!note){note=document.createElement('div');note.className='session-link-error';uiMotion.attr(note,'role','status');card.append(note);}
   note.textContent=message;placeCard();
 }

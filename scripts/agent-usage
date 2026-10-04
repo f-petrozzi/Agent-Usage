@@ -1219,6 +1219,82 @@ def _claude_usage_probe(records: list[dict[str, Any]]) -> bool:
     return True
 
 
+def recent_history_files(root: Path, pattern: str, now: float) -> list[Path]:
+    """Index filenames/times only; reconcile old edits every minute, new files immediately.
+
+    Directory metadata detects creation/removal. The selected 256 files are always
+    restatted for active appends, so warm reads avoid statting every archived rollout.
+    A corrupt/unwritable cache falls back to a complete bounded scan.
+    """
+    directory_pattern, file_pattern = pattern.rsplit("/", 1)
+    cache_root = Path(os.environ.get("AGENT_USAGE_CACHE_DIR") or
+                      str(Path(os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")) / "agent-usage"))
+    key = hashlib.sha256((str(root.resolve()) + pattern).encode()).hexdigest()[:24]
+    cache_path = cache_root / ("history-" + key + ".json")
+    saved = {}
+    try:
+        if cache_path.stat().st_size <= 4 * 1024 * 1024:
+            saved = json.loads(cache_path.read_text())
+            if not isinstance(saved, dict) or saved.get("schema") != 1:
+                saved = {}
+    except (OSError, ValueError, TypeError):
+        saved = {}
+    reconcile = not isinstance(saved.get("reconciled"), (int, float)) or not 0 <= now - saved["reconciled"] < 60
+    previous = saved.get("directories", {})
+    if not isinstance(previous, dict):
+        previous = {}; reconcile = True
+    directories, candidates = {}, []
+    for directory in root.glob(directory_pattern):
+        if len(candidates) >= 10000:
+            break
+        try:
+            stat = directory.stat()
+            stamp = [stat.st_mtime_ns, stat.st_ctime_ns]
+            relative = str(directory.relative_to(root))
+            cached = previous.get(relative, {})
+            files = cached.get("files") if isinstance(cached, dict) and cached.get("stamp") == stamp and not reconcile else None
+            if not isinstance(files, dict) or any(not isinstance(name, str) or "/" in name or "\\" in name or not Path(name).match(file_pattern) or not isinstance(t, int) for name, t in files.items()):
+                files = {}
+                for path in directory.glob(file_pattern):
+                    if len(files) + len(candidates) >= 10000:
+                        break
+                    try:
+                        files[path.name] = path.stat().st_mtime_ns
+                    except OSError:
+                        continue
+            directories[relative] = {"stamp": stamp, "files": files}
+            candidates.extend((mtime, directory / name, relative, name) for name, mtime in files.items())
+        except OSError:
+            continue
+    # Restat the current winners before reading. Deleted winners are removed from the
+    # index, allowing the next candidate to take their place on this same invocation.
+    candidates.sort(key=lambda item: (item[0], str(item[1])), reverse=True)
+    chosen = []
+    for _, path, relative, name in candidates:
+        if len(chosen) >= 256:
+            break
+        try:
+            mtime = path.stat().st_mtime_ns
+            directories[relative]["files"][name] = mtime
+            chosen.append((mtime, path))
+        except OSError:
+            directories[relative]["files"].pop(name, None)
+    try:
+        cache_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        payload = {"schema": 1, "reconciled": now if reconcile else saved["reconciled"], "directories": directories}
+        fd, temporary = tempfile.mkstemp(prefix="history-", suffix=".tmp", dir=cache_root)
+        try:
+            with os.fdopen(fd, "w") as handle:
+                json.dump(payload, handle, separators=(",", ":"))
+            os.replace(temporary, cache_path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    except OSError:
+        pass
+    return [path for _, path in sorted(chosen, key=lambda item: (item[0], str(item[1])), reverse=True)]
+
+
 def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: float,
                     include_claude: bool = True, include_antigravity: bool = True) -> list[dict[str, Any]]:
     """Recent saved conversations, including closed ones. Export names/identity only, never messages."""
@@ -1233,15 +1309,7 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
     seen: set[Path] = set()
 
     def recent(root: Path, pattern: str) -> list[Path]:
-        candidates = []
-        for i, path in enumerate(root.glob(pattern)):
-            if i >= 10000:
-                break
-            try:
-                candidates.append((path.stat().st_mtime, path))
-            except OSError:
-                continue
-        return [p for _, p in sorted(candidates, reverse=True)[:256]]
+        return recent_history_files(root, pattern, now)
 
     def edges(path: Path) -> list[dict[str, Any]]:
         with path.open("rb") as handle:

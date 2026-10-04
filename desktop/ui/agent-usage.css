@@ -206,3 +206,13 @@ body[data-edge="left"] #pill{flex-direction:column-reverse}
 
 /* Retracted pocket targets must not steal Back or search clicks on small screens. */
 #card.session-card.show~.handle{pointer-events:none}
+
+/* Account identity and Sessions hierarchy share their existing surfaces. */
+.account-alias{display:none;position:absolute;inset:auto 0 -10px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:10px;color:#c8c8cc;pointer-events:none}
+.account-labels .account-alias{display:block}
+.session-main-cell{flex:1;min-width:0}.session-pin-cell{flex-shrink:0}
+.session-keyboard-hint{font-size:10px;color:#9c9ca4;padding:8px 4px 0}
+.session-row-copy mark{color:#fff;background:#344353;border-radius:2px}
+.session-name{font-weight:550}.session-workspace,.session-inline-workspace{color:#98989f}
+.compact-sessions .session-result{min-height:calc(58px * var(--tz,1))}
+.compact-sessions .session-workspace{display:none}
