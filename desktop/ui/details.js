@@ -9,13 +9,16 @@ let detailBox=null,detailAim=null;
 let detailReading=1;
 let detailArm=0,detailArmVelocity=0,detailMorphUntil=0;
 function changeDetailAccount(){
-  if(typeof clearSessionDroplet==='function')clearSessionDroplet();
+  detailMorphUntil=0;
   setExtraShown(false,true);
   // Keep the lobe's momentum. Switching readings must not kick an already open notch shut.
   detailReading=1;card.style.setProperty('--detail-reading',1);
   if(!reducedDetails()&&detailOpen>.985)card.animate([{opacity:.55},{opacity:1}],{duration:180,easing:'cubic-bezier(.22,1,.36,1)'});
   if(!detailFrame)detailFrame=requestAnimationFrame(detailStep);
 }
+
+// Change the existing frame promptly without adding a separate decorative shape.
+function beginDetailMorph(){detailMorphUntil=reducedDetails()?0:performance.now()+300;}
 
 function detailGeometry(){
   const origin=document.getElementById('root').getBoundingClientRect(),r=pill.getBoundingClientRect();
@@ -67,7 +70,6 @@ function drawDetails(){
   }else detailPath.removeAttribute('filter');
   if(typeof extraTarget==='number'&&extraTarget)placeExtraCard();
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
-  if(typeof drawSessionDroplet==='function')drawSessionDroplet(performance.now());
 }
 // Hit testing follows the same live outline, including the new space beside the gauges.
 function detailHotRect(){
@@ -122,6 +124,7 @@ function syncDetails(){
 }
 function reducedDetails(){return matchMedia('(prefers-reduced-motion: reduce)').matches;}
 function setDetailsShown(on,instant=false){
+  if(!on)detailMorphUntil=0;
   detailTarget=on?1:0;
   syncAccountFocus(on);
   if(on)syncDetails();

@@ -73,7 +73,7 @@ async function installFixtures(page){
 }
 async function frame(page,name){
   const clip=await page.evaluate(()=>{
-    const selectors=['#shape .part','#shape .arm','#shape .neck','#detail-shape > path','#session-droplet','.sliver-ink','#card.show'];
+    const selectors=['#shape .part','#shape .arm','#shape .neck','#detail-shape > path','.sliver-ink','#card.show'];
     const rects=[...document.querySelectorAll(selectors.join(','))].filter(el=>el.tagName.toLowerCase()!=='path'||el.getAttribute('d')).map(el=>el.getBoundingClientRect()).filter(r=>r.width>0&&r.height>0);
     const left=Math.min(...rects.map(r=>r.left)),right=Math.max(...rects.map(r=>r.right));
     const top=Math.min(...rects.map(r=>r.top)),bottom=Math.max(...rects.map(r=>r.bottom));
@@ -107,9 +107,8 @@ async function frame(page,name){
     assert.match(await page.locator('#card').innerText(),/Claude · Cedar/);await frame(page,'usage');await page.close();
 
     page=await notch();await page.evaluate(()=>holdCard('claude_cedar'));await page.waitForTimeout(1400);
-    await page.locator('.c-history-trigger').click();await page.waitForTimeout(130);
-    assert.equal(await page.evaluate(()=>sessionAccount),'claude_cedar');await frame(page,'droplet');
-    await page.waitForTimeout(800);await frame(page,'account-sessions');await page.close();
+    await page.locator('.c-history-trigger').click();await page.waitForTimeout(900);
+    assert.equal(await page.evaluate(()=>sessionAccount),'claude_cedar');await frame(page,'account-sessions');await page.close();
 
     page=await notch();await page.evaluate(()=>__demoEmit('session_switcher',true));await page.waitForTimeout(1400);
     assert.equal(await page.locator('.session-result').count(),sessions.length);await page.locator('.session-result').nth(2).hover();await page.waitForTimeout(450);

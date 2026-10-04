@@ -398,3 +398,17 @@ scroll retention, AGY Working links, cancellation and reduced motion. The README
 uses updated fictional-account previews. Windows packaging remains gated on the
 native shortcut/focus and packaged VS Code helper checks. Update through
 Settings → General → Update → Restart; no VS Code helper reload is required.
+
+## Remove the Sessions edge bead (5.0.4)
+
+Remove the decorative bead from the Sessions frame. The history icon opens the
+existing Sessions view filtered to its account, and Back restores usage in the
+same attached frame. The frame retains its responsive size transition, immediate
+search and existing keyboard controls. The bead's SVG, filter and animation loop
+are removed; the short geometry transition is owned by the existing detail
+spring and clears on close.
+
+Update the design notes, README and fictional-account previews to match. The
+history browser suite retains four-edge attachment, typing, account filters,
+Back, resume, scrolling, interruption, small-screen control targets and reduced
+motion checks. Update through Settings → General → Update → Restart.

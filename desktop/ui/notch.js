@@ -1122,7 +1122,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(typeof clearSessionDroplet==='function')clearSessionDroplet();if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}

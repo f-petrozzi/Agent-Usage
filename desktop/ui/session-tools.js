@@ -52,14 +52,14 @@ function requestSessionSwitcher(on=true,account=null){
   const morph=card.classList.contains('show')&&detailTarget>0;
   clearTimeout(showTimer);clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;pendingAccount=null;
   hoverId=SESSION_ID;cardHeld=true;card.classList.add('held');showCard();setFocusExpanded(true);
-  if(morph)startSessionDroplet();
+  if(morph)beginDetailMorph();
   focusSessionSearch();loadSessionLibrary(true);scheduleSessionRefresh();
 }
 function returnSessionUsage(){
   const account=sessionOriginAccount;if(!account)return;
   closeSessionTools();sessionOriginAccount=null;
   clearTimeout(showTimer);clearTimeout(hideTimer);clearTimeout(awayTimer);awayTimer=0;pendingAccount=null;
-  hoverId=account;cardHeld=true;card.classList.add('held');showCard();card.scrollTop=sessionOriginScroll;startSessionDroplet();
+  hoverId=account;cardHeld=true;card.classList.add('held');showCard();card.scrollTop=sessionOriginScroll;beginDetailMorph();
   card.querySelector('.c-history-trigger')?.focus({preventScroll:true});
 }
 function focusSessionSearch(){

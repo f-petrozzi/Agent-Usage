@@ -36,13 +36,10 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
       assert.ok(start.open>.98&&start.target===1,'the morph never closes the existing lobe');
       assert.equal(start.focus,'session-search','search receives focus in the click turn');assert.equal(start.account,'claude');
       await page.locator('.session-search').fill('outline');await page.waitForTimeout(70);
-      assert.equal(await page.locator('.session-result').count(),1,'search works while the droplet moves');
-      await page.evaluate(()=>{sessionDrop.start=performance.now()-160;drawSessionDroplet(performance.now());});
-      const drop=await page.evaluate(()=>{const bead=sessionDropInk.querySelector('.drop-bead');return {visible:getComputedStyle(sessionDropInk).display!=='none',extent:Number(bead.getAttribute('cy'))+Number(bead.getAttribute('ry'))-detailPath.rimPart[2],neck:!!sessionDropInk.querySelector('.drop-neck').getAttribute('d'),filter:getComputedStyle(card).filter};});
-      assert.ok(drop.visible&&drop.extent>18&&drop.neck,'a visible bead and connected neck project outside the actual outline');
-      assert.equal(drop.filter,'none','readable content is never goo filtered');
-      await page.screenshot({path:path.join(OUT,edge+'-droplet.png')});
-      await page.waitForTimeout(600);assert.equal(await page.evaluate(()=>sessionDrop),null,'bead completes and removes its animation');
+      assert.equal(await page.locator('.session-result').count(),1,'search works while the attached frame changes size');
+      assert.equal(await page.locator('#card').evaluate(e=>getComputedStyle(e).filter),'none','readable content is never goo filtered');
+      assert.equal(await page.locator('#session-droplet,#session-drop-goo').count(),0,'Sessions has no decorative edge bead');
+      await page.waitForTimeout(450);
       await page.locator('.session-search').fill('');await page.waitForTimeout(450);
       assert.equal(await page.locator('.session-result').count(),30,'the icon opens only its account');
       const expanded=await page.locator('#card').boundingBox(),anchor=await page.locator('#pill').boundingBox();
@@ -62,7 +59,7 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
       await page.evaluate(()=>{hoverId='codex-b';showCard();});await page.waitForTimeout(1000);
       await page.locator('.c-history-trigger').click();await page.waitForTimeout(500);assert.equal(await page.evaluate(()=>sessionAccount),'codex-b');
       await page.evaluate(()=>requestSessionSwitcher());assert.equal(await page.evaluate(()=>sessionAccount),'','the global shortcut opens All agents');assert.equal(await page.locator('.session-back').isVisible(),false);
-      await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>sessionDrop),null,'closing cancels the bead immediately');await page.waitForTimeout(600);
+      await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>detailMorphUntil),0,'closing clears the morph state');await page.waitForTimeout(600);
     }
     await page.evaluate(()=>{const account=agentAccounts.find(a=>a.id==='antigravity');account.snap.windows.push({id:'claude',label:'Claude models',used:.5},{id:'3p-gpt',label:'GPT models',used:.6});__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge:'right',along:.5,visible:true,tracking:false,pinned:false});hoverId='antigravity';showCard();__emit('activity',[{account:'antigravity',provider:'antigravity',id:'live-agy',sessionId:'12345678-1234-5678-abcd-123456789012',name:'Live AGY',detail:'Working',state:'busy',since:Date.now()}]);renderCard();});await page.waitForTimeout(1000);
     assert.equal(await page.evaluate(()=>!!card.querySelector('.inline-extras')&&!!(card.querySelector('.inline-extras').compareDocumentPosition(card.querySelector('.c-sessions'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'AGY quotas still precede live sessions on side edges');
@@ -71,20 +68,20 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
     for(const action of ['hide','follow','monitor']){
       await page.evaluate(()=>{hoverId='claude';showCard();});await page.waitForTimeout(1000);
       await page.evaluate(action=>{requestSessionSwitcher(true,'claude');if(action==='hide')hideCard();else if(action==='follow')__emit('session_follow');else __emit('monitor_stow',{placement:{}});},action);
-      assert.equal(await page.evaluate(()=>sessionDrop),null,'closing/dragging/monitor transfer cancels stale liquid geometry: '+action);
-      await page.waitForTimeout(450);assert.equal(await page.evaluate(()=>sessionDropInk.style.display),'none');
+      assert.equal(await page.evaluate(()=>detailMorphUntil),0,'closing/dragging/monitor transfer clears the morph state: '+action);
+      await page.waitForTimeout(450);assert.equal(await page.evaluate(()=>card.classList.contains('show')),false,'an interrupted morph cannot reopen the frame');
     }
     await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:360,height:300});
     for(const edge of ['top','right','bottom','left']){
       await page.evaluate(edge=>{__emit('layout',{width:innerWidth,height:innerHeight,scale:1,edge,along:.5,visible:true,tracking:false,pinned:false,placement:1});},edge);await page.waitForTimeout(100);
       await page.evaluate(edge=>{__emit('appear',{edge});hoverId='antigravity';showCard();requestSessionSwitcher(true,'antigravity');},edge);await page.waitForTimeout(100);
       const b=await page.locator('#card').boundingBox();assert.ok(b.x>=0&&b.y>=0&&b.x+b.width<=360.5&&b.y+b.height<=300.5,'small viewport fits '+edge);
-      assert.equal(await page.evaluate(()=>sessionDrop),null,'reduced motion changes views immediately');
+      assert.equal(await page.evaluate(()=>detailMorphUntil),0,'reduced motion changes views immediately');
       const hit=await page.locator('.session-back').evaluate(e=>{const b=e.getBoundingClientRect();return document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('.session-back')===e;});assert.ok(hit,'Back wins the hit test over retracted pocket targets');
       await page.waitForTimeout(50);assert.ok(await page.evaluate(()=>!__calls.findLast(([c])=>c==='set_hot')[1].controls.pin&&!__calls.findLast(([c])=>c==='set_hot')[1].controls.settings),'native relayed clicks cannot activate retracted controls');
       assert.ok(await page.evaluate(()=>orb.inert&&pinHandle.inert),'retracted controls are also removed from keyboard focus');
       await page.locator('.session-back').click();assert.equal(await page.locator('#card').getAttribute('data-account'),'antigravity');await page.evaluate(()=>hideCard());
     }
-    assert.deepEqual(errors,[]);console.log('Passed history morph: visible attached droplet on four edges, immediate search, account filter, Back, keyboard resume, bounded scroll, global shortcut, AGY Working, cancellation, reduced motion and small viewports.');
+    assert.deepEqual(errors,[]);console.log('Passed attached history: four edges, immediate search, account filter, Back, keyboard resume, bounded scroll, global shortcut, AGY Working, cancellation, reduced motion and small viewports.');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
