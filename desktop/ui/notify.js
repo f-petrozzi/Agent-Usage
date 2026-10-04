@@ -198,7 +198,7 @@ function drawSliver(s){
     if(Math.abs(a[0]-b[0])>=8&&Math.abs(a[1]-b[1])>=8)s.countdown.setAttribute('d',sliverFramePath({x,y,width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1])}));else s.countdown.removeAttribute('d');
     s.countdown.style.opacity=s.test?'0':String(.26*smooth((t-.74)/.26));
   }
-  if(s.account===UPDATE_ID)updateProgress.draw(updateState,{x,y,width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1]),opacity:smooth((t-.74)/.26)});
+  if(s.account===UPDATE_ID)updateProgress.draw(updateState,{path:s.path,opacity:smooth((t-.74)/.26)});
   if(s.to&&s.t===s.to)scrollSliver(s);
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
 }

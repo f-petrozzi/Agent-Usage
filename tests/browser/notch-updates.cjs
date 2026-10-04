@@ -67,9 +67,18 @@ fs.mkdirSync(OUT,{recursive:true});
       assert.equal(await page.locator('#update-progress').getAttribute('data-percent'),'42');
       assert.equal(await page.locator('#update-progress').evaluate(el=>getComputedStyle(el).pointerEvents),'none','the frame cannot intercept update actions');
       assert.equal(await page.locator('.sliver-update').evaluate(el=>getComputedStyle(el,'::after').content),'none','the old bottom bar is removed');
-      const outline=await page.locator('.update-progress-fill').evaluate(el=>{const b=el.getBBox();return{x:b.x,y:b.y,w:b.width,h:b.height};});
-      const options=await page.locator('.sliver-update').boundingBox();
-      assert.ok(Math.abs(outline.x-options.x-2)<.1&&Math.abs(outline.y-options.y-2)<.1&&Math.abs(outline.w-options.width+4)<.1&&Math.abs(outline.h-options.height+4)<.1,'progress wraps the whole sliver with equal padding');
+      const outline=await page.locator('.update-progress-fill').evaluate(el=>{
+        const d=el.getAttribute('d'),length=el.getTotalLength(),s=slivers.get(UPDATE_ID),m=s.path.getScreenCTM().inverse();
+        const samples=Array.from({length:65},(_,i)=>{const p=el.getPointAtLength(length*i/64),q=new DOMPoint(p.x,p.y).matrixTransform(m);return{x:q.x,y:q.y};});
+        const [u0,u1,depth,radius]=s.path.rimPart;
+        const distance=p=>Math.min(Math.abs(p.x-u0),Math.abs(p.x-u1),Math.abs(p.y-depth),
+          p.x<=u0+radius&&p.y>=depth-radius?Math.abs(Math.hypot(p.x-u0-radius,p.y-depth+radius)-radius):Infinity,
+          p.x>=u1-radius&&p.y>=depth-radius?Math.abs(Math.hypot(p.x-u1+radius,p.y-depth+radius)-radius):Infinity);
+        return{moves:(d.match(/M/g)||[]).length,closed:/Z/i.test(d),maxError:Math.max(...samples.map(distance)),length,
+          reachesTip:samples.some(p=>Math.abs(p.y-depth)<.1),touchesBothSides:samples.some(p=>Math.abs(p.x-u0)<.1)&&samples.some(p=>Math.abs(p.x-u1)<.1)};
+      });
+      assert.equal(outline.moves,1,'one seamless contour');assert.equal(outline.closed,false,'no attachment seam across the notch');
+      assert.ok(outline.maxError<.1&&outline.reachesTip&&outline.touchesBothSides,'progress follows the actual ink sides and rounded front');
       await page.evaluate(()=>{window.__progressPath=document.querySelector('.update-progress-fill');__emit('update_state',{status:'downloading',version:'3.3.10',percent:64});});
       await page.waitForTimeout(90);
       const moving=await page.locator('.update-progress-fill').evaluate(el=>({same:el===__progressPath,percent:parseFloat(getComputedStyle(el).strokeDasharray)}));

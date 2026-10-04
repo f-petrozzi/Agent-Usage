@@ -29,7 +29,7 @@ const rimGeometry=(()=>{
     }return inside;
   }
   const key=p=>p.map(n=>Math.round(n*10000)).join(',');
-  function union(polygons){
+  function union(polygons,owner=null){
     const segments=[],seen=new Set();
     for(let own=0;own<polygons.length;own++){
       const points=polygons[own];for(let i=0;i<points.length;i++){
@@ -50,10 +50,11 @@ const rimGeometry=(()=>{
           // Probe outward. Coincident bezel edges count as one boundary, interior seams disappear.
           const probe=[mid[0]+ab[1]/length*.001,mid[1]-ab[0]/length*.001];
           if(polygons.some((poly,index)=>index!==own&&contains(probe,poly)))continue;
-          const identity=key(first)+'>'+key(last);if(seen.has(identity))continue;seen.add(identity);segments.push([first,last]);
+          const identity=key(first)+'>'+key(last);if(seen.has(identity))continue;seen.add(identity);segments.push([first,last,own]);
         }
       }
     }
+    if(owner!==null)return segments.filter(s=>s[2]===owner).map(s=>s.slice(0,2));
     const starts=new Map();for(const s of segments){const k=key(s[0]);if(!starts.has(k))starts.set(k,[]);starts.get(k).push(s);}
     const unused=new Set(segments),loops=[];
     while(unused.size){
@@ -81,6 +82,12 @@ const rimGeometry=(()=>{
     const polygons=shapes.map(({part,matrix})=>clip(profile(part).map(([x,y])=>[matrix[0]*x+matrix[2]*y+matrix[4],matrix[1]*x+matrix[3]*y+matrix[5]]),width,height)).filter(p=>p.length>2);
     return anchor(union(polygons),edge,width,height);
   }
-  return {contour};
+  function exposed(shapes,owner,width,height){
+    const polygons=shapes.map(({part,matrix})=>clip(profile(part).map(([x,y])=>[matrix[0]*x+matrix[2]*y+matrix[4],matrix[1]*x+matrix[3]*y+matrix[5]]),width,height));
+    // Only the requested lobe's exposed boundary: its join inside the notch is
+    // removed by the same union as the whole-notch light, leaving an open contour.
+    return union(polygons,owner);
+  }
+  return {contour,exposed};
 })();
 if(typeof module!=='undefined')module.exports=rimGeometry;
