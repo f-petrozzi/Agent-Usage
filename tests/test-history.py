@@ -81,6 +81,21 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual(usage._claude_cli_usage(30),'Usage reading')
         self.assertEqual(run.call_args.args[0],['/bin/claude','-p','/usage','--output-format','json','--no-session-persistence'])
 
+    def test_empty_claude_launches_are_hidden_but_real_named_and_live_chats_remain(self):
+        path=self.claude / 'projects/homelab' / f'{ID}.jsonl'
+        startup=[{'type':'mode'}, {'type':'system','subtype':'informational','cwd':'/srv/homelab'},
+                 {'type':'cost-state','modelUsage':{},'totalCostUSD':0}, {'type':'last-prompt'}]
+        self.write(path,startup)
+        self.assertEqual(self.history(),[])
+        for extra in [{'type':'user','message':{'content':'Real chat'}},
+                      {'type':'assistant'}, {'type':'ai-title','aiTitle':'Named launch'},
+                      {'type':'future-format'}, {'type':'cost-state','modelUsage':{'model':{'costUSD':1}}},
+                      {'type':'system','subtype':'compact_boundary'}, {'type':'progress','data':'x'*70000}]:
+            self.write(path,[*startup,extra]);self.assertEqual(len(self.history()),1)
+        self.write(path,startup)
+        with patch.object(usage,'claude_sessions',return_value=[{'sessionId':ID,'account':'claude','name':'homelab','state':'waiting'}]):
+            self.assertTrue(self.history()[0]['live'])
+
     def test_probe_archive_preserves_real_recent_and_active_sessions(self):
         archive_loader=importlib.machinery.SourceFileLoader('probe_archive',str(Path(__file__).parents[1] / 'scripts/archive-claude-usage-probes.py'))
         archive_spec=importlib.util.spec_from_loader(archive_loader.name,archive_loader)

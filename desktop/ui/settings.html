@@ -113,7 +113,7 @@
 
   /* ---- accounts: tiles, because each one is picked up and put down somewhere else ---- */
   #acc-list{position:relative;display:flex;flex-direction:column;gap:6px;margin-top:4px}
-  .acct{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr);align-items:center;column-gap:14px;row-gap:12px;min-height:94px;padding:14px 16px;
+  .acct{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;column-gap:12px;min-height:66px;padding:14px 16px;
     border-radius:14px;background:var(--surface);box-shadow:inset 0 1px 0 var(--hi),0 0 0 1px var(--line);
     cursor:grab;touch-action:none;transform-origin:50% 50%}
   /* The lifted shadow is its own layer, faded by the lift spring, so the drag never repaints a blur */
@@ -129,23 +129,22 @@
   .acct-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
   .acct>.acct-mark{grid-column:1;grid-row:1}
   .acct>.acct-text{grid-column:2;grid-row:1}
-  .acct-actions{grid-column:1 / -1;grid-row:2;display:flex;align-items:center;gap:6px;min-width:0}
-  .acct-actions>button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 10px;border:0;border-radius:10px;background:var(--well);color:var(--text2);font:inherit;font-size:12px;line-height:1.4;cursor:pointer;transition:background-color .18s ease,color .18s ease}
+  .acct-actions{grid-column:3;grid-row:1;display:flex;align-items:center;gap:4px}
+  .acct-actions>button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--text2);cursor:pointer;transition:background-color .18s ease,color .18s ease}
   .acct-actions>button:hover{background:var(--hover);color:var(--text)}
-  .acct-actions>button svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex:none}
-  .acct-actions>.account-active{margin-left:auto;min-width:82px}
-  .acct-actions>.bell{width:auto;height:auto;min-width:100px}
-  .account-state-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.35}
-  .account-active[aria-checked="true"]{color:var(--text)}
-  .account-active[aria-checked="true"] .account-state-dot{opacity:1;background:var(--ample)}
+  .acct-actions>button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .acct-actions>.switch{margin-left:8px;width:42px;height:24px;border-radius:12px;background:var(--well-hover)}
+  .acct-actions>.switch.on{background:var(--ink)}
+  .acct-actions>.switch:hover{background:var(--hover)}
+  .acct-actions>.switch.on:hover{background:var(--ink);filter:brightness(1.12)}
   .acct-actions>.bell[aria-checked="true"]{color:var(--text)}
   .acct-actions>.account-focus[aria-pressed="true"],.acct-actions>.notification-test[aria-pressed="true"]{color:var(--focus-blue);background:color-mix(in srgb,var(--focus-blue) 13%,var(--well))}
-  @media(max-width:720px){.acct-actions>button{padding:6px 8px;gap:5px}.acct-actions>.bell{min-width:94px}.acct-actions>.account-active{min-width:76px}}
+  @media(max-width:720px){.acct{column-gap:10px;padding:14px 12px}.acct-actions{gap:2px}.acct-actions>.switch{margin-left:6px}}
   @media(prefers-reduced-motion:reduce){.acct-actions>button{transition:none}}
   .acct-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .2s ease}
   .acct-detail{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .acct.stale svg.ring{opacity:.5}
-  .acct.off .acct-name{color:var(--text3)}
+  .acct.off .acct-name{color:var(--text2)}
   .acct.off .acct-mark{opacity:.4}
   .acct-mark{transition:opacity .25s ease}
   .glyph{width:16px;height:16px;display:inline-grid;place-items:center;flex:none;color:var(--text)}

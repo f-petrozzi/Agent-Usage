@@ -1284,6 +1284,16 @@ def session_history(profiles: list[tuple[str, Path]], config_dir: Path, now: flo
                     continue
                 seen.add(real)
                 current = live_by_id.get((account, identity), {})
+                # Closed startup-only files have no conversation to resume. Inspect complete
+                # small files only; keep named chats, live launches and unfamiliar formats.
+                startup_types = {"mode", "permission-mode", "system", "cost-state", "atis-latch", "last-prompt"}
+                if provider == "claude" and not current and not title and records and path.stat().st_size <= 64 * 1024:
+                    if all(r.get("type") in startup_types
+                           and (r.get("type") != "system" or r.get("subtype") == "informational")
+                           and (r.get("type") != "cost-state" or not any(r.get(k) for k in
+                                ("modelUsage", "totalCostUSD", "totalAPIDuration", "totalLinesAdded", "totalLinesRemoved")))
+                           for r in records):
+                        continue
                 cwd = current.get("cwd") or cwd
                 history.append({"provider": provider, "account": account, "id": identity, "sessionId": identity,
                                 "name": _short(title or current.get("name") or Path(cwd or provider.title()).name),

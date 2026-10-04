@@ -326,3 +326,13 @@ The collector's fallback `claude -p /usage` command now uses `--no-session-persi
 `scripts/archive-claude-usage-probes.py` previews old usage-only transcripts. Run it with `--apply` to move confirmed probes into `~/.local/state/agent-usage/claude-usage-probes/<timestamp>`, with original paths and SHA-256 hashes in `manifest.jsonl`. Active sessions and files changed within five minutes are retained. This makes cleanup recoverable and removes archived probes from Claude's own resume list without changing folder trust, permissions, authentication or real conversations.
 
 The homelab collector has been updated and 92 confirmed completed probes have been backed up. No VS Code helper reload is needed for this collector fix. Update and restart Agent Usage to clear the desktop's history cache.
+
+## Session hover and compact account controls (4.1.5)
+
+The Sessions highlight follows the hovered chat, including its pin button and rows passing under the cursor while scrolling. Keyboard navigation takes over until the pointer moves again. The selection keeps the existing fluid transition and respects reduced motion.
+
+Accounts returns to a single compact row: gauge, account name, focus icon, notification test icon, bell and active switch. Tooltips and accessible names explain each control; selected focus and test icons retain their blue state. Multiple focus selections and spring-based account reordering remain available.
+
+Claude startup-only files without conversation content or a saved title no longer appear as folder-named history entries such as “homelab”. The collector checks complete small files with recognized startup metadata; active launches, named chats, conversation records, larger files and unfamiliar formats remain visible. This filters Agent Usage history without changing Claude's saved files. The homelab collector has been updated; no VS Code helper reload is needed.
+
+Validation: 98 desktop checks, 11 collector history checks, 23 session checks and browser checks for pointer/keyboard selection, scrolling on all four edges, compact account controls, reordering, dark/light themes and minimum window sizes.

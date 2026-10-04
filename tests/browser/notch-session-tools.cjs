@@ -48,7 +48,14 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    await page.locator('.session-pin').click();assert.equal(await page.locator('.session-pin').getAttribute('aria-pressed'),'true');
    await page.locator('.session-search').fill('');await page.waitForTimeout(150);assert.match(await page.locator('.session-open').first().innerText(),/Orbit planning/,'pinned chat rises above more recent chats');
    await page.waitForTimeout(600);await page.screenshot({path:path.join(OUT,edge+'-switcher.png')});
-   await page.locator('.session-search').focus();await page.keyboard.press('ArrowDown');assert.equal(await page.evaluate(()=>sessionIndex),1);
+   await page.locator('.session-result').nth(2).hover();await page.waitForTimeout(400);
+   assert.equal(await page.evaluate(()=>sessionIndex),2,'pointer selects the hovered chat');
+   assert.equal(await page.locator('.session-open').nth(2).getAttribute('aria-selected'),'true');
+   assert.ok(await page.locator('.session-selection').evaluate(el=>Math.abs(el.getBoundingClientRect().top-document.querySelector('.session-result[data-index="2"]').getBoundingClientRect().top)<1),'fluid highlight settles under the hovered chat');
+   await page.locator('.session-result').nth(1).locator('.session-pin').hover();assert.equal(await page.evaluate(()=>sessionIndex),1,'hovering the pin selects its own row');
+   await page.mouse.wheel(0,80);await page.waitForTimeout(300);
+   assert.ok(await page.evaluate(()=>sessionIndex>1),'scrolling updates the row under a stationary cursor');
+   await page.locator('.session-search').focus();await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');assert.equal(await page.evaluate(()=>sessionIndex),1,'keyboard takes over pointer selection');
    await page.keyboard.press('ArrowUp');await page.keyboard.press('Enter');await page.waitForTimeout(100);
    assert.equal(await page.locator('.session-handoff[data-status="opened"]').count(),0,'success waits for VS Code acknowledgement');
    assert.equal(await page.locator('.session-handoff').count(),1);

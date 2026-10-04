@@ -51,7 +51,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.getByRole('button',{name:'Test notification for Antigravity',exact:true}).click();
     assert.deepEqual(await page.evaluate(()=>__calls.filter(c=>c.cmd==='set_notification_test').at(-1).args),{account:'2',on:false});
     // A drag let go with Escape puts the row back where it was
-    const box=await page.locator('.acct').nth(2).boundingBox();
+    const box=await page.locator('.acct-name').nth(2).boundingBox();
     await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
     await page.mouse.move(box.x+box.width/2,box.y-100,{steps:6});
     await page.keyboard.press('Escape');await page.mouse.up();
@@ -66,14 +66,14 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.waitForFunction(()=>__calls.filter(c=>c.cmd==='set_focus_accounts').at(-1)?.args.accounts.length===2);
     assert.deepEqual(await page.evaluate(()=>__calls.filter(c=>c.cmd==='set_focus_accounts').at(-1).args.accounts),['1','0']);
     assert.equal(await page.getByRole('button',{name:'Focus Claude',exact:true}).getAttribute('aria-pressed'),'true');
-    await page.screenshot({path:'/tmp/agent-usage-4.1.3-accounts.png'});
+    await page.screenshot({path:'/tmp/agent-usage-4.1.5-accounts.png'});
     assert.equal(await page.locator('#clear-focus,.focus-hint').count(),0);await page.getByRole('button',{name:'Focus Claude',exact:true}).click();await page.getByRole('button',{name:'Focus Codex B',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Focus Claude',exact:true}).getAttribute('aria-pressed'),'false');
     await page.setViewportSize({width:680,height:500});await page.evaluate(()=>document.documentElement.dataset.theme='light');
     await page.getByRole('button',{name:'Focus Claude',exact:true}).click();
     await page.waitForFunction(()=>getComputedStyle(document.querySelector('.acct[data-id="1"] .account-focus')).color==='rgb(53, 106, 195)');
     assert.equal(await page.getByRole('button',{name:'Focus Claude',exact:true}).evaluate(el=>getComputedStyle(el).color),'rgb(53, 106, 195)');
     for(const button of await page.locator('.acct button').all()){const box=await button.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=680,'account actions fit the minimum window width');}
-    await page.screenshot({path:'/tmp/agent-usage-4.1.3-accounts-small-light.png'});
+    await page.screenshot({path:'/tmp/agent-usage-4.1.5-accounts-small-light.png'});
     await page.setViewportSize({width:820,height:680});await page.evaluate(()=>document.documentElement.dataset.theme='dark');
     await page.getByRole('tab',{name:'General',exact:true}).click();
     for(const key of ['waiting','completion','sound']){

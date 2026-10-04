@@ -98,6 +98,19 @@ function renderSessionToolsCard(){
       const filter=card.querySelector('.session-account');
       filter.addEventListener('click',()=>setSessionFilterOpen(filter.getAttribute('aria-expanded')!=='true'));
       card.querySelector('.session-agent-menu').addEventListener('click',e=>{const option=e.target.closest('.session-agent-option');if(option)chooseSessionAgent(option);});
+      const results=card.querySelector('.session-results');
+      let hoverPoint=null;
+      const selectRow=target=>{
+        const row=target?.closest('.session-result');if(!row||!results.contains(row))return;
+        const index=Number(row.dataset.index);if(index===sessionIndex)return;
+        sessionIndex=index;paintSessionSelection();
+      };
+      results.addEventListener('pointermove',e=>{hoverPoint={x:e.clientX,y:e.clientY};selectRow(e.target);});
+      results.addEventListener('pointerleave',()=>{hoverPoint=null;});
+      results.addEventListener('focusin',e=>selectRow(e.target));
+      results.addEventListener('scroll',()=>{if(hoverPoint)selectRow(document.elementFromPoint(hoverPoint.x,hoverPoint.y));});
+      search.addEventListener('keydown',()=>{hoverPoint=null;},true);
+      results.addEventListener('keydown',()=>{hoverPoint=null;},true);
       sessionListSignature='';
     }
     card.dataset.account=SESSION_ID;updateSessionList();

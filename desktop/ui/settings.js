@@ -110,7 +110,7 @@ function createRow(id){
   el.setAttribute('role','listitem');el.setAttribute('aria-keyshortcuts','Alt+ArrowUp Alt+ArrowDown');
   el.innerHTML=`<span class="acct-mark"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"></svg><span class="glyph" aria-hidden="true"></span></span>
     <span class="acct-text"><span class="acct-name"></span><span class="acct-detail" hidden></span></span>
-    <span class="acct-actions"><button class="account-focus" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg><span>Focus</span></button><button class="notification-test" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 4 7 6-7 6Z"/></svg><span>Test</span></button><button class="bell" role="switch" aria-label="Usage warnings">${BELL}<span class="account-notify-label">Notify on</span></button><button class="account-active" role="switch" aria-label="Show in notch"><span class="account-state-dot" aria-hidden="true"></span><span class="account-active-label">Active</span></button></span>`;
+    <span class="acct-actions"><button class="account-focus" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg></button><button class="notification-test" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 4 7 6-7 6Z"/></svg></button><button class="bell" role="switch" aria-label="Usage warnings">${BELL}</button><button class="account-active switch" role="switch" aria-label="Show in notch"></button></span>`;
   const r={id,el,ringEl:el.querySelector('svg.ring'),glyph:el.querySelector('.glyph'),name:el.querySelector('.acct-name'),
     detail:el.querySelector('.acct-detail'),test:el.querySelector('.notification-test'),focus:el.querySelector('.account-focus'),bell:el.querySelector('.bell'),sw:el.querySelector('.account-active'),ringKey:''};
   const paint=()=>paintRow(r);
@@ -149,10 +149,13 @@ function updateRow(r,a,on){
   r.el.classList.toggle('stale',staleOf(a.snap));
   const shown=on.includes(a.id), muted=alertPrefs.muted.includes(a.id);
   r.el.classList.toggle('off',!shown);
-  r.sw.classList.toggle('on',shown);r.sw.querySelector('.account-active-label').textContent=shown?'Active':'Inactive';r.bell.querySelector('.account-notify-label').textContent=muted?'Notify off':'Notify on';r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
+  r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);r.sw.title=shown?'Hide from notch':'Show in notch';
   r.bell.setAttribute('aria-checked',String(!muted));r.bell.setAttribute('aria-label',`Usage warnings for ${a.name}`);
   r.test.setAttribute('aria-pressed',String(notificationTestAccount===a.id));r.test.setAttribute('aria-label',`Test notification for ${a.name}`);
   r.focus.setAttribute('aria-pressed',String(focusAccounts.includes(a.id)));r.focus.setAttribute('aria-label',`Focus ${a.name}`);
+  r.bell.title=muted?'Enable usage notifications':'Mute usage notifications';
+  r.test.title=notificationTestAccount===a.id?'Stop test notification':'Test notification';
+  r.focus.title=focusAccounts.includes(a.id)?'Remove from focus':'Focus at rest';
   r.focus.disabled=a.id==='collector';
   // A healthy account needs no status line; a stale or failed one says what went wrong
   const problem=a.snap.status==='ok'?'':a.snap.note||(a.snap.status==='stale'?'Showing the last reading':a.snap.status==='loading'?'Reading usage…':'Usage could not be read');
