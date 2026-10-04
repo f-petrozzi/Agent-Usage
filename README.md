@@ -7,11 +7,11 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.0.5**.
+The current release is **5.0.6**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
-All previews below are captured from the actual 5.0.5 frontend with fictional
+All previews below are captured from the actual 5.0.6 frontend with fictional
 accounts, usage and chats: **Codex · Atlas**, **Claude · Cedar**, **AGY · Drift**
 and **Codex · Harbor**.
 

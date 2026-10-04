@@ -47,8 +47,14 @@ public static class ShortcutKeys {
   [StructLayout(LayoutKind.Sequential)] public struct Mouse { public int x,y; public uint data,flags,time; public UIntPtr extra; }
   [StructLayout(LayoutKind.Explicit)] public struct Union { [FieldOffset(0)] public Keyboard keyboard; [FieldOffset(0)] public Mouse mouse; }
   [StructLayout(LayoutKind.Sequential)] public struct Input { public uint type; public Union value; }
-  [DllImport("user32.dll",SetLastError=true)] public static extern bool SetCursorPos(int x,int y);
-  public static void Move(int x,int y) { if(!SetCursorPos(x,y))throw new Exception("SetCursorPos failed"); }
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+  // Inject mouse input so WH_MOUSE_LL observes it; cursor repositioning alone is not the contract under test.
+  public static void Move(int x,int y) {
+    Input input=new Input();input.type=0;input.value.mouse.flags=0xC001;
+    input.value.mouse.x=(int)Math.Round((x-GetSystemMetrics(76)+0.5)*65536.0/GetSystemMetrics(78));
+    input.value.mouse.y=(int)Math.Round((y-GetSystemMetrics(77)+0.5)*65536.0/GetSystemMetrics(79));
+    if(SendInput(1,new Input[]{input},Marshal.SizeOf(typeof(Input)))!=1)throw new Exception("Mouse SendInput failed: "+Marshal.GetLastWin32Error());
+  }
   [DllImport("user32.dll",SetLastError=true)] public static extern uint SendInput(uint count,Input[] input,int size);
   [DllImport("user32.dll",SetLastError=true)] public static extern bool PostThreadMessage(uint thread,uint message,UIntPtr word,IntPtr data);
   public static void Hotkey(uint thread) { if(!PostThreadMessage(thread,0x312,new UIntPtr(1),new IntPtr(0x910002)))throw new Exception("PostThreadMessage failed: "+Marshal.GetLastWin32Error()); }
@@ -91,12 +97,21 @@ while ($null -ne ($line = [Console]::ReadLine())) {
   await wait(300);
   await key(0x91);
   await wait(300);
-  const interactive=helperLines.join('').includes('100');
+  const interactive=helperLines.join('').split(/\r?\n/).includes('100');
   if(interactive){
     const originalPoint=electron.screen.getCursorScreenPoint(),display=electron.screen.getPrimaryDisplay();
     const destination=electron.screen.dipToScreenPoint({x:display.bounds.x+100,y:display.bounds.y+100});
-    const token=`move ${destination.x} ${destination.y}`,offset=helperLines.join('').length;injector.stdin.write(token+'\n');
-    await until(()=>new RegExp('pointer '+destination.x+' '+destination.y+' \\d+').test(helperLines.join('').slice(offset)),'Compiled helper did not emit timestamped pointer coordinates while held');
+    const token=`move ${destination.x} ${destination.y}`,offset=helperLines.join('').length,outputOffset=output.length;injector.stdin.write(token+'\n');
+    await until(()=>output.slice(outputOffset).includes('sent '+token),'Mouse input injection failed: '+errors);
+    try {
+      await until(()=>helperLines.join('').slice(offset).split(/\r?\n/).some(line=>{
+        const point=/^pointer (-?\d+) (-?\d+) (\d+)$/.exec(line);
+        // Absolute SendInput normalization can round to an adjacent physical pixel.
+        return point&&Math.abs(Number(point[1])-destination.x)<=1&&Math.abs(Number(point[2])-destination.y)<=1&&Number(point[3])>0;
+      }),'Compiled helper did not emit timestamped pointer coordinates while held');
+    } catch(error) { nativeLog();console.log('Native status:',helperStatus,'Injector output:',output,'Injector errors:',errors);throw error; }
+    const cursor=electron.screen.screenToDipPoint(destination),actual=electron.screen.getCursorScreenPoint();
+    assert.ok(Math.abs(actual.x-cursor.x)<=1&&Math.abs(actual.y-cursor.y)<=1,'injected mouse input reaches the expected cursor position');
     const restore=electron.screen.dipToScreenPoint(originalPoint);injector.stdin.write(`move ${restore.x} ${restore.y}\n`);
     console.log('PASS: compiled pointer hook streams timestamped physical coordinates while held');
   }

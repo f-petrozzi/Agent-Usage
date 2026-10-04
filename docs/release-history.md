@@ -414,7 +414,7 @@ Back, resume, scrolling, interruption, small-screen control targets and reduced
 motion checks. Update through Settings → General → Update → Restart.
 
 
-## Coordinate motion and clarify Sessions (5.0.5)
+## Coordinate motion and clarify Sessions (5.0.6)
 
 The renderer now shares simulation frames and paints each changing surface once
 per scheduler frame. Analytic springs preserve velocity through reversals and
@@ -456,3 +456,8 @@ Settings alias/capture controls. The real Electron tracing API saved a valid
 filtered trace from an isolated synthetic window and stopped automatically. Native compilation and Windows
 session/input checks also run in the release workflow. See the performance
 guide for the remaining hardware acceptance matrix.
+
+The initial 5.0.5 tag did not publish after Windows pointer verification failed.
+The 5.0.6 test uses SendInput instead of cursor repositioning,
+checks timestamped physical coordinates and the resulting cursor position, and
+logs native reports on failure.
