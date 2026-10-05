@@ -461,3 +461,22 @@ The initial 5.0.5 tag did not publish after Windows pointer verification failed.
 The 5.0.6 test uses SendInput instead of cursor repositioning,
 checks timestamped physical coordinates and the resulting cursor position, and
 logs native reports on failure.
+
+
+## Give the two arms a slower liquid transition (5.0.7)
+
+Pin and settings arms stretch and rejoin more gradually. Lower spring stiffness
+and restrained damping give the material more weight, while preserving velocity
+when hover changes direction. The connecting strand uses the same contour on
+its way out and back, so reversals no longer switch its shape. Its tail narrows
+continuously through arrival, and the liquid blend stays visible longer.
+
+Resting arms emerge over 660 ms and absorb over 260 ms before the notch slides
+away. Native pointer following and button hit targets respond immediately.
+Reduced motion still resolves directly to the final state, and settled arms
+remove their temporary filters. Shared keyed painting and stationary rim
+layout budgets remain covered on all four edges at DPR 1 and 2.
+
+Validation: all 131 desktop tests passed. The motion, bell and structural
+performance browser suites passed, including a new check that reversing hover
+keeps the arm, strand and glyph geometry identical at the same position.

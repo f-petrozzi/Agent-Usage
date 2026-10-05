@@ -29,9 +29,9 @@ const gooFilter=shapeSvg.querySelector('#goo');
 // and part, and makes the edge about a pixel soft at any blur. A fixed 24x cut left only a fraction of a pixel there at
 // small blurs, so edges stepped like pixels while anything moved.
 function setGooBlur(filter,sigma){
-  filter.querySelector('feGaussianBlur').setAttribute('stdDeviation',n(sigma));
+  uiMotion.attr(filter.querySelector('feGaussianBlur'),'stdDeviation',n(sigma));
   const k=Math.max(1,Math.min(24,sigma*2.6));
-  filter.querySelector('feColorMatrix').setAttribute('values',`1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${n(k)} ${n(.5-k/2)}`);
+  uiMotion.attr(filter.querySelector('feColorMatrix'),'values',`1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${n(k)} ${n(.5-k/2)}`);
 }
 const shapeBody=shapeSvg.querySelector('#shape-body');
 const [partA,partB]=shapeSvg.querySelectorAll('.part'), [armStart,armEnd]=shapeSvg.querySelectorAll('.arm');
@@ -47,6 +47,8 @@ let armsOut=0, armsFrame=0;
 let absorbing=false;
 // swap: how far a handle is out of its pocket while it changes what it holds (1 out, 0 flowed back into the notch)
 const handles=[{el:pinHandle,ink:armStart,value:0,target:0,velocity:0,frame:0,swap:1,swapping:false,swapFrame:0},{el:orb,ink:armEnd,value:0,target:0,velocity:0,frame:0,swap:1,swapping:false,swapFrame:0}];
+// The material takes time to stretch and rejoin; hit targets and native pointer tracking stay immediate.
+const ARM_MOTION={hoverResponse:.74,returnResponse:.82,emerge:.66,absorb:.26};
 // The unread dot's bell (drawSprout): its own goo, a band of the notch round the corner it leaves, a strand and a drop
 shapeSvg.querySelector('defs').insertAdjacentHTML('beforeend',`${gooDefinition('goo-sprout')}<clipPath id="sprout-clip"><rect/></clipPath>`);
 shapeBody.insertAdjacentHTML('beforeend','<g class="sprout-liquid"><path class="sprout-band" clip-path="url(#sprout-clip)"/><path class="sprout-neck"/><path class="sprout-drop"/></g>');
@@ -67,7 +69,7 @@ function morphHandles(){
     let last=performance.now();
     const step=now=>{
       const dt=Math.min(.1,(now-last)/1000);last=now;
-      const omega=2*Math.PI/(to?.56:.64),damping=to?.76:.9;
+      const omega=2*Math.PI/(to?ARM_MOTION.hoverResponse:ARM_MOTION.returnResponse),damping=to?.86:.9;
       [h.value,h.velocity]=uiMotion.spring(h.value,h.velocity,to,omega,damping,dt);
       const settled=Math.abs(h.value-to)<.002&&Math.abs(h.velocity)<.025;
       if(settled){h.value=to;h.velocity=0;}
@@ -225,7 +227,7 @@ function drawSprout(u0,d,r,proportions,grown,matrix){
    - under the pointer: the arm gathers into a bead, which is drawn off the flare along a bowed path on a strand
      that pinches and parts short of the pocket; it swells into the disc there and its glyph swings from the snap.
      Let go, the notch reaches out a strand, draws the drop back and it spreads along the flare into the arm. */
-const HOVER_SNAP=.78;
+const HOVER_SNAP=.82;
 function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,detailRetreat,w,hgt,grown){
   const scale=proportions.scale,R=proportions.disc/2,dir=[Math.cos(mid),Math.sin(mid)],side=i?-1:1,O=[cx,F];
   const gap=stroke/2+5*scale*grown, rho=F-gap, leg=9*scale*grown, arcHalf=rho*Math.PI/4, H=arcHalf+leg;
@@ -262,13 +264,15 @@ function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,d
   // Taken back (the notch closing, grabbed, or widening round a card), a disc stays joined by a strand that fattens
   // as the notch swallows it, as the swap's old drop does
   const sucked=merging&&disc>.01, returning=h.target===0, joined=sucked||lift<=HOVER_SNAP;
-  let tip=1; // how much of the strand from the flare to the bead is drawn
-  if(!joined)tip=returning?smooth((1-lift)/(1-HOVER_SNAP)):1-smooth((lift-HOVER_SNAP)/.14);
+  // One reversible contour: changing the target must not swap the strand's shape mid-frame.
+  // The tail gradually shortens all the way to the pocket instead of vanishing before arrival.
+  const tip=sucked?1:1-smooth((lift-HOVER_SNAP)/(1-HOVER_SNAP));
   if(!returning&&!joined&&!h.hoverSnapAt&&disc>.5){h.hoverSnapAt=performance.now();swayFor(h);}
   if(returning||lift<.5)h.hoverSnapAt=0;
   if(tip>.02&&lift>.01&&out>.05){
     const thin=sucked?1-.7*out:1-smooth((lift-.25)/(HOVER_SNAP-.25));
-    const base=stroke*1.3,pinch=Math.max(.5,stroke*.9*thin),end=joined?beadR*.78:Math.max(.5,stroke*.35);
+    const base=stroke*1.3,pinch=Math.max(.5,stroke*.95*thin),tail=Math.max(.5,stroke*.35);
+    const end=tail+(beadR*.78-tail)*tip;
     const half=f=>f<.55?base+(pinch-base)*smooth(f/.55):pinch+(end-pinch)*smooth((f-.55)/.45);
     const left=[],right=[];
     for(let k=0;k<=20;k++){const f=k/20,t=f*tip,q=at(t),g=along(t),hw=half(f);left.push(`${n(q[0]-g[1]*hw)} ${n(q[1]+g[0]*hw)}`);right.push(`${n(q[0]+g[1]*hw)} ${n(q[1]-g[0]*hw)}`);}
@@ -276,7 +280,7 @@ function drawArm(h,i,cx,F,stroke,proportions,mid,filter,group,disc,out,merging,d
   }
   // Goo: peeling out of or into the flare, and through the lift; nothing at rest
   const peel=stroke*.62*(1-smooth((out-.25)/.6))*smooth(out/.06);
-  const blur=Math.max(peel,stroke*.72*Math.pow(Math.sin(Math.PI*lift),.7));
+  const blur=Math.max(peel,stroke*.72*Math.pow(Math.sin(Math.PI*lift),.55));
   uiMotion.attr(h.ink,'stroke-width',n(width+blur*.4));
   // The glyph rides the bead at its size, sharpening as it arrives, swinging from the snap
   const [a,b,c,e]=edgeMatrix(notchEdge,w,hgt),du=bead[0]-O[0],dv=bead[1]-O[1];
@@ -362,7 +366,7 @@ function openShape(){
   const step=now=>{
     const dt=Math.min(.1,(now-(openLast||now-16))/1000); openLast=now;
     const [next,velocity]=uiMotion.spring(openness,openVelocity,1,omega,zeta,dt);openVelocity=velocity;
-    if(!armsStarted&&next>.78){ armsStarted=true; moveArms(1,.56,smooth); }
+    if(!armsStarted&&next>.78){ armsStarted=true; moveArms(1,ARM_MOTION.emerge,smooth); }
     if(Math.abs(next-1)<.0015&&Math.abs(openVelocity)<.02){ openFrame=0; setOpenness(1); reportHot(); return; }
     setOpenness(next); openFrame=uiMotion.frame(step);
   };

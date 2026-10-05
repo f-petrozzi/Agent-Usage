@@ -47,3 +47,11 @@ old in the current collector scope, for a known account with verified terminal
 ancestry. This route is focus-only and cannot create a duplicate terminal.
 History/resume remains the fallback, with scope revalidation after asynchronous
 metadata/helper work and receipt-based confirmation in VS Code.
+
+Arm material timing is defined by `ARM_MOTION` in shape.js. Hover targets change
+immediately and analytic springs retain their velocity. Strand geometry depends
+on the current position rather than the direction of its target, making hover
+reversal continuous. The root's CSS stow delay matches the arm absorption time;
+native pointer following and hit rectangles do not wait for the visual morph.
+This follows [velocity-continuous spring guidance](https://developer.android.com/develop/ui/compose/animation/customize#spring)
+and preserves [reduced-motion support](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html).

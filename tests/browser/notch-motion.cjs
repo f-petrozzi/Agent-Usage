@@ -106,6 +106,21 @@ const answers = {
     });
     assert.equal(spacing.depth,spacing.horizontal?90:70);assert.equal(spacing.ring,44);assert.equal(spacing.gap,6);assert.equal(spacing.padding,spacing.horizontal?11:13);
     assert.equal(await page.locator('.ctl').count(),0);
+    // Reversing hover changes the spring target, never the already-rendered liquid contour.
+    const reversals=await page.evaluate(()=>handles.map((h,i)=>{
+      const saved={value:h.value,target:h.target,velocity:h.velocity,hoverSnapAt:h.hoverSnapAt};
+      const capture=()=>({arm:h.ink.getAttribute('d'),neck:necks[i].getAttribute('d'),width:h.ink.getAttribute('stroke-width'),
+        blur:handleFilters[i].querySelector('feGaussianBlur').getAttribute('stdDeviation'),
+        x:h.el.style.getPropertyValue('--glyph-x'),y:h.el.style.getPropertyValue('--glyph-y')});
+      const samples=[.3,.6,.85,.94,.985].map(value=>{
+        h.value=value;h.velocity=1.5;h.target=1;h.hoverSnapAt=performance.now();drawShape();const outward=capture();
+        h.target=0;drawShape();return {value,outward,returning:capture()};
+      });
+      Object.assign(h,saved);uiMotion.cancel(h.swayFrame);h.swayFrame=0;drawShape();return samples;
+    }));
+    for(const samples of reversals)for(const result of samples){
+      assert.deepEqual(result.returning,result.outward,'hover reversal preserves the arm, strand and glyph on every edge');
+    }
     for(const which of ['pin','orb']){
       await page.evaluate(which=>setHovered(which),which);await page.waitForTimeout(1600);
       const disc=await page.evaluate(which=>{

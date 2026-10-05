@@ -10,7 +10,8 @@
 #card::-webkit-scrollbar-corner,.a-log::-webkit-scrollbar-corner,#extra-card::-webkit-scrollbar-corner{background:transparent}
 /* Leaving, the notch slides away past the screen edge in one piece, accelerating. */
 body{--stow:96px 0}body[data-edge="left"]{--stow:-96px 0}body[data-edge="top"]{--stow:0 -96px}body[data-edge="bottom"]{--stow:0 96px}
-#root{translate:var(--stow);transition:translate .24s cubic-bezier(.55,0,.8,.3) .18s}
+/* Delay matches ARM_MOTION.absorb so the arms rejoin before the surface slides away. */
+#root{translate:var(--stow);transition:translate .24s cubic-bezier(.55,0,.8,.3) .26s}
 #root.visible{translate:0 0;transition:none}
 /* Clear the whole composited subtree before a native monitor move, including fully opened arms. */
 #root.placing{opacity:0;pointer-events:none}
