@@ -64,7 +64,7 @@ test('copied file references and virtual drop bytes share bounded staging',async
   const {pathToFileURL}=require('node:url');
   const copied=await readClipboard({read:async()=>[{types:['text/uri-list'],getType:async()=>new Blob([pathToFileURL(file).href+'\r\n'])}]});
   assert.equal(copied[0].name,'design.txt');assert.equal(copied[0].bytes.toString(),'review');
-  const dropped=await readDrop({files:[{path:file},{name:'virtual.png',bytes:[137,80,78,71,13,10,26,10]}]});assert.equal(dropped.length,2);assert.equal(dropped[1].image,'png');
+  const dropped=await readDrop({files:[{path:file},{name:'virtual.png',bytes:new Uint8Array([137,80,78,71,13,10,26,10])}]});assert.equal(dropped.length,2);assert.equal(dropped[1].image,'png');
   await assert.rejects(readDrop({files:[{name:'bad',bytes:[256]}]}),/8 MB/);
   await assert.rejects(readClipboard({read:async()=>[{types:['text/uri-list'],getType:async()=>new Blob(['https://example.com/file.png'])}]}),/computer/);
   assert.deepEqual(await readClipboard({read:async()=>[]},{native:async()=>copied}),copied);

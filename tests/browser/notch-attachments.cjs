@@ -43,6 +43,7 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   assert.deepEqual(await page.evaluate(()=>__calls.filter(([c])=>c==='deliver_attachments').at(-1)[1]),{token:'fixture',id:'b',message:'Compare this design',queue:true});
   await page.screenshot({path:path.join(OUT,'attachment-review.png')});
   await page.locator('.attachment-close').click();await page.waitForTimeout(650);assert.equal(await page.evaluate(()=>window.attachmentReviewDraft),null);
+  await page.evaluate(()=>requestSessionSwitcher(true));await page.waitForTimeout(700);assert.equal(await page.locator('.session-head>span').innerText(),'Sessions');assert.equal(await page.locator('.session-filter-row').isVisible(),true);await page.keyboard.press('Escape');
   await page.evaluate(()=>__drag('.cell[data-p="codex-a"]'));await page.waitForTimeout(100);await page.evaluate(()=>__emit('disappear'));await page.waitForTimeout(100);
   assert.equal(await page.evaluate(()=>window.agentDropActive),false,'hiding never leaves a frozen drag state');assert.equal(await page.locator('#shape-gravity').getAttribute('transform'),null);
   assert.deepEqual(errors,[]);

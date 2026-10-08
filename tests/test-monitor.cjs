@@ -426,3 +426,10 @@ test('hover Ctrl+V is owned only over a visible agent and rechecks the pointer w
  await s.command('set_hot',{rects:[],agents:{'codex-a':[10,10,50,60]},expanded:true});assert.equal(s.test.pasteTarget({x:30,y:30}),'codex-a','usage peek keeps hover paste available');
  await s.command('session_switcher_focus');assert.equal(s.test.pasteTarget({x:30,y:30}),null);
 });
+
+test('closing an older inline review cannot clear a replacement draft',async t=>{
+ const s=setup(t),draft={token:'new',busy:false};s.test.setAttachments(s.win,draft);
+ await s.command('close_attachments',{token:'old'});assert.equal(s.test.attachments(),draft);
+ draft.busy=true;await s.command('close_attachments',{token:'new'});assert.equal(s.test.attachments(),draft);
+ draft.busy=false;await s.command('close_attachments',{token:'new'});assert.equal(s.test.attachments(),null);
+});

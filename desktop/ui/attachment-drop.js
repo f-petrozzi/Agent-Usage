@@ -14,7 +14,7 @@
     const ring=target.querySelector('.ringwrap'),at=ring.getBoundingClientRect();
     const phase=amount*Math.PI;
     target.style.setProperty('--hole-radius',`${48+Math.sin(phase)*10}% ${52-Math.sin(phase)*10}% 46% 54% / 56% ${43+Math.sin(phase)*12}% 57% 44%`);
-    const pull=Math.max(0,Math.min(1,amount));
+    const pull=reduced.matches?0:Math.max(0,Math.min(1,amount));
     document.body.style.setProperty('--gravity-open',String(pull));
     window.agentDropGravity={amount:reduced.matches?0:pull,x:at.left+at.width/2,y:at.top+at.height/2};
     paintAttachmentGravity();
@@ -99,7 +99,7 @@ async function prepareDroppedFiles(account,fileList){
   const files=[];
   for(const file of list){
     if(!file.size||file.size>8*1024*1024)throw new Error('Choose nonempty files up to 8 MB each.');
-    const path=window.agentUsage.filePath(file);files.push(path?{path}:{name:file.name,bytes:Array.from(new Uint8Array(await file.arrayBuffer()))});
+    const path=window.agentUsage.filePath(file);files.push(path?{path}:{name:file.name,bytes:new Uint8Array(await file.arrayBuffer())});
   }
   // Real files retain their native paths. Browser/virtual images carry bounded bytes.
   if(files.every(file=>file.path))return invoke('prepare_attachments',{account,paths:files.map(file=>file.path)});

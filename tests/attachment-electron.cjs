@@ -47,6 +47,10 @@ app.whenReady().then(async()=>{
  await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-status')?.textContent.includes('Sent')"));
  assert.equal(sent.length,1);assert.equal(sent[0].target.agentHome,row.agentHome);assert.equal(sent[0].target.sessionId,sessionId);assert.equal(sent[0].draft.files[0].image,'png');assert.equal(sent[0].options.message,'Review the screenshot');
  await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
+ await window.webContents.executeJavaScript(`(async()=>{const bytes=await document.getElementById('fixture-file').files[0].arrayBuffer(),virtual=new File([bytes],'browser.png',{type:'image/png'}),dt=new DataTransfer();dt.items.add(virtual);document.querySelector('.cell').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));})()`);
+ await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-file>span:last-child')?.textContent==='browser.png'"));
+ assert.equal(main.draft.files[0].image,'png','virtual images preserve bytes through the sandboxed bridge');
+ await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
  if(process.platform==='win32'){
    const {spawn}=require('node:child_process');
    async function native(mode,x=0,y=0){

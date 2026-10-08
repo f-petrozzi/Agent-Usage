@@ -628,7 +628,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'paste_attachment': return prepareAttachments(args,true);
     case 'get_attachment_draft': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');return attachmentDraft?attachments.publicDraft(attachmentDraft):null;
     case 'deliver_attachments': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');return deliverAttachments(args);
-    case 'close_attachments': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');if(!attachmentDraft?.busy)attachmentDraft=null;return null;
+    case 'close_attachments': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');if(!attachmentDraft?.busy&&attachmentDraft?.token===args.token)attachmentDraft=null;return null;
     case 'ready': frameReady = true; sendLayout(); return null;
     case 'monitor_stowed': {
       if (event.sender !== win?.webContents || args.placement !== pendingPlacement || pendingPlacementStage !== 'stow') return false;

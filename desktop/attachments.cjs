@@ -41,7 +41,7 @@ async function readDrop({paths,files}) {
   const result=[];
   for(const file of files){
     if(file.path){result.push(...await readFiles([file.path]));continue;}
-    if(typeof file.name!=='string'||!Array.isArray(file.bytes)||!file.bytes.length||file.bytes.length>LIMIT||file.bytes.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Choose nonempty files up to 8 MB each.');
+    if(typeof file.name!=='string'||!(file.bytes instanceof Uint8Array||Array.isArray(file.bytes))||!file.bytes.length||file.bytes.length>LIMIT||Array.isArray(file.bytes)&&file.bytes.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Choose nonempty files up to 8 MB each.');
     result.push(attachment(file.name,Buffer.from(file.bytes)));
   }
   return result;

@@ -1,11 +1,14 @@
 'use strict';
 // Attachments use the same held session lobe and focus lifecycle as the session switcher.
-let attachmentSelection=null,attachmentReviewGeneration=0;
+let attachmentSelection=null;
 function closeAttachmentReview(){
   if(!window.attachmentReviewDraft||window.attachmentReviewBusy)return;
-  window.attachmentReviewDraft=null;attachmentSelection=null;attachmentReviewGeneration++;
+  const token=window.attachmentReviewDraft.token;window.attachmentReviewDraft=null;attachmentSelection=null;
   card.classList.remove('attachment-card');card.querySelector('.attachment-preview')?.remove();card.querySelector('.attachment-compose')?.remove();
-  invoke('close_attachments').catch(()=>{});
+  card.querySelector('.session-filter-row')?.removeAttribute('hidden');
+  const heading=card.querySelector('.session-head>span');if(heading)heading.textContent='Sessions';
+  const hint=card.querySelector('.session-keyboard-hint');if(hint)hint.textContent='↑↓ Choose · Enter Open · Tab Actions';
+  invoke('close_attachments',{token}).catch(()=>{});
 }
 function chooseAttachmentSession(row){
   if(window.attachmentReviewBusy)return;
@@ -55,7 +58,7 @@ async function sendAttachmentReview(queue){
 }
 listen('attachment_draft',e=>{
   if(window.attachmentReviewBusy)return;
-  window.attachmentReviewDraft=e.payload;attachmentSelection=null;attachmentReviewGeneration++;
+  window.attachmentReviewDraft=e.payload;attachmentSelection=null;
   window.agentDropCancel?.();sessionAccount=e.payload.account;sessionQuery='';switcherPending=false;
   requestSessionSwitcher(true,e.payload.account);
   renderAttachmentReview();

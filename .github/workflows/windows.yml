@@ -42,8 +42,29 @@ jobs:
         with:
           name: AgentUsage-Browser-Checks
           path: ${{ runner.temp }}/agent-usage-browser-checks
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Compile native input and clipboard helper
+        shell: powershell
+        run: |
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:desktop\resources\InputMonitor.exe desktop\InputMonitor.cs
+          if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
+      - run: npm ci
+        working-directory: desktop
+      - name: Verify native session shortcut and keyboard focus
+        run: node tests/shortcut-windows.cjs
+      - name: Verify bitmap clipboard, hover paste and real OLE drag
+        run: node tests/attachment-electron.cjs
   package:
-    needs: validate
+    needs: [validate, native]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,10 +85,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
       - run: npm ci
         working-directory: desktop
-      - name: Verify native session shortcut and keyboard focus
-        run: node tests/shortcut-windows.cjs
-      - name: Verify native file and screenshot attachments
-        run: node tests/attachment-electron.cjs
       - run: node scripts/test-desktop.cjs
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')

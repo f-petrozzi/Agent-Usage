@@ -35,3 +35,5 @@ body.drop-hover .handle,body.drop-hover .sprout,body.drop-hover .notch-dot,body.
 
 body.drop-hover #pill .cell .ringwrap{transition:none}
 body.drop-hover #pill .cell .pct{opacity:calc(1 - var(--gravity-open,0))!important}
+
+body.drop-hover #pill .cell.drop-target .pct{opacity:calc(1 - var(--drop-open,0))!important}
