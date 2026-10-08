@@ -17,7 +17,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
       requestSingleInstanceLock: () => true, on() {}, whenReady: () => new Promise(() => {}) },
     ipcMain: { handle: (_name, handler) => { command = handler; } },
     screen: { getAllDisplays: () => displays, getCursorScreenPoint: () => point, screenToDipPoint:p=>({x:p.x/2,y:p.y/2}), getDisplayNearestPoint: p => p.x < 0 ? displays[1] : displays[0] },
-    globalShortcut:{register:(key,callback)=>{calls.push(['shortcut',key,callback]);return true;},isRegistered:()=>false,unregister(){}},
+    globalShortcut:{register:(key,callback)=>{calls.push(['shortcut',key,callback]);return true;},isRegistered:()=>false,unregister:key=>calls.push(['unregister',key])},
   };
   const win = { isDestroyed: () => false, isVisible: () => true, setOpacity: v => calls.push(['opacity', v]),
     setIgnoreMouseEvents: v => calls.push(['ignore', v]), setBounds: r => calls.push(['bounds', r]),
@@ -27,7 +27,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentWindow=w;attachmentDraft=d;}, attachments:()=>attachmentDraft, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentDraft=d;}, attachments:()=>attachmentDraft, setPasteAgents(value){attachmentAgents=value;phase="shown";}, pasteTarget, updatePasteShortcut, releasePasteShortcut, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   t.after(()=>{context.monitorTest.closeTimers();fs.rmSync(root,{recursive:true,force:true});});
@@ -378,8 +378,8 @@ test('attachments resolve the selected account and session before transfer, bloc
  let sent=[],complete;
  const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>({sessions:[row]})},'./attachments.cjs':{deliver:async(draft,target,options)=>{sent.push({target,options});return new Promise(resolve=>{complete=resolve;});}}});
  s.test.setAccounts([{id:account,base:'codex',name:'Codex B'}]);
- const window={webContents:{}},draft={token:'draft',account,scope:'ssh:homelab',at:Date.now(),files:[],busy:false,consumed:false};s.test.setAttachments(window,draft);
- await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'chat',queue:true}),/Open attachments/);
+ const window=s.win,draft={token:'draft',account,scope:'ssh:homelab',at:Date.now(),files:[],busy:false,consumed:false};s.test.setAttachments(window,draft);
+ await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'chat',queue:true},s.settings.webContents),/Open attachments/);
  await assert.rejects(s.command('deliver_attachments',{token:'wrong',id:'chat',queue:true},window.webContents),/refresh/);
  await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'forged',queue:true},window.webContents),/no longer/);assert.equal(sent.length,0);assert.equal(draft.busy,false);
  const first=s.command('deliver_attachments',{token:'draft',id:'chat',queue:true,cwd:'/forged',agentHome:'/forged',message:'Review'},window.webContents);
@@ -394,7 +394,7 @@ test('attachment scope is rechecked after asynchronous session metadata resolves
  let history,transfers=0;
  const account='codex_aaaaaaaaaaaa',row={id:'chat',account,provider:'codex',sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',agentHome:'/home/user/.codex',since:Date.now()};
  const s=setup(t,true,{'./collector.cjs':{readSessionHistory:()=>new Promise(resolve=>{history=resolve;})},'./attachments.cjs':{deliver:async()=>{transfers++;return {queued:true};}}});
- const window={webContents:{}},draft={token:'draft',account,scope:'ssh:homelab',at:Date.now(),files:[],busy:false,consumed:false};s.test.setAttachments(window,draft);
+ const window=s.win,draft={token:'draft',account,scope:'ssh:homelab',at:Date.now(),files:[],busy:false,consumed:false};s.test.setAttachments(window,draft);
  const request=s.command('deliver_attachments',{token:'draft',id:'chat',queue:true},window.webContents);s.config.sshTarget='other';history({sessions:[row]});
  await assert.rejects(request,/connection changed/);assert.equal(transfers,0);assert.equal(draft.busy,false);assert.equal(draft.consumed,false);
 });
@@ -413,4 +413,16 @@ test('the first WSL attachment binds to the resolved distribution before opening
  const file=path.join(s.root,'design.txt');fs.writeFileSync(file,'Design context');
  assert.equal(await s.command('prepare_attachments',{account,paths:[file]}),true);
  assert.equal(reads,1);assert.equal(s.test.attachments().scope,'wsl:Ubuntu');assert.equal(s.test.attachments().files[0].name,'design.txt');
+});
+
+test('hover Ctrl+V is owned only over a visible agent and rechecks the pointer when invoked',async t=>{
+ const s=setup(t);s.test.setPasteAgents({'codex-a':[10,10,50,60]});s.test.setAccounts([{id:'codex-a',base:'codex',name:'Codex A'}]);
+ s.point({x:20,y:30});s.test.updatePasteShortcut({x:20,y:30});
+ assert.equal(s.calls.filter(c=>c[0]==='shortcut'&&c[1]==='CommandOrControl+V').length,1);
+ s.test.updatePasteShortcut({x:21,y:30});assert.equal(s.calls.filter(c=>c[0]==='shortcut').length,1);
+ s.point({x:300,y:300});const callback=s.calls.find(c=>c[0]==='shortcut')[2];callback();assert.equal(s.test.attachments(),undefined);
+ s.test.updatePasteShortcut({x:300,y:300});assert.equal(s.calls.at(-1)[0],'unregister');
+ s.config.scale=1.25;assert.equal(s.test.pasteTarget({x:70,y:70}),'codex-a');
+ await s.command('set_hot',{rects:[],agents:{'codex-a':[10,10,50,60]},expanded:true});assert.equal(s.test.pasteTarget({x:30,y:30}),'codex-a','usage peek keeps hover paste available');
+ await s.command('session_switcher_focus');assert.equal(s.test.pasteTarget({x:30,y:30}),null);
 });

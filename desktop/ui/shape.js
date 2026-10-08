@@ -21,9 +21,9 @@ const gooDefinition=id=>`<filter id="${id}" filterUnits="userSpaceOnUse" color-i
   <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -12"/></filter>`;
 shapeSvg.innerHTML=`<defs>${gooDefinition('goo')}${gooDefinition('goo-start')}${gooDefinition('goo-end')}
   <clipPath id="start-band"><rect/></clipPath><clipPath id="end-band"><rect/></clipPath></defs>
-  <g id="shape-body"><path class="part"/><path class="part"/>
+  <g id="shape-gravity"><g id="shape-body"><path class="part"/><path class="part"/>
     <g class="liquid"><path class="band" clip-path="url(#start-band)"/><path class="neck"/><path class="arm"/></g>
-    <g class="liquid"><path class="band" clip-path="url(#end-band)"/><path class="neck"/><path class="arm"/></g></g>`;
+    <g class="liquid"><path class="band" clip-path="url(#end-band)"/><path class="neck"/><path class="arm"/></g></g></g>`;
 const gooFilter=shapeSvg.querySelector('#goo');
 // A goo filter's blur and its cut-back, set together. The cut-back keeps the half-alpha line, which is where shapes meet
 // and part, and makes the edge about a pixel soft at any blur. A fixed 24x cut left only a fraction of a pixel there at
@@ -124,7 +124,7 @@ function setGoo(blur,x,y,w,h){
 }
 
 function drawShape(){uiMotion.paint('shape',paintShape,10);}
-function paintShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof placeUnreadDot==='function')placeUnreadDot(); if(typeof notificationRim!=='undefined')notificationRim.refresh(); }
+function paintShape(){ if(passage) drawPassage(); else drawStraight(); if(typeof paintAttachmentGravity==='function')paintAttachmentGravity(); if(typeof placeUnreadDot==='function')placeUnreadDot(); if(typeof notificationRim!=='undefined')notificationRim.refresh(); }
 
 /* On an edge: one part the length of the pill, and an arm off each end. At 0 an arm lies a full stroke
    past its flare, inside the black; going out it swells from the flare on a neck of goo and lets go. */

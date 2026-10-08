@@ -571,7 +571,7 @@ function refreshClock(){
     if(card.classList.contains('show')) renderCard();
   }).catch(()=>{});
 }
-function hideCard(){if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
+function hideCard(){if(window.attachmentReviewBusy)return;if(typeof closeSessionTools==='function')closeSessionTools();if(typeof clearSessionLinkError==='function')clearSessionLinkError();cardHeld=false;clearTimeout(awayTimer);awayTimer=0;card.classList.remove('held');if(typeof setExtraShown==='function')setExtraShown(false,!shown||window.agentTracking||carrying);clearTimeout(showTimer);pendingAccount=null;if(!card.classList.contains('show'))return;card.classList.remove('show');card.classList.add('closing');setDetailsShown(false,!shown||window.agentTracking||carrying);reportHot();}
 function scheduleHide(){clearTimeout(hideTimer);hideTimer=setTimeout(hideCard,PEEK_GRACE);}
 // ===== Diagnostics + geometry =====
 function jslog(m){invoke('log_js',{msg:String(m)}).catch(()=>{});}
@@ -604,7 +604,8 @@ function paintHot(){
   const updateBox=typeof updateDotRect==='function'?updateDotRect():null;
   if(updateBox){rects.push(updateBox);controls.update=updateBox;}
   if(typeof sliverRects==='function')rects.push(...sliverRects());
-  const data={rects,controls,expanded:open,alerting:typeof slivering==='function'&&slivering()};const signature=JSON.stringify(data);
+  const agents=Object.fromEntries([...pill.querySelectorAll('.cell')].map(cell=>[cell.dataset.p,rectOf(cell)]));
+  const data={rects,controls,agents,expanded:open,alerting:typeof slivering==='function'&&slivering()};const signature=JSON.stringify(data);
   if(signature!==lastHot){lastHot=signature;callq('set_hot',data).catch(()=>{lastHot='';});}
 }
 // Expansion and scrolling alter the clickable card bounds without a cursor move.

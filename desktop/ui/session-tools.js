@@ -71,6 +71,7 @@ for(const name of ['appear','layout','release'])listen(name,()=>{if(switcherPend
 listen('disappear',()=>{switcherPending=false;clearResumeEffects();}).catch(()=>{});
 listen('monitor_stow',()=>clearResumeEffects()).catch(()=>{});
 function closeSessionTools(){
+  if(typeof closeAttachmentReview==='function')closeAttachmentReview();
   if(sessionSwitcherShowing()){setSessionFilterOpen(false);clearTimeout(sessionRefreshTimer);sessionRefreshTimer=0;switcherPending=false;invoke('close_session_switcher').catch(()=>{});}
   scheduleFocusRest();
 }
@@ -90,6 +91,7 @@ function updateSessionAgents(){
   menu.innerHTML=agents.map(([id,name])=>`<button type="button" class="session-agent-option session-tool-action" role="option" aria-selected="${id===sessionAccount}" data-agent="${esc(id)}"><span>${esc(name)}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg></button>`).join('');
 }
 function chooseSessionAgent(button){
+  if(window.attachmentReviewDraft)return;
   sessionAccount=button.dataset.agent;sessionIndex=0;setSessionFilterOpen(false);updateSessionList();card.querySelector('.session-account')?.focus({preventScroll:true});
 }
 function renderSessionToolsCard(){
@@ -123,7 +125,7 @@ function renderSessionToolsCard(){
       sessionListSignature='';
     }
     card.querySelector('.session-back').hidden=!sessionOriginAccount;
-    card.dataset.account=SESSION_ID;updateSessionList();
+    card.dataset.account=SESSION_ID;updateSessionList();if(typeof renderAttachmentReview==='function')renderAttachmentReview();
   }else{
     card.innerHTML=`<div class="session-head"><span>${finishedSessions.length} finished</span><button type="button" class="session-close session-tool-action" aria-label="Close finished sessions">×</button></div><div class="finished-results">${finishedSessions.map((s,i)=>{
       const account=agentAccounts.find(a=>a.id===s.account),linked=!!s.id;
@@ -150,7 +152,7 @@ function updateSessionList(){
   }
   status.textContent=libraryError||(!rows.length?(libraryLoading?'Loading saved sessions…':sessionQuery?'No matching chats.':'No saved chats yet.'):
     sessionMatches.length>120?'Showing 120 chats. Search to see more.':!libraryLoaded&&libraryLoading?'Loading sessions…':`${sessionMatches.length} ${sessionMatches.length===1?'chat':'chats'}`);
-  status.classList.toggle('error',!!libraryError);paintSessionSelection();placeCard();
+  status.classList.toggle('error',!!libraryError);paintSessionSelection();if(typeof refreshAttachmentSelection==='function')refreshAttachmentSelection();placeCard();
 }
 // Reconcile by account + session identity. Refreshes keep the actual focused controls.
 function highlightSession(text,words){
@@ -199,6 +201,7 @@ function paintSessionSelection(scroll=false){
 }
 async function resumeSwitcherSession(index){
   const s=sessionMatches[index];if(!s?.canOpen)return;
+  if(window.attachmentReviewDraft){chooseAttachmentSession(s);return;}
   const status=card.querySelector('.session-status');status.textContent='Opening in VS Code…';
   try{if(!await invoke('open_history_session',{id:s.id,account:s.account}))throw new Error('VS Code could not resume this chat.');hideCard();}
   catch(error){if(sessionSwitcherShowing()){status.textContent=error.message||'VS Code could not be opened.';status.classList.add('error');invoke('session_switcher_focus').catch(()=>{});}}
@@ -235,6 +238,7 @@ document.addEventListener('keydown',e=>{
   if(gridButton&&['ArrowLeft','ArrowRight'].includes(e.key)){
     e.preventDefault();const row=gridButton.closest('.session-result');row.querySelector(e.key==='ArrowRight'?'.session-pin':'.session-open')?.focus({preventScroll:true});return;
   }
+  if(e.target.closest('.attachment-compose'))return;
   if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
     e.preventDefault();sessionIndex=e.key==='Home'?0:e.key==='End'?Math.min(119,sessionMatches.length-1):Math.max(0,Math.min(119,sessionMatches.length-1,sessionIndex+(e.key==='ArrowDown'?1:-1)));paintSessionSelection(true);
     if(gridButton)card.querySelector(`.session-result[data-index="${sessionIndex}"] ${gridButton.classList.contains('session-pin')?'.session-pin':'.session-open'}`)?.focus({preventScroll:true});

@@ -60,7 +60,7 @@ jobs:
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
             if ($errors) { throw ($errors | Out-String) }
           }
-          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /optimize+ /out:desktop\resources\InputMonitor.exe desktop\InputMonitor.cs
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:desktop\resources\InputMonitor.exe desktop\InputMonitor.cs
           if ($LASTEXITCODE -ne 0) { throw 'Helper compilation failed' }
       - run: npm ci
         working-directory: desktop

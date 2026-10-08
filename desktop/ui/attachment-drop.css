@@ -13,3 +13,25 @@ body.drop-hover #pill .cell .ringwrap{transform:translate(var(--pull-x,0px),var(
 @keyframes gravity-in{0%{transform:rotate(-60deg) scale(1.12);opacity:0}18%{opacity:.65}75%{opacity:.4}100%{transform:rotate(170deg) scale(.27);opacity:0}}
 body.drop-hover #shape{filter:drop-shadow(0 0 3px #0005)}
 @media(prefers-reduced-motion:reduce){#pill .cell.drop-target .ringwrap>.glyph,#pill .cell.drop-target .ringwrap>svg,#pill .cell.drop-target .pct{transition:none}.gravity-stream{animation:none}.gravity-well::before{border-radius:50%}}
+/* The hit boxes stay still while the material and contents flow inward. */
+body.drop-hover #pill .cell:not(.drop-target) .ringwrap{scale:var(--pull-scale,1);opacity:var(--pull-opacity,1)}
+body.drop-hover #pill .cell .pct{opacity:var(--pull-opacity,1)}
+body.drop-hover .handle,body.drop-hover .sprout,body.drop-hover .notch-dot,body.drop-hover .update-dot{opacity:calc(1 - var(--gravity-open,0));pointer-events:none}
+.attachment-card .attachment-preview{display:flex;gap:8px;overflow-x:auto;margin:10px 0 12px;padding-bottom:4px}
+.attachment-file{flex:0 0 82px;min-width:0;display:flex;flex-direction:column;gap:5px;font-size:11px;color:#c4c4cc}
+.attachment-file img,.attachment-file>span:first-child{width:82px;height:58px;object-fit:contain;border-radius:10px;background:#ffffff0b}
+.attachment-file>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment-card .session-results{max-height:180px}
+.attachment-card .session-filter-row[hidden]{display:none}
+.attachment-target{font-size:12px;color:#b7caff;margin:10px 0 7px}
+.attachment-message{width:100%;box-sizing:border-box;resize:none;max-height:84px;background:#ffffff0a;border:1px solid #ffffff20;border-radius:10px;padding:9px;color:#eee;font:inherit;font-size:12px}
+.attachment-actions{display:flex;align-items:center;gap:6px;margin-top:9px}
+.attachment-actions button{border:0;border-radius:9px;padding:8px;color:#ddd;background:#ffffff12;cursor:pointer;font:inherit;font-size:11px}
+.attachment-actions button:disabled{opacity:.35;cursor:default}
+.attachment-actions .attachment-send{background:#acc7ff;color:#101722}
+.attachment-status{font-size:11px;line-height:1.4;color:#c7c7d0;margin-top:8px;overflow-wrap:anywhere}
+.attachment-selected .session-name{color:#b7caff}
+.attachment-message:focus-visible,.attachment-actions button:focus-visible{outline:2px solid #b7caff;outline-offset:2px}
+
+body.drop-hover #pill .cell .ringwrap{transition:none}
+body.drop-hover #pill .cell .pct{opacity:calc(1 - var(--gravity-open,0))!important}

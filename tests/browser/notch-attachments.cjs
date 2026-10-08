@@ -9,8 +9,8 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   const page=await browser.newPage({viewport:{width:1280,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(({accounts,glyphs,now})=>{
    const listeners={},calls=[];window.__calls=calls;
-   const answers={get_agent_accounts:accounts,get_state:{sessions:[],agg:'idle',counts:{},lang_resolved:'en'},get_activity:[],get_notch_slots:[],get_notch_edge:'top',get_glyphs:glyphs,get_ui_flags:{notch_visible:false,notch_on_hover:true},get_update_state:{status:'current'},get_session_pins:[]};
-   window.agentUsage={filePath:()=>'/tmp/design.png',invoke:async(c,a)=>{calls.push([c,a]);return answers[c]??null;},on:(n,cb)=>{(listeners[n]??=[]).push(cb);return()=>{};}};
+   const answers={get_agent_accounts:accounts,get_state:{sessions:[],agg:'idle',counts:{},lang_resolved:'en'},get_activity:[],get_notch_slots:[],get_notch_edge:'top',get_glyphs:glyphs,get_ui_flags:{notch_visible:false,notch_on_hover:true},get_update_state:{status:'current'},get_session_pins:[],get_session_library:['a','b'].map(id=>({id,account:'codex-b',provider:'codex',accountName:'Codex B',workspace:'/srv/project',name:'Review '+id,sessionId:id,live:true,canOpen:true}))};
+   window.agentUsage={filePath:()=>'/tmp/design.png',invoke:async(c,a)=>{calls.push([c,a]);return c==='deliver_attachments'?{queued:true}:answers[c]??null;},on:(n,cb)=>{(listeners[n]??=[]).push(cb);return()=>{};}};
    window.__emit=(n,p)=>(listeners[n]||[]).forEach(cb=>cb(p));
    window.__drag=(selector,type='dragover')=>{const dt=new DataTransfer();dt.items.add(new File(['design'],'design.png',{type:'image/png'}));document.querySelector(selector).dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,dataTransfer:dt}));};
   },{accounts,glyphs,now});
@@ -33,19 +33,19 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   assert.equal(await page.locator('.gravity-well').evaluate(e=>getComputedStyle(e).opacity),'1');assert.equal(await page.locator('.gravity-stream').first().evaluate(e=>getComputedStyle(e).animationName),'none');
   await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})));assert.equal(await page.locator('.gravity-well').count(),0);
   assert.deepEqual(errors,[]);
-  const review=await browser.newPage({viewport:{width:480,height:620}});review.on('pageerror',e=>errors.push(e.message));
-  await review.addInitScript(()=>{
-   const files=[{name:'design.png',size:10}],draft={token:'fixture',account:'codex-b',files};window.__sent=[];
-   window.agentUsage={on:()=>{},invoke:async(c,args)=>{
-    if(c==='get_attachment_draft')return draft;
-    if(c==='get_session_library')return ['a','b'].map((id,i)=>({id,account:'codex-b',provider:'codex',accountName:'Codex B',workspace:'/srv/project',name:'Review '+id,sessionId:'12345678-1234-5678-abcd-123456789012',live:true,canOpen:true}));
-    if(c==='deliver_attachments'){window.__sent.push(args);return {queued:true};}return null;
-   }};
-  });
-  await review.goto('file://'+UI+'/attachments.html');await review.waitForTimeout(150);assert.equal(await review.locator('#sessions').inputValue(),'','ambiguous live chats require selection');assert.ok(await review.locator('#send').isDisabled());
-  await review.selectOption('#sessions','b');await review.locator('#message').fill('Compare this design');await review.locator('#send').click();
-  assert.deepEqual(await review.evaluate(()=>__sent),[{token:'fixture',id:'b',message:'Compare this design',queue:true}]);assert.match(await review.locator('#status').innerText(),/queued/);
-  await review.screenshot({path:path.join(OUT,'attachment-review.png')});assert.deepEqual(errors,[]);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.evaluate(()=>__emit('attachment_draft',{token:'fixture',account:'codex-b',files:[{name:'design.png',size:10}]}));
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('.attachment-preview').count(),1);assert.equal(await page.locator('.attachment-send').isDisabled(),true,'explicit selection is required');
+  assert.equal(await page.locator('.session-result').count(),2);assert.equal(await page.locator('.session-filter-row').isVisible(),false);
+  await page.locator('.session-open').nth(1).click();await page.locator('.attachment-message').fill('Compare this design');
+  await page.locator('.attachment-send').click();
+  assert.deepEqual(await page.evaluate(()=>__calls.filter(([c])=>c==='deliver_attachments').at(-1)[1]),{token:'fixture',id:'b',message:'Compare this design',queue:true});
+  await page.screenshot({path:path.join(OUT,'attachment-review.png')});
+  await page.locator('.attachment-close').click();await page.waitForTimeout(650);assert.equal(await page.evaluate(()=>window.attachmentReviewDraft),null);
+  await page.evaluate(()=>__drag('.cell[data-p="codex-a"]'));await page.waitForTimeout(100);await page.evaluate(()=>__emit('disappear'));await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>window.agentDropActive),false,'hiding never leaves a frozen drag state');assert.equal(await page.locator('#shape-gravity').getAttribute('transform'),null);
+  assert.deepEqual(errors,[]);
   console.log('Passed attachment drag targets, four edges, reversal, cancellation, reduced motion, explicit session picker and send.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

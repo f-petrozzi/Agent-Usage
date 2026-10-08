@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {spawn}=require('node:child_process');
-const {attachment,readFiles,readClipboard,createDraft,publicDraft,transport,deliver,REMOTE}=require('../desktop/attachments.cjs');
+const {attachment,readFiles,readDrop,readWindowsClipboard,readClipboard,createDraft,publicDraft,transport,deliver,REMOTE}=require('../desktop/attachments.cjs');
 const uuid='12345678-1234-1234-1234-123456789abc';
 test('modern asynchronous clipboard images are bounded and validated before staging',async()=>{
  const bytes=Buffer.from([137,80,78,71,13,10,26,10,1]);
@@ -55,4 +55,18 @@ test('native Codex queue receives exact account, session, message, and image pat
     await fs.writeFile(path.join(bin,'codex'),'#!/usr/bin/python3\nprint("old cli")\n',{mode:0o700});
     const before=await fs.readdir(cwd);await assert.rejects(deliver(draft,target,{queue:true,launch}),/Update Codex/);assert.deepEqual(await fs.readdir(cwd),before,'unsupported queue does not transfer files');
   }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('copied file references and virtual drop bytes share bounded staging',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'clipboard-files-'));
+ try{
+  const file=path.join(root,'design.txt');await fs.writeFile(file,'review');
+  const {pathToFileURL}=require('node:url');
+  const copied=await readClipboard({read:async()=>[{types:['text/uri-list'],getType:async()=>new Blob([pathToFileURL(file).href+'\r\n'])}]});
+  assert.equal(copied[0].name,'design.txt');assert.equal(copied[0].bytes.toString(),'review');
+  const dropped=await readDrop({files:[{path:file},{name:'virtual.png',bytes:[137,80,78,71,13,10,26,10]}]});assert.equal(dropped.length,2);assert.equal(dropped[1].image,'png');
+  await assert.rejects(readDrop({files:[{name:'bad',bytes:[256]}]}),/8 MB/);
+  await assert.rejects(readClipboard({read:async()=>[{types:['text/uri-list'],getType:async()=>new Blob(['https://example.com/file.png'])}]}),/computer/);
+  assert.deepEqual(await readClipboard({read:async()=>[]},{native:async()=>copied}),copied);
+ }finally{await fs.rm(root,{recursive:true,force:true});}
 });

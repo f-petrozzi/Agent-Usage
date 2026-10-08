@@ -31,7 +31,21 @@ let win, settings, tray, input, collector, feed, config, configPath, timer, upda
 let trayTimer, nativeInput, performanceCapture;
 let liveSnapshot = [], liveSnapshotAt = 0, liveSnapshotScope = '';
 let historyCache = null, historyPending = null, historyAt = 0, historyGeneration = 0;
-let attachmentWindow, attachmentDraft, attachmentPreparation = 0, attachmentHoverUntil = 0;
+let attachmentDraft, attachmentPreparation = 0, attachmentHoverUntil = 0;
+let attachmentAgents = {}, pasteRegistered = false;
+function pasteTarget(point) {
+  if(!visible || held || carrying || menuOpen || switcherFocused || switcherRequested || phase !== 'shown')return null;
+  return Object.keys(attachmentAgents).find(id=>controlHit(attachmentAgents[id],point)) || null;
+}
+function releasePasteShortcut(){if(pasteRegistered){globalShortcut.unregister('CommandOrControl+V');pasteRegistered=false;}}
+function updatePasteShortcut(point){
+  const account=pasteTarget(point);
+  if(!account){releasePasteShortcut();return;}
+  if(!pasteRegistered)pasteRegistered=globalShortcut.register('CommandOrControl+V',()=>{
+    const current=pasteTarget(screen.getCursorScreenPoint());if(!current)return;
+    prepareAttachments({account:current},true).catch(error=>broadcast('notice',error.message));
+  });
+}
 async function prepareAttachments(args, paste = false) {
   if (!accounts().some(a => a.id === args.account && ['codex','claude','gemini'].includes(a.base))) throw new Error('Choose an agent logo to attach files.');
   if (attachmentDraft?.busy) throw new Error('Wait for the current attachment transfer.');
@@ -44,22 +58,14 @@ async function prepareAttachments(args, paste = false) {
     if(config.source!=='wsl'||!config.lastWslDistro)throw new Error('The WSL connection could not be identified. Check the connection in Settings and drop the files again.');
   }
   const scope = sessionScope(config);
-  const files = paste ? await attachments.readClipboard(clipboard) : await attachments.readFiles(args.paths);
+  const files = paste ? await attachments.readClipboard(clipboard,{native:process.platform==='win32'?()=>attachments.readWindowsClipboard(resource('InputMonitor.exe')):null}) : await attachments.readDrop(args);
   if (preparation !== attachmentPreparation) return false;
   if (attachmentDraft?.busy) throw new Error('Wait for the current attachment transfer.');
   if (scope !== sessionScope(config)) throw new Error('The connection changed. Drop the files again.');
   attachmentDraft = attachments.createDraft(args.account, scope, files);
-  if (attachmentWindow && !attachmentWindow.isDestroyed()) { attachmentWindow.show(); attachmentWindow.focus(); attachmentWindow.webContents.send('event','attachment_draft',attachments.publicDraft(attachmentDraft)); }
-  else {
-    attachmentWindow = new BrowserWindow({width:480,height:660,minWidth:400,minHeight:500,show:false,frame:false,
-      title:'Attach to agent',backgroundColor:'#141417',autoHideMenuBar:true,
-      webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
-    secure(attachmentWindow);
-    attachmentWindow.on('close',event=>{if(attachmentDraft?.busy)event.preventDefault();});
-    attachmentWindow.on('closed',()=>{attachmentWindow=null;attachmentDraft=null;});
-    attachmentWindow.once('ready-to-show',()=>{attachmentWindow.show();attachmentWindow.focus();});
-    await attachmentWindow.loadFile(path.join(uiRoot,'attachments.html'));
-  }
+  reveal(false);
+  visibleUntil = Math.max(visibleUntil, Date.now()+3000);
+  send('attachment_draft',attachments.publicDraft(attachmentDraft));
   return true;
 }
 async function deliverAttachments(args) {
@@ -377,6 +383,7 @@ function reveal(atPointer = true) {
 }
 function hide() {
   if (!win || !visible) return;
+  releasePasteShortcut();attachmentHoverUntil=0;
   visible = false; phase = 'hiding'; pinned = false; hot = []; alerting = false; expanded = false;
   switcherRequested=false;releaseSwitcherFocus();
   win.setIgnoreMouseEvents(true, { forward: true });
@@ -395,10 +402,11 @@ function setPinned(value) {
 }
 function tick() {
   if (!win || win.isDestroyed()) return;
-  if (!visible && !(held || carrying)) return;
+  if (!visible && !(held || carrying)) {releasePasteShortcut();return;}
   // Windows lets a topmost window sink behind the taskbar and other topmost windows; keep reasserting it
   if (visible && Date.now() - lastRaise > 2000) { lastRaise = Date.now(); raise(); }
   cursor = screen.getCursorScreenPoint();
+  updatePasteShortcut(cursor);
   if(Date.now()-nativePointerAt>32)followPointer(cursor);
   const hit = visible && phase !== 'transfer' && overNotch(cursor);
   if (hit !== inside) { inside = hit; send('notch_pointer', hit); win.setIgnoreMouseEvents(!hit, { forward: true }); }
@@ -599,7 +607,7 @@ function contextMenu(provider) {
   menuOpen = true;
   return new Promise(resolve => Menu.buildFromTemplate([
     ...(accounts().some(a=>a.id===provider&&['codex','claude','gemini'].includes(a.base)) ? [{label:'Paste screenshot into '+accounts().find(a=>a.id===provider).name,
-      click:()=>prepareAttachments({account:provider},true).catch(error=>dialog.showErrorBox('Screenshot could not be attached',error.message))},{type:'separator'}] : []),
+      click:()=>prepareAttachments({account:provider},true).catch(error=>{menuOpen=false;broadcast('notice',error.message);})},{type:'separator'}] : []),
     { label: 'Pin here', type: 'checkbox', checked: pinned, click: item => setPinned(item.checked) },
     { label: 'Sessions…   Ctrl + Scroll Lock', click:openSessionSwitcher },
     {label:'Focus accounts…',click:()=>openSettings('accounts')},
@@ -612,15 +620,15 @@ function contextMenu(provider) {
 }
 const enumValue = (value, choices) => { if (!choices.includes(value)) throw new Error('Invalid setting'); return value; };
 ipcMain.handle('command', async (event, command, args = {}) => {
-  if (![win?.webContents, settings?.webContents, attachmentWindow?.webContents].includes(event.sender) || !event.senderFrame.url.startsWith(pathToFileURL(uiRoot + path.sep).href)) throw new Error('Untrusted UI');
+  if (![win?.webContents, settings?.webContents].includes(event.sender) || !event.senderFrame.url.startsWith(pathToFileURL(uiRoot + path.sep).href)) throw new Error('Untrusted UI');
   if (typeof command !== 'string' || !args || typeof args !== 'object') throw new Error('Invalid command');
   switch (command) {
     case 'attachment_drag': if(event.sender===win?.webContents)attachmentHoverUntil=args.on===true?Date.now()+1200:0;return null;
     case 'prepare_attachments': return prepareAttachments(args);
     case 'paste_attachment': return prepareAttachments(args,true);
-    case 'get_attachment_draft': if(event.sender!==attachmentWindow?.webContents)throw new Error('Open attachments first.');return attachmentDraft?attachments.publicDraft(attachmentDraft):null;
-    case 'deliver_attachments': if(event.sender!==attachmentWindow?.webContents)throw new Error('Open attachments first.');return deliverAttachments(args);
-    case 'close_attachments': attachmentWindow?.close();return null;
+    case 'get_attachment_draft': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');return attachmentDraft?attachments.publicDraft(attachmentDraft):null;
+    case 'deliver_attachments': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');return deliverAttachments(args);
+    case 'close_attachments': if(event.sender!==win?.webContents)throw new Error('Open attachments first.');if(!attachmentDraft?.busy)attachmentDraft=null;return null;
     case 'ready': frameReady = true; sendLayout(); return null;
     case 'monitor_stowed': {
       if (event.sender !== win?.webContents || args.placement !== pendingPlacement || pendingPlacementStage !== 'stow') return false;
@@ -662,6 +670,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       const validRect=r=>Array.isArray(r)&&r.length===4&&r.every(Number.isFinite)&&r[2]>=0&&r[3]>=0;
       hot=Array.isArray(args.rects)?args.rects.filter(validRect).slice(0,12):[];
       controls={};for(const name of CONTROLS)if(validRect(args.controls?.[name]))controls[name]=args.controls[name];
+      attachmentAgents={};for(const a of accounts())if(['codex','claude','gemini'].includes(a.base)&&validRect(args.agents?.[a.id]))attachmentAgents[a.id]=args.agents[a.id];
       alerting=args.alerting===true;expanded=args.expanded===true;
       return null;
     }

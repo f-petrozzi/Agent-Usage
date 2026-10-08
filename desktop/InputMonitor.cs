@@ -85,8 +85,33 @@ internal static class InputMonitor
     private static long Milliseconds(long time) { return (time / Stopwatch.Frequency) * 1000 + (time % Stopwatch.Frequency) * 1000 / Stopwatch.Frequency; }
     private static bool Down(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
     private static bool ControlDown() { return Down(0x11) || Down(0xA2) || Down(0xA3); }
+    private static int ReadClipboard()
+    {
+        for(int attempt=0;attempt<4;attempt++)try {
+            // Explorer's FileDrop and Snipping Tool's DIB/bitmap formats are native Windows
+            // clipboard data; neither needs to be an Electron-authored PNG.
+            if(System.Windows.Forms.Clipboard.ContainsFileDropList()){
+                var files=System.Windows.Forms.Clipboard.GetFileDropList();
+                if(files.Count==0||files.Count>5)return 2;
+                foreach(string file in files)Console.WriteLine("file "+Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(file)));
+                return 0;
+            }
+            if(System.Windows.Forms.Clipboard.ContainsImage())using(var image=System.Windows.Forms.Clipboard.GetImage()){
+                if(image==null||(long)image.Width*image.Height>32000000)return 2;
+                using(var stream=new System.IO.MemoryStream()){
+                    image.Save(stream,System.Drawing.Imaging.ImageFormat.Png);
+                    if(stream.Length>8*1024*1024)return 2;
+                    Console.WriteLine("image "+Convert.ToBase64String(stream.ToArray()));return 0;
+                }
+            }
+            return 1;
+        }catch(System.Runtime.InteropServices.ExternalException){Thread.Sleep(40);}
+        return 1;
+    }
+    [STAThread]
     private static void Main(string[] args)
     {
+        if(args.Length==1&&args[0]=="--clipboard"){Environment.ExitCode=ReadClipboard();return;}
         if (args.Length != 3) return;
         int parent, key, modifiers;
         if (!Int32.TryParse(args[0], out parent) || !Int32.TryParse(args[1], out key) || !Int32.TryParse(args[2], out modifiers)) return;

@@ -2,20 +2,21 @@
 
 ![Codex B turning into a violet gravity well during a file drag](images/attachment-gravity.png)
 
-Drop up to five files (8 MB each) onto a Codex, Claude or AGY logo. The logo
-becomes a dark gravity well in its identity color; nearby rings lean inward and
-three fine streams spiral into the center. Leaving or cancelling reverses the
-spring, restores the rings and removes the animation. Reduced motion shows a
-static well. The effect changes the notch, not other applications or the desktop.
+Drop up to five files (8 MB each) onto a Codex, Claude or AGY logo. The
+entire notch contracts toward a dark gravity well in that agent's identity color.
+The ink and neighboring symbols flow inward while the physical drop targets stay
+fixed. Leaving or cancelling restores the notch. Reduced motion uses a static well.
 
-A review window shows image previews, a chat picker and an optional message.
-Only sessions belonging to the dropped account appear. Exactly one open chat is
-preselected; multiple open chats require selection. The chosen workspace and
-session ID remain visible. No files leave the computer during hover or drop.
+The notch unfolds its existing session lobe with previews, an optional message,
+and only that agent's sessions. Select a session before sending; the app never
+guesses which VS Code chat is active. No files leave the computer until you choose
+**Send to Codex** or **Copy context & open**.
 
-Right-click a logo and choose **Paste screenshot into…** to start with a clipboard
-image. The review window also accepts image paste, including while the message
-field is focused. Dropping or pasting again replaces the draft.
+While the notch is visible, hover a logo and press **Ctrl+V**, or right-click it
+and choose **Paste screenshot into…**. Screenshot pixels and copied local files are
+supported. Windows bitmap clipboard formats have a native fallback. The shortcut
+is released when the pointer leaves the logo or the session picker takes focus.
+The expanded review also accepts pasted images and dropped files, replacing the draft.
 
 **Send to Codex** transfers the files into a private, uniquely named directory in
 the selected session's workspace, then invokes native `codex queue --thread UUID
@@ -32,7 +33,7 @@ Paste into the agent's composer and send. This is a manual handoff, not a native
 image-composer insertion. A failed session opening leaves copied context
 available and reports the opening failure separately.
 
-The review window does not claim to detect the currently active extension chat.
+The session picker does not claim to detect the currently active extension chat.
 VS Code's public API provides an `activeTerminal` and its process ID, so a future
 helper can match it against collector-verified ancestry. An extension-owned chat
 panel does not expose its thread through that API. Selecting a known session is
@@ -51,7 +52,7 @@ the dependable route across multiple accounts and windows today.
   a failed connection could have lost its delivery receipt.
 - Each transfer directory carries its own ignore rule, so attachments do not
   appear as untracked project changes.
-- Drafts expire after 15 minutes and are released on window close. Transferred
+- Drafts expire after 15 minutes and are released when the session lobe closes. Transferred
   files remain in the workspace so a queued turn can read them; remove the
   `.agent-usage-drop-*` directories after the agent is done.
 - The notch animation uses the existing shared analytic spring scheduler. It
@@ -60,10 +61,11 @@ the dependable route across multiple accounts and windows today.
   They check exact account, session and image argv, immutable file staging,
   permissions, hostile filenames, unavailable commands and manual handoff.
 - Browser tests check all four edges, target switching, cancellation, reduced
-  motion, explicit selection when chats are ambiguous and reviewed submission.
+  motion, explicit selection for every attachment and reviewed submission.
 - A native Electron test checks actual disk-backed File paths across the
   sandboxed preload, screenshot clipboard data, previews and main-process
-  delivery routing. Windows CI runs it before packaging.
+  delivery routing. Windows CI also exercises native bitmap/file clipboard data,
+  physical hover paste, a real OLE file drag and interaction after dropping.
 
 Research used [Electron's file-drop guidance](https://www.electronjs.org/docs/latest/api/web-utils),
 its [current asynchronous clipboard API](https://www.electronjs.org/docs/latest/api/clipboard),

@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const { constants } = require('node:fs');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
+const { fileURLToPath } = require('node:url');
 const { spawn } = require('node:child_process');
 const { validHost, validLinuxPath } = require('./collector.cjs');
 const LIMIT = 8 * 1024 * 1024, MAX_FILES = 5;
@@ -34,7 +35,38 @@ async function readFiles(paths) {
   }
   return files;
 }
-async function readClipboard(clipboard) {
+async function readDrop({paths,files}) {
+  if(files===undefined)return readFiles(paths);
+  if(!Array.isArray(files)||!files.length||files.length>MAX_FILES)throw new Error('Drop up to five files at a time.');
+  const result=[];
+  for(const file of files){
+    if(file.path){result.push(...await readFiles([file.path]));continue;}
+    if(typeof file.name!=='string'||!Array.isArray(file.bytes)||!file.bytes.length||file.bytes.length>LIMIT||file.bytes.some(n=>!Number.isInteger(n)||n<0||n>255))throw new Error('Choose nonempty files up to 8 MB each.');
+    result.push(attachment(file.name,Buffer.from(file.bytes)));
+  }
+  return result;
+}
+function readWindowsClipboard(executable,{launch=spawn}={}) {
+  return new Promise((resolve,reject)=>{
+    const child=launch(executable,['--clipboard'],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+    let out='',done=false;
+    const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);error?reject(error):resolve(value);};
+    const timer=setTimeout(()=>{child.kill();finish(new Error('The clipboard is busy. Copy the screenshot again and retry.'));},5000);
+    child.on('error',()=>finish(new Error('The Windows clipboard reader could not start. Restart Agent Usage.')));
+    child.stdout.on('data',data=>{out+=data;if(out.length>MAX_FILES*LIMIT*1.4){child.kill();finish(new Error('Choose screenshots up to 8 MB.'));}});
+    child.stderr.resume();
+    child.once('close',async code=>{
+      if(code!==0)return finish(new Error('Copy a screenshot or image file, then paste it over an agent.'));
+      try{
+        const records=out.trim().split('\n');
+        if(records.length>MAX_FILES)throw new Error('Copy up to five files at a time.');
+        if(records[0].startsWith('image ')){const bytes=Buffer.from(records[0].slice(6),'base64');if(!imageType(bytes))throw new Error('The clipboard image could not be read.');finish(null,[attachment('Screenshot.png',bytes)]);}
+        else {const paths=records.map(line=>{if(!line.startsWith('file '))throw new Error('The clipboard could not be read.');return Buffer.from(line.slice(5),'base64').toString('utf8');});finish(null,await readFiles(paths));}
+      }catch(error){finish(error);}
+    });
+  });
+}
+async function readClipboard(clipboard,{native=null}={}) {
   const items = await clipboard.read();
   for (const type of ['image/png','image/jpeg','image/webp']) {
     const item = items.find(item => item.types.includes(type));
@@ -45,7 +77,15 @@ async function readClipboard(clipboard) {
     if (!image) throw new Error('The clipboard image could not be read. Save it as PNG and drop the file.');
     return [attachment('Screenshot.'+image,bytes)];
   }
-  throw new Error('Copy a screenshot or image, then paste it here.');
+  const references=items.find(item=>item.types.includes('text/uri-list'));
+  if(references){
+    const blob=await references.getType('text/uri-list');
+    if(blob.size>65536)throw new Error('Copy up to five files at a time.');
+    const paths=(await blob.text()).split(/\r?\n/).filter(line=>line.trim()&&!line.startsWith('#')).map(line=>{const url=new URL(line);if(url.protocol!=='file:')throw new Error('Copy files from your computer.');return fileURLToPath(url);});
+    if(paths.length)return readFiles(paths);
+  }
+  if(native)return native();
+  throw new Error('Copy a screenshot or image file, then paste it over an agent.');
 }
 function createDraft(account, scope, files) {
   if (!files.length || files.length > MAX_FILES) throw new Error('Attach up to five files.');
@@ -130,4 +170,4 @@ async function deliver(draft, target, { queue = false, message = '', launch = sp
     child.stdin.end(payload);
   });
 }
-module.exports={LIMIT,MAX_FILES,imageType,attachment,readFiles,readClipboard,createDraft,publicDraft,REMOTE,transport,deliver};
+module.exports={LIMIT,MAX_FILES,imageType,attachment,readFiles,readDrop,readWindowsClipboard,readClipboard,createDraft,publicDraft,REMOTE,transport,deliver};

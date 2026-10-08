@@ -480,3 +480,19 @@ layout budgets remain covered on all four edges at DPR 1 and 2.
 Validation: all 131 desktop tests passed. The motion, bell and structural
 performance browser suites passed, including a new check that reversing hover
 keeps the arm, strand and glyph geometry identical at the same position.
+
+
+## 5.0.10 — Attachments inside the notch
+
+Attachment previews and session selection now unfold in the notch's session lobe.
+Every send requires choosing a session from the selected account. Hovering a logo
+accepts Ctrl+V without focusing the overlay; leaving releases the shortcut.
+Screenshot pixels, copied local files and virtual browser image drops are supported.
+Windows bitmap/file clipboard formats use a native fallback. Failed paste requests
+stay in the notch instead of opening a blocking error dialog. Drag state is cleared
+on hiding, monitor transitions, focus loss and renderer errors.
+
+The entire notch contracts into the selected gravity well while its drop hit boxes
+stay fixed. Agent identity lights are stronger. Browser coverage includes all four
+edges and inline review; Windows coverage includes native bitmap/file clipboard,
+physical hover paste, real OLE dragging and interaction after a drop.
