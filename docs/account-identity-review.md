@@ -24,7 +24,7 @@ Explicit A/B identities and stable fallback account keys survive reordering and
 renaming. Extra unnamed Codex accounts currently reuse the blue treatment;
 additional distinct account colors would need a separate design choice.
 
-Native tooltips remain removed. These symbol lights are included in the 5.0.8
+Native tooltips remain removed. These symbol lights are included in the 5.0.9
 Windows update. The feature shortlist below remains unapproved; the
 owner expressed only tentative interest in usage trends.
 

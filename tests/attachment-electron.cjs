@@ -5,7 +5,8 @@ if(!process.versions.electron){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-usage-native-drop-'));
  const {spawnSync}=require('node:child_process');
  const args=[...(process.platform==='linux'&&process.env.AGENT_USAGE_TEST_NO_SANDBOX==='1'?['--no-sandbox']:[]),__filename,root];
- const result=spawnSync(require('../desktop/node_modules/electron'),args,{stdio:'inherit',timeout:45000,env:{...process.env,ELECTRON_RUN_AS_NODE:''}});
+ const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
+ const result=spawnSync(require('../desktop/node_modules/electron'),args,{stdio:'inherit',timeout:45000,env});
  if(result.error)console.error(result.error.message);
  fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});process.exit(result.status??1);
 }

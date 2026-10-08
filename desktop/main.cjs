@@ -36,6 +36,13 @@ async function prepareAttachments(args, paste = false) {
   if (!accounts().some(a => a.id === args.account && ['codex','claude','gemini'].includes(a.base))) throw new Error('Choose an agent logo to attach files.');
   if (attachmentDraft?.busy) throw new Error('Wait for the current attachment transfer.');
   const preparation = ++attachmentPreparation;
+  // Resolve the default distro once before binding a draft to its connection.
+  // Otherwise opening the first picker would change "wsl:" into "wsl:Ubuntu"
+  // and immediately invalidate a screenshot the user just attached.
+  if(config.source==='wsl'&&!config.lastWslDistro){
+    await sessionLibrary(true);
+    if(config.source!=='wsl'||!config.lastWslDistro)throw new Error('The WSL connection could not be identified. Check the connection in Settings and drop the files again.');
+  }
   const scope = sessionScope(config);
   const files = paste ? await attachments.readClipboard(clipboard) : await attachments.readFiles(args.paths);
   if (preparation !== attachmentPreparation) return false;

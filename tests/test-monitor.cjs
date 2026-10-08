@@ -27,7 +27,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentWindow=w;attachmentDraft=d;}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentWindow=w;attachmentDraft=d;}, attachments:()=>attachmentDraft, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   t.after(()=>{context.monitorTest.closeTimers();fs.rmSync(root,{recursive:true,force:true});});
@@ -403,4 +403,14 @@ test('an external attachment drag holds the notch still without granting setting
  await s.command('attachment_drag',{on:true});const before=s.calls.length;s.test.followPointer({x:1100,y:400});assert.equal(s.calls.length,before);
  await s.command('attachment_drag',{on:false},s.settings.webContents);s.test.followPointer({x:1100,y:400});assert.equal(s.calls.length,before);
  await s.command('attachment_drag',{on:false});s.test.followPointer({x:1100,y:400});assert.ok(s.calls.length>before);assert.equal(s.calls.at(-1)[0],'edge_cursor');
+});
+
+test('the first WSL attachment binds to the resolved distribution before opening the picker',async t=>{
+ const account='codex_aaaaaaaaaaaa';let reads=0;
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>{reads++;return {sessions:[],wslDistro:'Ubuntu'};}}});
+ s.config.source='wsl';s.config.lastWslDistro='';s.test.setAccounts([{id:account,base:'codex',name:'Codex B'}]);
+ const window={isDestroyed:()=>false,show(){},focus(){},webContents:{send(){}}};s.test.setAttachments(window,null);
+ const file=path.join(s.root,'design.txt');fs.writeFileSync(file,'Design context');
+ assert.equal(await s.command('prepare_attachments',{account,paths:[file]}),true);
+ assert.equal(reads,1);assert.equal(s.test.attachments().scope,'wsl:Ubuntu');assert.equal(s.test.attachments().files[0].name,'design.txt');
 });
