@@ -99,7 +99,8 @@ const accounts=['claude','codex-b','antigravity'].map(id=>({id,base:id==='antigr
     await page.evaluate(()=>applyAppearance({aliases:true,compactSessions:true}));
     assert.ok(await page.locator('#card').evaluate(el=>el.classList.contains('compact-sessions')));
     assert.equal(await page.locator('.session-workspace').first().evaluate(el=>getComputedStyle(el).display),'none');
-    assert.ok(await page.locator('.session-open').first().getAttribute('title'),'compact rows retain full workspace details on demand');
+    assert.ok(await page.locator('.session-open').first().getAttribute('aria-label'),'compact rows retain accessible chat details');
+    assert.equal(await page.locator('[title]').count(),0,'no native hover tooltips');
     const label=await page.locator('.account-alias').first().boundingBox(),notch=await page.locator('#pill').boundingBox();
     assert.ok(label.y+label.height<=notch.y+notch.height+.5,'account labels fit inside the existing surface');
     await page.screenshot({path:path.join(OUT,'compact-sessions.png')});

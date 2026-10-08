@@ -66,6 +66,8 @@ jobs:
         working-directory: desktop
       - name: Verify native session shortcut and keyboard focus
         run: node tests/shortcut-windows.cjs
+      - name: Verify native file and screenshot attachments
+        run: node tests/attachment-electron.cjs
       - run: node scripts/test-desktop.cjs
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')

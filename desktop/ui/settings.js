@@ -88,7 +88,9 @@ function ring(used,size,r,width,p,hole){
   return (hole?`<circle cx="${c}" cy="${c}" r="${r-width/2-.6}" fill="${hole}"/>`:'')+`<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${p.track}" stroke-width="${width}"/>`+arc;
 }
 function paintGlyph(el,a){
-  const svg=glyphs[a.base]?.kind==='svg'?glyphs[a.base].svg:'', key=svg?a.base:'letter:'+(a.glyph||a.name[0]||'');
+  const tag=window.accountLight(a,accounts);
+  el.classList.add('identity-light');el.dataset.light=tag;
+  const svg=glyphs[a.base]?.kind==='svg'?glyphs[a.base].svg:'', key=(svg?a.base:'letter:'+(a.glyph||a.name[0]||''))+':'+tag;
   if(el.dataset.key===key)return;el.dataset.key=key;
   el.classList.toggle('letter',!svg);
   if(svg)el.innerHTML=svg; // the app's own bundled marks
@@ -147,7 +149,7 @@ function createRow(id){
 function updateRow(r,a,on){
   if(r.name.textContent!==a.name){r.name.textContent=a.name;r.el.setAttribute('aria-label',a.name);}
   r.alias.hidden=!appearanceSettings.aliases||a.id==='collector';
-  r.alias.title=a.originalName||a.name;r.alias.setAttribute('aria-label',`Alias for ${a.originalName||a.name}`);
+  r.alias.setAttribute('aria-label',`Alias for ${a.originalName||a.name}`);
   if(document.activeElement!==r.alias)r.alias.value=a.alias||'';
   paintGlyph(r.glyph,a);
   const used=usedOf(a), key=`${used}|${colorTransition}|${palette.ample}`;
@@ -155,13 +157,10 @@ function updateRow(r,a,on){
   r.el.classList.toggle('stale',staleOf(a.snap));
   const shown=on.includes(a.id), muted=alertPrefs.muted.includes(a.id);
   r.el.classList.toggle('off',!shown);
-  r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);r.sw.title=shown?'Hide from notch':'Show in notch';
+  r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
   r.bell.setAttribute('aria-checked',String(!muted));r.bell.setAttribute('aria-label',`Usage warnings for ${a.name}`);
   r.test.setAttribute('aria-pressed',String(notificationTestAccount===a.id));r.test.setAttribute('aria-label',`Test notification for ${a.name}`);
   r.focus.setAttribute('aria-pressed',String(focusAccounts.includes(a.id)));r.focus.setAttribute('aria-label',`Focus ${a.name}`);
-  r.bell.title=muted?'Enable usage notifications':'Mute usage notifications';
-  r.test.title=notificationTestAccount===a.id?'Stop test notification':'Test notification';
-  r.focus.title=focusAccounts.includes(a.id)?'Remove from focus':'Focus at rest';
   r.focus.disabled=a.id==='collector';
   // A healthy account needs no status line; a stale or failed one says what went wrong
   const problem=a.snap.status==='ok'?'':a.snap.note||(a.snap.status==='stale'?'Showing the last reading':a.snap.status==='loading'?'Reading usage…':'Usage could not be read');

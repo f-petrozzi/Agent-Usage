@@ -1,0 +1,21 @@
+/* Close, soft identity light travels with the existing symbol motion. */
+.identity-light[data-light="codex-a"]{--identity-rgb:116,169,255}
+.identity-light[data-light="codex-b"]{--identity-rgb:190,153,255}
+.identity-light[data-light="claude"]{--identity-rgb:217,119,87}
+.identity-light[data-light="agy"]{--identity-rgb:49,134,255}
+.identity-light[data-light]:not([data-light=""]){position:relative;isolation:isolate}
+.identity-light[data-light]:not([data-light=""])::before{
+  content:"";position:absolute;inset:-3px;border-radius:50%;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse,rgba(var(--identity-rgb),.42) 0%,rgba(var(--identity-rgb),.16) 44%,transparent 74%);
+  filter:blur(4px);opacity:.72;transition:opacity .18s ease;
+}
+.identity-light[data-light]:not([data-light=""])>svg{filter:drop-shadow(0 0 2px rgba(var(--identity-rgb),.42))}
+.identity-light[data-light="agy"]::before{
+  background:radial-gradient(ellipse at 35% 20%,rgba(49,134,255,.55),transparent 64%),radial-gradient(ellipse at 85% 45%,rgba(0,185,92,.4),transparent 62%),radial-gradient(ellipse at 50% 85%,rgba(251,188,4,.4),transparent 62%),radial-gradient(ellipse at 15% 65%,rgba(252,65,61,.4),transparent 62%);
+}
+.identity-light[data-light="agy"]>svg{filter:drop-shadow(0 -1px 2px rgba(49,134,255,.28)) drop-shadow(1px 0 2px rgba(0,185,92,.24)) drop-shadow(0 1px 2px rgba(251,188,4,.22)) drop-shadow(-1px 0 2px rgba(252,65,61,.26))}
+.cell:is(:hover,:focus-visible) .identity-light::before{opacity:.9}
+.acct-mark .identity-light::before,.n-cell .identity-light::before{inset:-2px;filter:blur(3px);opacity:.55}
+/* Keep the tiny Settings notch's centered absolute positioning. */
+.n-cell .identity-light[data-light]:not([data-light=""]){position:absolute}
+@media(prefers-reduced-motion:reduce){.identity-light[data-light]:not([data-light=""])::before{transition:none}}

@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session, contentTracing, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut, Menu, nativeTheme, shell, Tray, session, contentTracing, dialog, clipboard } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -11,6 +11,7 @@ const { createUpdates } = require('./updates.cjs');
 const windowPolicy = require('./platform-window.cjs');
 const { canInstallUpdates } = require('./platform-runtime.cjs');
 const { resolveSession, sessionScope } = require('./session-routing.cjs');
+const attachments = require('./attachments.cjs');
 const { pointerPlacement } = require('./perimeter.cjs');
 const {normalizePins,libraryRows,changePin,publicRow,alertResumeRow}=require('./session-library.cjs');
 const { Collector, SessionFeed, validHost, enrollAntigravity, readSessionLinks, readSessionHistory } = require('./collector.cjs');
@@ -30,6 +31,51 @@ let win, settings, tray, input, collector, feed, config, configPath, timer, upda
 let trayTimer, nativeInput, performanceCapture;
 let liveSnapshot = [], liveSnapshotAt = 0, liveSnapshotScope = '';
 let historyCache = null, historyPending = null, historyAt = 0, historyGeneration = 0;
+let attachmentWindow, attachmentDraft, attachmentPreparation = 0, attachmentHoverUntil = 0;
+async function prepareAttachments(args, paste = false) {
+  if (!accounts().some(a => a.id === args.account && ['codex','claude','gemini'].includes(a.base))) throw new Error('Choose an agent logo to attach files.');
+  if (attachmentDraft?.busy) throw new Error('Wait for the current attachment transfer.');
+  const preparation = ++attachmentPreparation;
+  const scope = sessionScope(config);
+  const files = paste ? await attachments.readClipboard(clipboard) : await attachments.readFiles(args.paths);
+  if (preparation !== attachmentPreparation) return false;
+  if (attachmentDraft?.busy) throw new Error('Wait for the current attachment transfer.');
+  if (scope !== sessionScope(config)) throw new Error('The connection changed. Drop the files again.');
+  attachmentDraft = attachments.createDraft(args.account, scope, files);
+  if (attachmentWindow && !attachmentWindow.isDestroyed()) { attachmentWindow.show(); attachmentWindow.focus(); attachmentWindow.webContents.send('event','attachment_draft',attachments.publicDraft(attachmentDraft)); }
+  else {
+    attachmentWindow = new BrowserWindow({width:480,height:660,minWidth:400,minHeight:500,show:false,frame:false,
+      title:'Attach to agent',backgroundColor:'#141417',autoHideMenuBar:true,
+      webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
+    secure(attachmentWindow);
+    attachmentWindow.on('close',event=>{if(attachmentDraft?.busy)event.preventDefault();});
+    attachmentWindow.on('closed',()=>{attachmentWindow=null;attachmentDraft=null;});
+    attachmentWindow.once('ready-to-show',()=>{attachmentWindow.show();attachmentWindow.focus();});
+    await attachmentWindow.loadFile(path.join(uiRoot,'attachments.html'));
+  }
+  return true;
+}
+async function deliverAttachments(args) {
+  const draft = attachmentDraft;
+  if (!draft || draft.token !== args.token || draft.scope !== sessionScope(config) || Date.now()-draft.at>15*60*1000) throw new Error('Drop the files again to refresh this attachment.');
+  const queue = args.queue === true;
+  if (draft.busy || queue && draft.consumed) throw new Error('Check the selected chat before sending again.');
+  draft.busy=true;
+  try {
+    const rows=await sessionLibrary(true);
+    if (draft !== attachmentDraft || draft.scope !== sessionScope(config)) throw new Error('The connection changed. Drop the files again.');
+    const target=resolveSession({rows,config,account:draft.account,id:args.id});
+    // A native queued turn is explicit. Never type arbitrary text into a terminal.
+    if(queue)draft.consumed=true;
+    const result=await attachments.deliver(draft,target,{queue,message:args.message});
+    if(queue)return {queued:true};
+    if(draft.scope!==sessionScope(config))return {queued:false,openError:'The connection changed. Files were prepared on the original host; choose that connection before opening the session.'};
+    await clipboard.writeText(result.context);
+    if(draft.scope!==sessionScope(config))return {queued:false,copied:true,openError:'The connection changed. Context is copied; choose the original host before opening this chat.'};
+    try { await openResolvedSession({account:draft.account,id:args.id}); return {queued:false,copied:true}; }
+    catch(error){return {queued:false,copied:true,openError:error.message};}
+  } finally { draft.busy=false; }
+}
 async function recentHistory(refresh = false) {
   if (!refresh && historyCache && Date.now() - historyAt < 60000) return historyCache;
   if (historyPending) return historyPending;
@@ -349,12 +395,13 @@ function tick() {
   if(Date.now()-nativePointerAt>32)followPointer(cursor);
   const hit = visible && phase !== 'transfer' && overNotch(cursor);
   if (hit !== inside) { inside = hit; send('notch_pointer', hit); win.setIgnoreMouseEvents(!hit, { forward: true }); }
-  if (hit || alerting || expanded || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
+  if (hit || Date.now()<attachmentHoverUntil || alerting || expanded || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
   if (visible && !pinned && !held && !carrying && !menuOpen && Date.now() > visibleUntil) hide();
 }
 // Fast input updates only the target; click-through, topmost and hiding stay on tick().
 function followPointer(point,timestamp=null){
   if(!win||win.isDestroyed())return;
+  if(Date.now()<attachmentHoverUntil)return;
   if ((held || carrying) && Date.now()>=sessionFollowUntil && !dismissed && !menuOpen) {
     reveal();
     const display = screen.getDisplayNearestPoint(point);
@@ -541,9 +588,11 @@ function showAlerts(events) {
     level: e.level || null, used: Number.isFinite(e.used) ? e.used : null, session: e.session || null, target: logged[i]?.target || null, took: Number.isFinite(e.took) ? e.took : null,
     title: e.title, body: e.body })), sound: !!config.alerts.sound, hold: ALERT_MS });
 }
-function contextMenu() {
+function contextMenu(provider) {
   menuOpen = true;
   return new Promise(resolve => Menu.buildFromTemplate([
+    ...(accounts().some(a=>a.id===provider&&['codex','claude','gemini'].includes(a.base)) ? [{label:'Paste screenshot into '+accounts().find(a=>a.id===provider).name,
+      click:()=>prepareAttachments({account:provider},true).catch(error=>dialog.showErrorBox('Screenshot could not be attached',error.message))},{type:'separator'}] : []),
     { label: 'Pin here', type: 'checkbox', checked: pinned, click: item => setPinned(item.checked) },
     { label: 'Sessions…   Ctrl + Scroll Lock', click:openSessionSwitcher },
     {label:'Focus accounts…',click:()=>openSettings('accounts')},
@@ -556,9 +605,15 @@ function contextMenu() {
 }
 const enumValue = (value, choices) => { if (!choices.includes(value)) throw new Error('Invalid setting'); return value; };
 ipcMain.handle('command', async (event, command, args = {}) => {
-  if (![win?.webContents, settings?.webContents].includes(event.sender) || !event.senderFrame.url.startsWith(pathToFileURL(uiRoot + path.sep).href)) throw new Error('Untrusted UI');
+  if (![win?.webContents, settings?.webContents, attachmentWindow?.webContents].includes(event.sender) || !event.senderFrame.url.startsWith(pathToFileURL(uiRoot + path.sep).href)) throw new Error('Untrusted UI');
   if (typeof command !== 'string' || !args || typeof args !== 'object') throw new Error('Invalid command');
   switch (command) {
+    case 'attachment_drag': if(event.sender===win?.webContents)attachmentHoverUntil=args.on===true?Date.now()+1200:0;return null;
+    case 'prepare_attachments': return prepareAttachments(args);
+    case 'paste_attachment': return prepareAttachments(args,true);
+    case 'get_attachment_draft': if(event.sender!==attachmentWindow?.webContents)throw new Error('Open attachments first.');return attachmentDraft?attachments.publicDraft(attachmentDraft):null;
+    case 'deliver_attachments': if(event.sender!==attachmentWindow?.webContents)throw new Error('Open attachments first.');return deliverAttachments(args);
+    case 'close_attachments': attachmentWindow?.close();return null;
     case 'ready': frameReady = true; sendLayout(); return null;
     case 'monitor_stowed': {
       if (event.sender !== win?.webContents || args.placement !== pendingPlacement || pendingPlacementStage !== 'stow') return false;
@@ -746,7 +801,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
     case 'open_settings': openSettings(); return null;
     case 'close_settings': settings?.close(); return null;
     case 'refresh_ring': requestRefresh(); return false;
-    case 'show_notch_menu': return contextMenu();
+    case 'show_notch_menu': return contextMenu(args.provider);
     case 'begin_move': case 'drag_begin': beginMove(); return null;
     case 'open_data_dir': await shell.openPath(app.getPath('userData')); return null;
     case 'quit_app': app.quit(); return null;

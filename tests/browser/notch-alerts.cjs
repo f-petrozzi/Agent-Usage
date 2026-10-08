@@ -131,7 +131,7 @@ const sideSection = (page, id) => page.evaluate(id => {
     assert.deepEqual(await linked.page.evaluate(() => __calls.filter(c => c[0] === 'open_alert_session').at(-1)), ['open_alert_session', { id: 'linked' }]);
     assert.equal(await linked.page.evaluate(() => card.classList.contains('show')), false);
     assert.equal(await linked.page.locator('.sliver[title], .sliver svg title').count(), 0, 'notifications retain their own copy');
-    assert.match(await linked.page.locator('.cell').first().getAttribute('title'), /used/, 'account gauges explain their quota window on hover');
+    assert.match(await linked.page.locator('.cell').first().getAttribute('aria-label'), /used/, 'account gauges expose their quota window to assistive technology');
     await linked.page.evaluate(target => __emit('alert', { events: [{ id: 'keyboard', kind: 'waiting', account: 'claude', session: 'homelab', target }], hold: 4000 }), target);
     await linked.page.waitForTimeout(900);
     await linked.page.locator('.sliver').focus(); await linked.page.keyboard.press('Enter');

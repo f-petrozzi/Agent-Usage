@@ -276,7 +276,7 @@ const answers = {
         assert.ok(Math.abs(geometry.c.y - geometry.r.y + 12) < 2, 'preserves top alignment');
       }
       assert.equal(await page.locator('#card [title], #card svg title').count(), 0, 'alert log controls keep their existing tooltip policy');
-      assert.equal(await page.locator('.cell[title]').count(),2,'gauges explain each account and quota window');
+      assert.equal(await page.locator('.cell[title]').count(),0,'gauges have no hover tooltips');
       assert.equal(await page.locator('.a-row').count(),40,'the entire retained history remains reachable');
       const history=await page.locator('.a-log').boundingBox();assert.ok(history.height<=228.5,'history stops at the default notch length: '+JSON.stringify(history)+edge);
       const titleTop=await page.locator('.c-head').evaluate(e=>e.getBoundingClientRect().top);

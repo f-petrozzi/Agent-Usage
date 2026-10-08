@@ -119,7 +119,7 @@ function workState(p){
 }
 function glyphHtml(p,small){
   const g=glyphs[p.base||p.id];
-  if(g&&g.kind==='svg'&&g.svg) return `<span class="mark">${g.svg}</span>`;
+  if(g&&g.kind==='svg'&&g.svg) return `<span class="mark identity-light" data-light="${window.accountLight(p,agentAccounts)}">${g.svg}</span>`;
   if(g&&g.url) return `<img class="${g.kind}" src="${g.url}" alt="${p.name}"${small?' style="width:16px;height:16px;border-radius:4px"':''}>`;
   return small?'':p.glyph; // fallback letter
 }
@@ -245,7 +245,7 @@ const BELL_MARK='<svg class="bell-mark" viewBox="0 0 24 24" aria-hidden="true"><
 function renderRing(){
   const ps=providers();
   // Rebuild the DOM only when the structure changes (never swap the element under the cursor)
-  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')).join(',')+`|${notchButtons.pin}`;
+  const want=ps.map(p=>p.id+':'+(glyphs[p.base]?glyphs[p.base].kind:'-')+':'+window.accountSymbolKey(p,agentAccounts)).join(',')+`|${notchButtons.pin}`;
   if(pill.dataset.cells!==want){
     pill.innerHTML=ps.map((p,i)=>`<div class="cell" role="button" tabindex="0" aria-label="${esc(p.name)}" data-p="${p.id}" style="--i:${i}">
       <div class="ringwrap"><svg class="ring" viewBox="0 0 56 56"></svg><svg class="reading" viewBox="0 0 56 56"></svg><div class="activity-layer"><svg class="activity" viewBox="0 0 56 56"></svg></div><div class="glyph ${(!glyphs[p.base]&&p.glyph.length>1)?'small':''}">${glyphHtml(p)}</div></div>
@@ -259,7 +259,7 @@ function renderRing(){
     const svg=cell.querySelector('svg.ring'), reading=cell.querySelector('svg.reading'), activity=cell.querySelector('svg.activity'), pct=cell.querySelector('.pct'), glyph=cell.querySelector('.glyph'), wrap=cell.querySelector('.ringwrap');
     const h=headlineOf(p.snap,p.base);
     cell.querySelector('.account-alias').textContent=p.alias||p.name.replace(/^(?:Codex|Claude|Antigravity|AGY)(?:\s*[·:—-]\s*|\s+)/i,'')||p.name;
-    cell.title=p.name+(h?` · ${h.label} used`:'' );
+
     cell.setAttribute('aria-label',p.name+(h?`, ${h.label}: ${pctText(h.used)}% used`:''));
     let inner=`<circle cx="28" cy="28" r="22" fill="${HOLE}"/><circle cx="28" cy="28" r="25" fill="none" stroke="${TRACK}" stroke-width="5"/>`;
     wrap.classList.toggle('pressed',!!refreshing[p.id]);
@@ -419,7 +419,7 @@ function renderCard(){
   // directory's slug and the subscriptionType read out of .credentials.json.
   const title=esc(ui().title(p.name));
   const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
-  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':`<div class="c-head-actions"><button class="c-history-trigger" type="button" data-account="${esc(p.id)}" aria-label="Sessions for ${esc(p.name)}" title="Sessions">${HISTORY_ICON}</button>${refresh}</div>`}</div>`;
+  let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':`<div class="c-head-actions"><button class="c-history-trigger" type="button" data-account="${esc(p.id)}" aria-label="Sessions for ${esc(p.name)}">${HISTORY_ICON}</button>${refresh}</div>`}</div>`;
   if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
@@ -653,7 +653,7 @@ listen('notch_landing',()=>{
 }).catch(()=>{});
 listen('notch_reveal',()=>{ document.documentElement.style.visibility=''; }).catch(()=>{});
 
-/* Collapse test: no trust in element-level mouseenter/mouseleave/e.target at all : 
+/* Collapse test: no trust in element-level mouseenter/mouseleave/e.target at all :
    pure geometry: is the cursor (clientX/Y) inside pill rect ∪ card rect ∪ their bounding box?
    Leaving the window: document mouseout (relatedTarget=null) plus the native cursor watchdog (system cursor) as a second line. */
 function inRect(x,y,r,pad){return x>=r.left-pad&&y>=r.top-pad&&x<r.right+pad&&y<r.bottom+pad;}
@@ -698,6 +698,7 @@ document.addEventListener('mousemove',e=>{
   // Folded, the page is sent events only over the pill, so any movement at all is the pointer reaching it
   if(!shown) return; // stowed or on its way out; only the shortcut brings it back
   if(window.agentTracking)return;
+  if(window.agentDropActive)return;
   if(dragging)return; // no card while dragging
   if(carrying) return; // the notch is in hand; the card would only be in the way
   if(typeof sessionSwitcherShowing==='function'&&sessionSwitcherShowing())return;

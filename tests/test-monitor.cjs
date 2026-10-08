@@ -27,7 +27,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentWindow=w;attachmentDraft=d;}, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   t.after(()=>{context.monitorTest.closeTimers();fs.rmSync(root,{recursive:true,force:true});});
@@ -371,4 +371,36 @@ test('account aliases and compact rows persist independently of account identity
  await assert.rejects(s.command('set_account_alias',{account:'missing',alias:'Work'}),/alias/);
  await assert.rejects(s.command('set_account_alias',{account:'codex-a',alias:'bad\nname'}),/alias/);
  await s.command('set_account_alias',{account:'codex-a',alias:''});assert.equal((await s.command('get_agent_accounts'))[0].name,'Codex a');
+});
+
+test('attachments resolve the selected account and session before transfer, block duplicate sends, and reject stale scope',async t=>{
+ const account='codex_aaaaaaaaaaaa',row={id:'chat',account,provider:'codex',sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',agentHome:'/home/user/.codex-b',name:'Review',since:Date.now(),live:true};
+ let sent=[],complete;
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:async()=>({sessions:[row]})},'./attachments.cjs':{deliver:async(draft,target,options)=>{sent.push({target,options});return new Promise(resolve=>{complete=resolve;});}}});
+ s.test.setAccounts([{id:account,base:'codex',name:'Codex B'}]);
+ const window={webContents:{}},draft={token:'draft',account,scope:'ssh:homelab',at:Date.now(),files:[],busy:false,consumed:false};s.test.setAttachments(window,draft);
+ await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'chat',queue:true}),/Open attachments/);
+ await assert.rejects(s.command('deliver_attachments',{token:'wrong',id:'chat',queue:true},window.webContents),/refresh/);
+ await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'forged',queue:true},window.webContents),/no longer/);assert.equal(sent.length,0);assert.equal(draft.busy,false);
+ const first=s.command('deliver_attachments',{token:'draft',id:'chat',queue:true,cwd:'/forged',agentHome:'/forged',message:'Review'},window.webContents);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(sent.length,1);assert.equal(sent[0].target.cwd,row.cwd);assert.equal(sent[0].target.agentHome,row.agentHome);assert.equal(sent[0].target.source,'ssh');assert.equal(sent[0].target.sshTarget,'homelab');assert.equal(sent[0].options.message,'Review');
+ await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'chat',queue:true},window.webContents),/Check/);
+ complete({queued:true});assert.equal((await first).queued,true);assert.equal(draft.busy,false);
+ await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'chat',queue:true},window.webContents),/Check/);
+ s.config.sshTarget='other';await assert.rejects(s.command('deliver_attachments',{token:'draft',id:'chat'},window.webContents),/refresh/);assert.equal(sent.length,1);
+});
+test('attachment scope is rechecked after asynchronous session metadata resolves',async t=>{
+ let history,transfers=0;
+ const account='codex_aaaaaaaaaaaa',row={id:'chat',account,provider:'codex',sessionId:'12345678-1234-5678-abcd-123456789012',cwd:'/srv/project',agentHome:'/home/user/.codex',since:Date.now()};
+ const s=setup(t,true,{'./collector.cjs':{readSessionHistory:()=>new Promise(resolve=>{history=resolve;})},'./attachments.cjs':{deliver:async()=>{transfers++;return {queued:true};}}});
+ const window={webContents:{}},draft={token:'draft',account,scope:'ssh:homelab',at:Date.now(),files:[],busy:false,consumed:false};s.test.setAttachments(window,draft);
+ const request=s.command('deliver_attachments',{token:'draft',id:'chat',queue:true},window.webContents);s.config.sshTarget='other';history({sessions:[row]});
+ await assert.rejects(request,/connection changed/);assert.equal(transfers,0);assert.equal(draft.busy,false);assert.equal(draft.consumed,false);
+});
+test('an external attachment drag holds the notch still without granting settings control of pointer tracking',async t=>{
+ const s=setup(t);s.test.inputLine('100');
+ await s.command('attachment_drag',{on:true});const before=s.calls.length;s.test.followPointer({x:1100,y:400});assert.equal(s.calls.length,before);
+ await s.command('attachment_drag',{on:false},s.settings.webContents);s.test.followPointer({x:1100,y:400});assert.equal(s.calls.length,before);
+ await s.command('attachment_drag',{on:false});s.test.followPointer({x:1100,y:400});assert.ok(s.calls.length>before);assert.equal(s.calls.at(-1)[0],'edge_cursor');
 });

@@ -18,7 +18,7 @@ const sessionSwitcherShowing=()=>card.classList.contains('show')&&hoverId===SESS
 const isSessionToolsCard=()=>[SESSION_ID,FINISHED_ID].includes(hoverId);
 function sessionPinButton(s){
   const pinned=isSessionPinned(s.account,s.id)||s.pinned===true;
-  return `<button type="button" class="session-pin${pinned?' pinned':''}" data-session="${esc(s.id)}" data-account="${esc(s.account)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} ${esc(s.name||'chat')}" title="${pinned?'Unpin chat':'Pin chat'}">${STAR_MARK}</button>`;
+  return `<button type="button" class="session-pin${pinned?' pinned':''}" data-session="${esc(s.id)}" data-account="${esc(s.account)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} ${esc(s.name||'chat')}">${STAR_MARK}</button>`;
 }
 function updateSessionPins(rows){
   sessionPins=new Set((Array.isArray(rows)?rows:[]).map(s=>sessionKey(s.account,s.id)));
@@ -98,7 +98,7 @@ function renderSessionToolsCard(){
   card.classList.add('session-card');setExtraContent([],[]);
   if(hoverId===SESSION_ID){
     if(switched||!card.querySelector('.session-search')){
-      card.innerHTML=`<div class="session-head"><button type="button" class="session-back session-tool-action" aria-label="Back to usage" title="Back to usage"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.5 5-5 5 5 5M7 10h9"/></svg></button><span>Sessions</span></div>
+      card.innerHTML=`<div class="session-head"><button type="button" class="session-back session-tool-action" aria-label="Back to usage"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.5 5-5 5 5 5M7 10h9"/></svg></button><span>Sessions</span></div>
         <div class="session-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4.2 4.2"/></svg><input class="session-search" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-haspopup="grid" aria-describedby="session-keyboard-hint" placeholder="Find a chat or workspace" aria-label="Find a chat or workspace" aria-controls="session-results" autocomplete="off" spellcheck="false"></div>
         <div class="session-filter-row"><button type="button" class="session-account session-tool-action" aria-label="Filter sessions by agent" aria-haspopup="listbox" aria-expanded="false" aria-controls="session-agents"><span>All agents</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><div class="session-agent-menu" id="session-agents" role="listbox" aria-label="Agents" inert></div></div>
         <div class="session-results" id="session-results" role="grid" aria-colcount="2" aria-label="Saved sessions"></div><div class="session-keyboard-hint" id="session-keyboard-hint">↑↓ Choose · Enter Open · Tab Actions</div><div class="session-status" role="status" aria-live="polite"></div>`;
@@ -173,12 +173,13 @@ function reconcileSessionRows(list,rows,words){
     existing.delete(key);row.dataset.index=i;
     const open=row.querySelector('.session-open'),cell=row.querySelector('.session-main-cell'),pin=row.querySelector('.session-pin');
     cell.id='session-option-'+i;open.dataset.index=i;open.disabled=!s.canOpen;
-    open.title=[s.name,s.accountName||s.account,s.workspace].filter(Boolean).join(' · ');
+
     const account=agentAccounts.find(a=>a.id===s.account),state=s.live?(s.state==='busy'?'Working':s.state==='waiting'?'Waiting':'Open'):'';
+    open.setAttribute('aria-label','Open '+(s.name||'chat')+', '+(account?.name||s.accountName||s.account)+', '+(s.workspace||'Saved workspace'));
     const workspace=s.workspace?.split('/').filter(Boolean).slice(-2).join('/')||'Saved chat';
     const contents={'.session-mark':account?glyphHtml(account):esc((s.accountName||'A').slice(0,1)),'.session-name':highlightSession(s.name,words),'.session-meta':highlightSession(account?.name||s.accountName||s.account,words)+(state?' · '+esc(state):'')+(appearanceSettings.compactSessions?' · <span class="session-inline-workspace">'+highlightSession(workspace,words)+'</span>':''),'.session-workspace':highlightSession(workspace,words)};
     for(const [selector,html] of Object.entries(contents)){const el=row.querySelector(selector);if(el.dataset.markup!==html){el.innerHTML=html;el.dataset.markup=html;}}
-    pin.disabled=!s.canOpen;pin.setAttribute('aria-disabled',String(!s.canOpen||pinPending.has(key)));pin.hidden=!s.canOpen;pin.classList.toggle('pinned',pinned);pin.setAttribute('aria-pressed',String(pinned));pin.setAttribute('aria-label',(pinned?'Unpin ':'Pin ')+(s.name||'chat'));pin.title=pinned?'Unpin chat':'Pin chat';
+    pin.disabled=!s.canOpen;pin.setAttribute('aria-disabled',String(!s.canOpen||pinPending.has(key)));pin.hidden=!s.canOpen;pin.classList.toggle('pinned',pinned);pin.setAttribute('aria-pressed',String(pinned));pin.setAttribute('aria-label',(pinned?'Unpin ':'Pin ')+(s.name||'chat'));
     ordered.push(row);
   });
   for(const el of [...list.children])if(!ordered.includes(el))el.remove();

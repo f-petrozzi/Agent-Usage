@@ -7,7 +7,7 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.0.7**.
+The current release is **5.0.8**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
@@ -17,6 +17,10 @@ and **Codex · Harbor**.
 
 ## Features
 
+- **Drop into a chat.** Drop files onto an agent logo, or right-click to paste a
+  screenshot. Review previews and choose a chat before sending. Codex supports
+  native image queuing when its CLI provides `queue`; Claude and AGY use a
+  copy-and-open handoff. See [attachment behavior and limits](docs/attachment-drop.md).
 - **Usage at a glance.** Account gauges, five-hour and weekly limits, reset times,
   and credits or banked resets where the provider reports them.
 - **Live activity.** Working and Waiting indicators, clickable active sessions,
@@ -184,7 +188,10 @@ The Windows frontend builds on CodeNotch; its licenses and glyph notices are in
 
 Settings → Appearance offers Account labels and aliases and Compact Sessions
 rows. With labels enabled, edit an account's alias in Settings → Accounts.
-Hover or focus a gauge to learn its quota window and used percentage.
+Provider symbols keep their original shapes, with quiet identity light: blue for
+Codex A, violet for Codex B, Claude orange and a multicolor AGY glow. Account
+identity follows reordering and aliases; quota and activity stay on the rings. Gauges and controls
+keep accessible names without native hover tooltips.
 
 Settings → General → Performance recording → Record 10 seconds creates a local,
 bounded trace for testing on your Windows display. See the

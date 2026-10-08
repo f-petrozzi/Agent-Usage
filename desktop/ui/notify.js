@@ -331,7 +331,7 @@ function renderUpdate(){
   uiMotion.attr(s.el,'aria-label',`${word}: ${text}`);
   uiMotion.attr(s.el,'aria-disabled',String(!updateActionable()));
   uiMotion.attr(s.el,'aria-busy',String(['downloading','installing'].includes(updateState.status)));
-  s.el.title=updateState.status==='error'?String(updateState.error||'Check for updates again'):`${word}: ${text}`;
+
 }
 function pumpUpdate(){
   if(!updatePending)return;
