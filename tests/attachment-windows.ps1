@@ -40,13 +40,15 @@ using System.Windows.Forms;
 using System.Drawing;
 public static class RealFileDrag {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window,int command);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
   public static void Run(string file,int x,int y){
     SetProcessDPIAware();
     using(var form=new Form()){
-      form.Text="Attachment drag fixture";form.StartPosition=FormStartPosition.Manual;
+      form.TopMost=true;form.Text="Attachment drag fixture";form.StartPosition=FormStartPosition.Manual;
       form.Location=new Point(160,260);form.Size=new Size(160,100);
       form.MouseDown+=(sender,args)=>{
         Console.WriteLine("source press");
@@ -55,6 +57,7 @@ public static class RealFileDrag {
         Console.WriteLine("drop="+result);form.Close();
       };
       form.Shown+=(sender,args)=>{
+        ShowWindow(form.Handle,5);SetForegroundWindow(form.Handle);
         var source=form.PointToScreen(new Point(40,20));
         Console.WriteLine("source ready at "+source+" window="+form.Handle);
         var input=new System.Threading.Thread(()=>{
