@@ -42,10 +42,17 @@
     if(cell===target){animate(1);return;}
     clear();target=cell;const at=cell.querySelector('.ringwrap').getBoundingClientRect();for(const sibling of pill.querySelectorAll('.cell'))if(sibling!==cell){const r=sibling.querySelector('.ringwrap').getBoundingClientRect();pulls.set(sibling,{x:at.left+at.width/2-r.left-r.width/2,y:at.top+at.height/2-r.top-r.height/2});}cell.classList.add('drop-target');well=document.createElement('div');well.className='gravity-well';well.setAttribute('aria-hidden','true');
     well.innerHTML='<i class="gravity-orbit"></i><i class="gravity-orbit"></i><i class="gravity-stream"></i><i class="gravity-stream"></i><i class="gravity-stream"></i>';
-    // A small local filter merges neighboring beads; only transforms animate.
-    // Keep its raster bounds independent of the fullscreen transparent window.
+    // Jitter eight separated angular strata once, never randomize per frame.
+    // One shared orbit prevents overtaking; bounded drift keeps the liquid alive.
+    // Keep the goo and soft bloom raster independent of the fullscreen window.
     const particles=document.createElementNS(SVG_NS,'svg');particles.classList.add('gravity-particles');particles.setAttribute('viewBox','-50 -50 100 100');
-    particles.innerHTML='<defs><filter id="attachment-particle-goo" filterUnits="userSpaceOnUse" x="-50" y="-50" width="100" height="100" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.4"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 16 -7"/></filter></defs><g filter="url(#attachment-particle-goo)">'+Array.from({length:8},(_,i)=>`<g class="gravity-beads" style="--particle-duration:${2.4+i*.17}s;--particle-delay:${-i*.43}s"><circle cx="${25+i%3*4}" cy="0" r="${2.6+i%3*.6}"/><circle cx="${29+i%3*4}" cy="2" r="1.8"/></g>`).join('')+'</g>';
+    const random=n=>{const x=Math.sin((n+1)*127.1+cell.dataset.p.charCodeAt(0)*311.7)*43758.5453;return x-Math.floor(x);};
+    const grains=Array.from({length:8},(_,i)=>{
+      const angle=i*45+(random(i*5)-.5)*12,radius=29+random(i*5+1)*6;
+      const size=1.3+Math.pow(random(i*5+2),2)*1.2,stretch=1.12+random(i*5+3)*.55;
+      return `<g transform="rotate(${angle})"><g class="gravity-beads" style="--particle-duration:${3.7+random(i*5+4)*2}s;--particle-delay:${-random(i*5+3)*6}s;opacity:${.8+random(i*5+2)*.2}"><ellipse class="gravity-grain" cx="${radius}" cy="0" rx="${size}" ry="${size*stretch}"/><circle cx="${radius+.5}" cy="${size*stretch+1}" r="${size*.52}"/></g></g>`;
+    }).join('');
+    particles.innerHTML='<defs><filter id="attachment-particle-goo" filterUnits="userSpaceOnUse" x="-50" y="-50" width="100" height="100" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation=".65"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 12 -4" result="liquid"/><feGaussianBlur stdDeviation="1.1"/><feComponentTransfer><feFuncA type="linear" slope=".28"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="liquid"/></feMerge></filter></defs><g transform="rotate(-18) scale(1 .8)"><g class="gravity-swarm" filter="url(#attachment-particle-goo)">'+grains+'</g></g>';
     well.append(particles);
     const account=agentAccounts.find(a=>a.id===cell.dataset.p),light=window.accountLight(account,agentAccounts);
     well.style.setProperty('--gravity-color',{'codex-a':'#74a9ff','codex-b':'#be99ff',claude:'#d97757',agy:'#7fabfa'}[light]||'#74a9ff');

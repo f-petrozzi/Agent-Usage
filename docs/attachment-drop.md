@@ -133,3 +133,26 @@ filter dimensions, zero repeated layout after settling and clean cancellation.
 Local browser frame timing averaged 59.6 FPS at both DPI settings, with 95th
 percentile intervals of 16.8/16.7 ms. These measure the test browser’s frame
 scheduling, not a guarantee for every Windows display or GPU.
+
+## Spaced, varied particles (5.1.1)
+
+Purely independent random samples can clump. Applying the
+[PBRT stratified-sampling principle](https://www.pbr-book.org/4ed/Sampling_and_Reconstruction/Stratified_Sampler)
+to this visual effect, eight angular regions each hold one seeded, slightly
+jittered droplet. A shared orbit prevents overtaking; bounded individual angular
+and radial drift preserves irregular motion without losing the gaps. Random
+values are generated once per target, avoiding frame-to-frame flicker.
+
+Most grains are small, with fewer larger knots, tangentially stretched ellipses
+and tiny merging tails. A tighter goo filter preserves these differences; a
+faint local bloom and varied brightness avoid uniformly large glowing blobs.
+Shapes take inspiration from the stretched bright knots described in
+[NASA’s accretion-disk visualization](https://www.nasa.gov/universe/nasa-visualization-shows-a-black-holes-warped-world/).
+The coordinated orbit is an intentional UI spacing choice, not a physics model.
+Existing provider colors, transparent surroundings and notch absorption stay intact.
+Reduced motion retains the separated static positions.
+
+The sustained-hover test seeks a minute of animation and verifies particle
+centers remain at least 10 CSS pixels apart. Local checks measured a minimum
+14.2-pixel gap and approximately 60 FPS at DPR 1 and 2, with a bounded 100 × 100
+filter and no repeated layout after settling.

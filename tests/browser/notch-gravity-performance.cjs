@@ -28,6 +28,19 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    assert.equal(await page.locator('.gravity-well').evaluate(e=>getComputedStyle(e,'::before').content),'none','no opaque backdrop');
    assert.equal(await page.locator('.gravity-beads').count(),8);
    assert.deepEqual(await page.locator('#attachment-particle-goo').evaluate(e=>[e.getAttribute('width'),e.getAttribute('height')]),['100','100'],'goo raster is bounded to the particle area');
+   // Seek a full minute of motion: independently orbiting particles eventually
+   // overtake and clump even when a single screenshot happens to look spaced.
+   const spacing=await page.evaluate(async()=>{
+    const animations=document.querySelector('.gravity-particles').getAnimations({subtree:true});animations.forEach(a=>a.pause());
+    let minimum=Infinity;
+    for(let ms=0;ms<=60000;ms+=137){
+     animations.forEach(a=>a.currentTime=ms);await new Promise(requestAnimationFrame);
+     const points=[...document.querySelectorAll('.gravity-grain')].map(e=>new DOMPoint(e.cx.baseVal.value,e.cy.baseVal.value).matrixTransform(e.getScreenCTM()));
+     for(let i=0;i<points.length;i++)for(let j=i+1;j<points.length;j++)minimum=Math.min(minimum,Math.hypot(points[i].x-points[j].x,points[i].y-points[j].y));
+    }
+    animations.forEach(a=>a.play());return minimum;
+   });
+   assert.ok(spacing>=10,'particle centers stay separated through sustained motion: '+spacing);timings.minimumParticleGap=spacing;
    const cdp=await context.newCDPSession(page);await cdp.send('Performance.enable');const metrics=async()=>Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
    const before=await metrics();await page.waitForTimeout(450);const after=await metrics();
    timings.settledLayouts=after.LayoutCount-before.LayoutCount;assert.ok(timings.settledLayouts<=2,'settled particles do not trigger frame-by-frame layout: '+timings.settledLayouts);
