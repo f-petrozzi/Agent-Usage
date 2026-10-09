@@ -10,7 +10,7 @@
   }
   function paint(){
     if(!target)return;
-    target.style.setProperty('--drop-open',Math.max(0,Math.min(1.08,amount)).toFixed(4));
+    target.style.setProperty('--drop-open',Math.max(0,Math.min(1,amount*2.2)).toFixed(4));
     const ring=target.querySelector('.ringwrap'),at=ring.getBoundingClientRect();
     const phase=amount*Math.PI;
     target.style.setProperty('--hole-radius',`${48+Math.sin(phase)*10}% ${52-Math.sin(phase)*10}% 46% 54% / 56% ${43+Math.sin(phase)*12}% 57% 44%`);
@@ -19,8 +19,9 @@
     window.agentDropGravity={amount:reduced.matches?0:pull,x:at.left+at.width/2,y:at.top+at.height/2};
     paintAttachmentGravity();
     for(const [cell,offset] of pulls){
-      cell.style.setProperty('--pull-x',`${(offset.x*pull*.94).toFixed(3)}px`);cell.style.setProperty('--pull-y',`${(offset.y*pull*.94).toFixed(3)}px`);
-      cell.style.setProperty('--pull-scale',String(1-pull*.92));cell.style.setProperty('--pull-opacity',String(1-pull));
+      const remaining=Math.pow(1-pull,1.6),turn=pull*pull*.85,c=Math.cos(turn),s=Math.sin(turn);
+      cell.style.setProperty('--pull-x',`${(offset.x-(offset.x*c-offset.y*s)*remaining).toFixed(3)}px`);cell.style.setProperty('--pull-y',`${(offset.y-(offset.x*s+offset.y*c)*remaining).toFixed(3)}px`);
+      cell.style.setProperty('--pull-scale',String(Math.max(.04,remaining)));cell.style.setProperty('--pull-opacity',String(Math.min(1,remaining*5)));
     }
   }
   function clear(){
@@ -31,7 +32,7 @@
   }
   function tick(now){
     frame=0;const dt=last?(now-last)/1000:1/60;last=now;
-    [amount,velocity]=uiMotion.spring(amount,velocity,goal,15,.72,dt);
+    [amount,velocity]=uiMotion.spring(amount,velocity,goal,goal?6.5:15,.95,dt);
     uiMotion.paint('attachment-gravity',paint,45);
     if(Math.abs(amount-goal)<.002&&Math.abs(velocity)<.02){amount=goal;velocity=0;if(!goal)clear();else uiMotion.paint('attachment-gravity',paint,45);last=0;}
     else frame=uiMotion.frame(tick);
@@ -86,13 +87,50 @@
   window.addEventListener('unhandledrejection',window.agentDropCancel);
 })();
 
+// Sample the live contours, then deform their material rather than scaling the box.
+// Near material falls first; the radial gradient stretches a neck, while angular
+// motion curves it into the disk. A stylized tidal flow, not a relativity simulation.
+const gravityContours=new WeakMap();
+let gravityInk=null;
 function paintAttachmentGravity(){
   const group=document.getElementById('shape-gravity'),gravity=window.agentDropGravity;
   if(!group)return;
-  if(!gravity||!gravity.amount){group.removeAttribute('transform');return;}
-  const point=new DOMPoint(gravity.x,gravity.y).matrixTransform(shapeSvg.getScreenCTM().inverse()),a=gravity.amount;
-  const horizontal=notchEdge==='top'||notchEdge==='bottom',sx=1-a*(horizontal?.91:.62),sy=1-a*(horizontal?.62:.91);
-  group.setAttribute('transform',`translate(${point.x} ${point.y}) scale(${sx} ${sy}) translate(${-point.x} ${-point.y})`);
+  group.removeAttribute('transform');
+  if(!gravity||!gravity.amount){shapeBody.style.removeProperty('visibility');gravityInk?.remove();gravityInk=null;return;}
+  const svgMatrix=shapeSvg.getScreenCTM();if(!svgMatrix)return;
+  const inverse=svgMatrix.inverse(),point=new DOMPoint(gravity.x,gravity.y).matrixTransform(inverse),a=gravity.amount;
+  if(!gravityInk){gravityInk=document.createElementNS(SVG_NS,'g');gravityInk.id='gravity-ink';group.append(gravityInk);}
+  const contours=[];
+  for(const source of shapeBody.querySelectorAll('.part,.neck,.arm,.sprout-neck,.sprout-drop')){
+    const d=source.getAttribute('d');if(!d)continue;
+    const matrix=source.getScreenCTM();if(!matrix)continue;
+    const stroke=source.classList.contains('arm')?Number(source.getAttribute('stroke-width')||0):0;
+    const key=d+'|'+[matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f,stroke].join(',');
+    let contour=gravityContours.get(source);
+    if(!contour||contour.key!==key){
+      const length=source.getTotalLength(),count=Math.max(16,Math.min(320,Math.ceil(length/3))),points=[];
+      for(let i=0;i<=count;i++){
+        const local=source.getPointAtLength(length*i/count),screen=new DOMPoint(local.x,local.y).matrixTransform(matrix);
+        // Off-screen bleed must stay clipped before being pulled into view.
+        points.push(new DOMPoint(Math.max(0,Math.min(innerWidth,screen.x)),Math.max(0,Math.min(innerHeight,screen.y))).matrixTransform(inverse));
+      }
+      contour={key,points,stroke,closed:/z\s*$/i.test(d)};gravityContours.set(source,contour);
+    }
+    contours.push(contour);
+  }
+  const radius=Math.max(1,...contours.flatMap(c=>c.points.map(p=>Math.hypot(p.x-point.x,p.y-point.y))));
+  while(gravityInk.children.length>contours.length)gravityInk.lastChild.remove();
+  contours.forEach((contour,i)=>{
+    let ink=gravityInk.children[i];if(!ink){ink=document.createElementNS(SVG_NS,'path');gravityInk.append(ink);}
+    const warped=contour.points.map(p=>{
+      const dx=p.x-point.x,dy=p.y-point.y,r=Math.hypot(dx,dy),arrival=.32+.68*Math.pow(r/radius,.6),t=Math.min(1,a/arrival);
+      const distance=r*Math.pow(1-t,1.3),angle=Math.atan2(dy,dx)+1.1*t*t;
+      return `${(point.x+Math.cos(angle)*distance).toFixed(2)} ${(point.y+Math.sin(angle)*distance).toFixed(2)}`;
+    });
+    ink.setAttribute('d','M'+warped.join('L')+(contour.closed?'Z':''));
+    if(contour.stroke){ink.setAttribute('fill','none');ink.setAttribute('stroke','var(--pill)');ink.setAttribute('stroke-width',String(contour.stroke*Math.max(.05,1-a)));ink.setAttribute('stroke-linecap','round');ink.setAttribute('stroke-linejoin','round');}
+  });
+  shapeBody.style.visibility='hidden';
 }
 async function prepareDroppedFiles(account,fileList){
   const list=Array.from(fileList);if(!list.length||list.length>5)throw new Error('Drop up to five files at a time.');

@@ -4,18 +4,9 @@
 .identity-light[data-light="claude"]{--identity-rgb:217,119,87}
 .identity-light[data-light="agy"]{--identity-rgb:49,134,255}
 .identity-light[data-light]:not([data-light=""]){position:relative;isolation:isolate}
-.identity-light[data-light]:not([data-light=""])::before{
-  content:"";position:absolute;inset:-5px;border-radius:50%;z-index:-1;pointer-events:none;
-  background:radial-gradient(ellipse,rgba(var(--identity-rgb),.8) 0%,rgba(var(--identity-rgb),.36) 44%,transparent 74%);
-  filter:blur(4px);opacity:.95;transition:opacity .18s ease;
-}
-.identity-light[data-light]:not([data-light=""])>svg{filter:drop-shadow(0 0 4px rgba(var(--identity-rgb),.8))}
-.identity-light[data-light="agy"]::before{
-  background:radial-gradient(ellipse at 35% 20%,rgba(49,134,255,.8),transparent 64%),radial-gradient(ellipse at 85% 45%,rgba(0,185,92,.7),transparent 62%),radial-gradient(ellipse at 50% 85%,rgba(251,188,4,.7),transparent 62%),radial-gradient(ellipse at 15% 65%,rgba(252,65,61,.7),transparent 62%);
-}
-.identity-light[data-light="agy"]>svg{filter:drop-shadow(0 -1px 3px rgba(49,134,255,.6)) drop-shadow(1px 0 3px rgba(0,185,92,.5)) drop-shadow(0 1px 3px rgba(251,188,4,.45)) drop-shadow(-1px 0 3px rgba(252,65,61,.55))}
-.cell:is(:hover,:focus-visible) .identity-light::before{opacity:.9}
-.acct-mark .identity-light::before,.n-cell .identity-light::before{inset:-2px;filter:blur(3px);opacity:.85}
+/* Alpha-shaped light follows the knot's outer and inner edges; no circular wash. */
+.identity-light[data-light]:not([data-light=""])>svg{filter:drop-shadow(0 0 .8px rgba(var(--identity-rgb),.95)) drop-shadow(0 0 2px rgba(var(--identity-rgb),.2))}
+.identity-light[data-light="agy"]>svg{filter:drop-shadow(0 -.6px .45px rgba(49,134,255,.8)) drop-shadow(.6px 0 .45px rgba(0,185,92,.65)) drop-shadow(0 .6px .45px rgba(251,188,4,.65)) drop-shadow(-.6px 0 .45px rgba(252,65,61,.7))}
+.acct-mark .identity-light>svg,.n-cell .identity-light>svg{filter:drop-shadow(0 0 .7px rgba(var(--identity-rgb),.8))}
 /* Keep the tiny Settings notch's centered absolute positioning. */
 .n-cell .identity-light[data-light]:not([data-light=""]){position:absolute}
-@media(prefers-reduced-motion:reduce){.identity-light[data-light]:not([data-light=""])::before{transition:none}}

@@ -496,3 +496,19 @@ The entire notch contracts into the selected gravity well while its drop hit box
 stay fixed. Agent identity lights are stronger. Browser coverage includes all four
 edges and inline review; Windows coverage includes native bitmap/file clipboard,
 physical hover paste, real OLE dragging and interaction after a drop.
+
+
+## 5.0.11 — Tidal absorption and clearer attachment review
+
+The notch’s contours stretch and curve into the drag-active black hole, with
+near material absorbed before the far edge. Drop targets remain stationary and
+cancellation restores the original drawing; reduced motion stays static.
+Identity lighting becomes a tight colored rim instead of a broad blurred halo.
+
+Attachment review removes the extra X button and retains Escape dismissal.
+“Open chat & copy prompt” now explains the remaining paste-and-send step.
+Codex receipts say queued rather than implying the agent has finished reading.
+Type-specific file illustrations, extension badges, wrapping filenames and sizes
+replace generic document tiles; supported images keep actual thumbnails.
+Claude/AGY delivery research is recorded in the attachment documentation; their
+existing sessions retain the explicit manual handoff in this release.

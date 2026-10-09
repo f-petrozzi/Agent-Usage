@@ -107,10 +107,10 @@ try:
  env['PATH']=os.path.expanduser('~/.local/bin')+':'+env.get('PATH','')
  cli=shutil.which('codex',path=env['PATH'])
  if r['queue']:
-  if not cli: raise ValueError('Codex is unavailable on this host. Use Copy context & open instead.')
+  if not cli: raise ValueError('Codex is unavailable on this host. Use Open chat & copy prompt instead.')
   env['CODEX_HOME']=r['home']
   check=subprocess.run([cli,'queue','--help'],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
-  if check.returncode or b'--thread' not in check.stdout or b'--image' not in check.stdout: raise ValueError('Update Codex to use Send to Codex, or use Copy context & open.')
+  if check.returncode or b'--thread' not in check.stdout or b'--image' not in check.stdout: raise ValueError('Update Codex to use Send to Codex, or use Open chat & copy prompt.')
  decoded=[]
  for i,f in enumerate(files):
   data=base64.b64decode(f['data'],validate=True)
@@ -148,7 +148,7 @@ function transport(target, platform = process.platform) {
 }
 async function deliver(draft, target, { queue = false, message = '', launch = spawn, platform } = {}) {
   if (!validLinuxPath(target.cwd) || !validLinuxPath(target.agentHome) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.sessionId || '')) throw new Error('Reload sessions to recover this chat’s workspace and account.');
-  if (queue && target.provider !== 'codex') throw new Error('This agent supports Copy context & open.');
+  if (queue && target.provider !== 'codex') throw new Error('This agent supports Open chat & copy prompt.');
   if (typeof message !== 'string' || message.length > 8000) throw new Error('Keep your message under 8,000 characters.');
   const [exe,args] = transport(target, platform);
   const payload = JSON.stringify({cwd:target.cwd,home:target.agentHome,session:target.sessionId,queue,message,

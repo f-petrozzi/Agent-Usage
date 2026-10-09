@@ -50,7 +50,7 @@ test('native Codex queue receives exact account, session, message, and image pat
     assert.equal((await fs.stat(result.paths[0])).mode&0o777,0o600);assert.ok(result.paths.every(p=>p.startsWith(cwd+path.sep)));
     await fs.rm(path.join(root,'receipt.json'));
     const copied=await deliver(draft,{...target,provider:'claude'},{launch});assert.equal(copied.queued,false);await assert.rejects(fs.stat(path.join(root,'receipt.json')),/ENOENT/);
-    await assert.rejects(deliver(draft,{...target,provider:'claude'},{queue:true,launch}),/Copy context/);
+    await assert.rejects(deliver(draft,{...target,provider:'claude'},{queue:true,launch}),/Open chat & copy prompt/);
     await assert.rejects(deliver(draft,{...target,cwd:'relative'},{launch}),/Reload/);
     await fs.writeFile(path.join(bin,'codex'),'#!/usr/bin/python3\nprint("old cli")\n',{mode:0o700});
     const before=await fs.readdir(cwd);await assert.rejects(deliver(draft,target,{queue:true,launch}),/Update Codex/);assert.deepEqual(await fs.readdir(cwd),before,'unsupported queue does not transfer files');

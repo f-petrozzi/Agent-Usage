@@ -43,15 +43,15 @@ app.whenReady().then(async()=>{
  assert.equal(await window.webContents.executeJavaScript("document.querySelector('.attachment-send').disabled"),true,'session selection stays explicit');
  await clipboard.write([new ClipboardItem({'image/png':new Blob([fs.readFileSync(file)],{type:'image/png'})})]);assert.equal(await clipboard.has('image/png'),true);
  await window.webContents.executeJavaScript(`window.agentUsage.invoke('paste_attachment',{account:'${account}'})`);
- await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-file>span:last-child')?.textContent==='Screenshot.png'"));
+ await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-file-name')?.textContent==='Screenshot.png'"));
  await window.webContents.executeJavaScript("document.querySelector('.session-open').click();document.querySelector('.attachment-message').value='Review the screenshot';document.querySelector('.attachment-send').click()");
- await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-status')?.textContent.includes('Sent')"));
+ await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-status')?.textContent.includes('Queued')"));
  assert.equal(sent.length,1);assert.equal(sent[0].target.agentHome,row.agentHome);assert.equal(sent[0].target.sessionId,sessionId);assert.equal(sent[0].draft.files[0].image,'png');assert.equal(sent[0].options.message,'Review the screenshot');
- await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
+ await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");await wait(700);
  await window.webContents.executeJavaScript(`(async()=>{const bytes=await document.getElementById('fixture-file').files[0].arrayBuffer(),virtual=new File([bytes],'browser.png',{type:'image/png'}),dt=new DataTransfer();dt.items.add(virtual);document.querySelector('.cell').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));})()`);
- await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-file>span:last-child')?.textContent==='browser.png'"));
+ await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-file-name')?.textContent==='browser.png'"));
  assert.equal(main.draft.files[0].image,'png','virtual images preserve bytes through the sandboxed bridge');
- await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
+ await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");await wait(700);
  if(process.platform==='win32'){
    const {spawn}=require('node:child_process');
    async function native(mode,x=0,y=0){
@@ -71,12 +71,12 @@ app.whenReady().then(async()=>{
    await native('paste',point.x,point.y);
    await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-preview img') && document.getElementById('card').classList.contains('show')"));
    assert.equal(main.draft.account,account,'physical hover Ctrl+V routes to the hovered account');
-   await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
+   await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");await wait(700);
    const outcome=await native('drag',point.x,point.y);console.log('Native OLE drag:',outcome.trim());
    await until(()=>window.webContents.executeJavaScript("document.querySelector('.attachment-preview img') && document.getElementById('card').classList.contains('show')"));
    assert.equal(main.draft.files[0].name,'design.png');assert.equal(main.draft.account,account);
    assert.equal(await window.webContents.executeJavaScript("window.agentDropActive"),false,'drop restores pointer interaction');
-   await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
+   await window.webContents.executeJavaScript("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");await wait(700);
    await native('click',point.x,point.y);await until(()=>window.webContents.executeJavaScript("document.getElementById('card').classList.contains('show')"));
    console.log('Passed Windows bitmap/file clipboard, physical hover paste, real OLE file drag, and notch recovery.');
  }

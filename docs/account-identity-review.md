@@ -12,10 +12,12 @@ AGY uses a restrained blue/green/yellow/red blend based on the full-color asset
 in [Google's press kit](https://antigravity.google/press): `#3186ff`, `#00b95c`,
 `#fbbc04`, `#fc413d`. The existing provider glyphs remain unchanged.
 
-Keep light close to the symbol, using a low-opacity diffuse halo and a tight
-colored shadow. It travels with existing notch movement; no independent pulse
-or continuous gradient animation. Hover/focus raises the halo only slightly,
-and reduced motion removes that transition. Settings uses a quieter version.
+In 5.0.11, identity light follows the symbol’s actual alpha silhouette, including
+its open center, using a tight 0.8px colored edge and a low-opacity 2px falloff.
+The broad circular glow is removed. AGY keeps four compact directional brand
+colors. Light travels with existing motion without an independent pulse or hover
+animation; Settings uses a quieter rim. This follows the shape-aware behavior of
+[CSS drop-shadow](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/filter-function/drop-shadow).
 Quota and activity rings keep their established signals. Accessible names and
 optional aliases remain available because glow alone is not a reliable identity
 signal for everyone.
