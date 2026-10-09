@@ -80,7 +80,10 @@ the review form quiet, legible and explicit.
 
 ## Absorption and preview refinement (5.0.11)
 
-The contour is sampled and deformed nonuniformly: near material falls first,
+The contour is sampled and deformed nonuniformly. In 5.0.12 the rounded inner
+lip facing the screen center falls first; the boundary against the screen stays
+anchored until later in the pull. The slower collapse makes the inward funnel
+and trailing strands more visible. As material flows,
 radial stretching draws a narrow neck, and angular motion bends the stream into
 an accretion-like disk. The original drawing is restored on cancellation. The
 screen-edge bleed is clipped before deformation; hit targets never move. The

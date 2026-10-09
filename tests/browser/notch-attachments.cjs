@@ -21,6 +21,17 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
    const originalTargets=await page.locator('.cell').evaluateAll(cells=>cells.map(c=>{const r=c.getBoundingClientRect();return [r.x,r.y,r.width,r.height].map(Math.round);}));
    await page.evaluate(()=>__drag('.cell[data-p="codex-b"]'));await page.waitForTimeout(160);
    assert.ok(await page.locator('#gravity-ink path').count()>0,'material is deformed as contours');
+   const direction=await page.evaluate(()=>{
+    const source=document.querySelector('#shape-body .part'),length=source.getTotalLength(),count=Math.max(16,Math.min(320,Math.ceil(length/3))),matrix=source.getScreenCTM();
+    const original=Array.from({length:count+1},(_,i)=>{const p=source.getPointAtLength(length*i/count),s=new DOMPoint(p.x,p.y).matrixTransform(matrix);return {x:Math.max(0,Math.min(innerWidth,s.x)),y:Math.max(0,Math.min(innerHeight,s.y))};});
+    const depth=p=>notchEdge==='top'?p.y:notchEdge==='bottom'?innerHeight-p.y:notchEdge==='left'?p.x:innerWidth-p.x;
+    const lip=original.reduce((best,p,i)=>depth(p)>depth(original[best])?i:best,0),saved=window.agentDropGravity.amount;
+    const sample=amount=>{window.agentDropGravity.amount=amount;paintAttachmentGravity();const values=document.querySelector('#gravity-ink path').getAttribute('d').match(/-?\d+(?:\.\d+)?/g).map(Number),m=shapeSvg.getScreenCTM();return original.map((p,i)=>{const s=new DOMPoint(values[i*2],values[i*2+1]).matrixTransform(m);return Math.hypot(s.x-p.x,s.y-p.y);});};
+    const early=sample(.25),late=sample(.8);window.agentDropGravity.amount=saved;paintAttachmentGravity();return {rearEarly:early[0],lipEarly:early[lip],rearLate:late[0]};
+   });
+   assert.ok(direction.rearEarly<.1,'the screen boundary stays anchored initially');
+   assert.ok(direction.lipEarly>5,'the screen-facing inner lip is absorbed first');
+   assert.ok(direction.rearLate>5,'the screen boundary releases later');
    const firstContour=await page.locator('#gravity-ink path').first().getAttribute('d');
    if(edge==='top'){const r=await page.locator('#pill').boundingBox();await page.screenshot({path:path.join(OUT,'gravity-absorbing.png'),clip:{x:Math.max(0,r.x-85),y:0,width:r.width+170,height:r.height+80}});}
    await page.waitForTimeout(300);

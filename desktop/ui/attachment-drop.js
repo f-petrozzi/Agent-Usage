@@ -10,7 +10,7 @@
   }
   function paint(){
     if(!target)return;
-    target.style.setProperty('--drop-open',Math.max(0,Math.min(1,amount*2.2)).toFixed(4));
+    target.style.setProperty('--drop-open',Math.max(0,Math.min(1,amount*3.4)).toFixed(4));
     const ring=target.querySelector('.ringwrap'),at=ring.getBoundingClientRect();
     const phase=amount*Math.PI;
     target.style.setProperty('--hole-radius',`${48+Math.sin(phase)*10}% ${52-Math.sin(phase)*10}% 46% 54% / 56% ${43+Math.sin(phase)*12}% 57% 44%`);
@@ -32,7 +32,7 @@
   }
   function tick(now){
     frame=0;const dt=last?(now-last)/1000:1/60;last=now;
-    [amount,velocity]=uiMotion.spring(amount,velocity,goal,goal?6.5:15,.95,dt);
+    [amount,velocity]=uiMotion.spring(amount,velocity,goal,goal?4.8:15,.95,dt);
     uiMotion.paint('attachment-gravity',paint,45);
     if(Math.abs(amount-goal)<.002&&Math.abs(velocity)<.02){amount=goal;velocity=0;if(!goal)clear();else uiMotion.paint('attachment-gravity',paint,45);last=0;}
     else frame=uiMotion.frame(tick);
@@ -88,8 +88,8 @@
 })();
 
 // Sample the live contours, then deform their material rather than scaling the box.
-// Near material falls first; the radial gradient stretches a neck, while angular
-// motion curves it into the disk. A stylized tidal flow, not a relativity simulation.
+// The screen-facing lip falls first, then the anchored screen edge releases.
+// The radial gradient stretches a neck while angular motion curves it into the disk.
 const gravityContours=new WeakMap();
 let gravityInk=null;
 function paintAttachmentGravity(){
@@ -119,12 +119,18 @@ function paintAttachmentGravity(){
     contours.push(contour);
   }
   const radius=Math.max(1,...contours.flatMap(c=>c.points.map(p=>Math.hypot(p.x-point.x,p.y-point.y))));
+  const depth=p=>{const s=p.matrixTransform(svgMatrix);return notchEdge==='top'?s.y:notchEdge==='bottom'?innerHeight-s.y:notchEdge==='left'?s.x:innerWidth-s.x;};
+  const maxDepth=Math.max(1,...contours.flatMap(c=>c.points.map(depth)));
   while(gravityInk.children.length>contours.length)gravityInk.lastChild.remove();
   contours.forEach((contour,i)=>{
     let ink=gravityInk.children[i];if(!ink){ink=document.createElementNS(SVG_NS,'path');gravityInk.append(ink);}
     const warped=contour.points.map(p=>{
-      const dx=p.x-point.x,dy=p.y-point.y,r=Math.hypot(dx,dy),arrival=.32+.68*Math.pow(r/radius,.6),t=Math.min(1,a/arrival);
-      const distance=r*Math.pow(1-t,1.3),angle=Math.atan2(dy,dx)+1.1*t*t;
+      const inward=Math.max(0,Math.min(1,depth(p)/maxDepth));
+      // Delay the rear boundary so a visible concave bite travels through the
+      // material from the rounded inner lip, rather than peeling the screen line.
+      const delay=.58*Math.pow(1-inward,1.2),flow=Math.max(0,(a-delay)/(1-delay));
+      const dx=p.x-point.x,dy=p.y-point.y,r=Math.hypot(dx,dy),arrival=.52+.48*Math.pow(r/radius,.6),t=Math.min(1,flow/arrival);
+      const distance=r*Math.pow(1-t,1.15),angle=Math.atan2(dy,dx)+1.45*t*t;
       return `${(point.x+Math.cos(angle)*distance).toFixed(2)} ${(point.y+Math.sin(angle)*distance).toFixed(2)}`;
     });
     ink.setAttribute('d','M'+warped.join('L')+(contour.closed?'Z':''));

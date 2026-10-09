@@ -512,3 +512,13 @@ Type-specific file illustrations, extension badges, wrapping filenames and sizes
 replace generic document tiles; supported images keep actual thumbnails.
 Claude/AGY delivery research is recorded in the attachment documentation; their
 existing sessions retain the explicit manual handoff in this release.
+
+
+## 5.0.12 — Absorb the inner lip first
+
+Black-hole absorption now starts at the notch’s rounded edge facing the center
+of the screen. The screen boundary stays anchored initially and releases later,
+forming a deeper inward funnel instead of peeling the straight screen line.
+The material moves more slowly and curves further before entering the hole.
+All four edges retain stationary drop targets and cancellation restores the notch.
+Browser coverage verifies the order of lip and screen-boundary movement.
