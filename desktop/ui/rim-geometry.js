@@ -88,6 +88,6 @@ const rimGeometry=(()=>{
     // removed by the same union as the whole-notch light, leaving an open contour.
     return union(polygons,owner);
   }
-  return {contour,exposed};
+  return {contour,exposed,profile};
 })();
 if(typeof module!=='undefined')module.exports=rimGeometry;

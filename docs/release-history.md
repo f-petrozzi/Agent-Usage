@@ -522,3 +522,17 @@ forming a deeper inward funnel instead of peeling the straight screen line.
 The material moves more slowly and curves further before entering the hole.
 All four edges retain stationary drop targets and cancellation restores the notch.
 Browser coverage verifies the order of lip and screen-boundary movement.
+
+
+## 5.1.0 — Transparent gooey particle halo
+
+Remove the broad black backdrop around the drag-active hole. A small dark core
+is surrounded by transparent accretion arcs and merging colored particle beads.
+The existing inner-lip-first absorption remains, then its contour is removed
+when it has fully entered the hole. Particle motion uses a bounded 100 × 100
+goo filter and is removed on cancellation; reduced motion stays static.
+
+Reuse the notch’s analytic profile and cache the pull field to reduce first-hover
+work. Repeated drag events no longer repaint a settled effect. A sustained-drag
+browser check covers DPR 1 and 2; local frame timing averaged 59.6 FPS and
+settled particle motion caused no repeated layout.

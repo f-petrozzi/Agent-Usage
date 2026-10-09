@@ -115,3 +115,21 @@ terminal. Installed `claude --help` and `agy --help` were also checked. Neither
 exposed an equivalent general-purpose native queue command for this handoff.
 The app therefore keeps the explicit open-and-paste route until it can verify
 and address a configured delivery bridge for each selected session.
+
+## Transparent particle halo (5.1.0)
+
+The broad black plate and its shadow are removed. After the notch is absorbed,
+only a small dark core, thin accretion arcs and merging colored beads remain over
+the transparent desktop. Sixteen beads in eight orbit groups use one local
+100 × 100 SVG goo filter; motion changes transforms within that bounded area.
+The particle animation is removed on leaving, cancelling, dropping or hiding.
+Reduced motion keeps it static.
+
+The main contour now reuses the notch’s analytic rounded profile instead of
+repeated SVG arc-length queries. Pull-field geometry is cached, absorbed contours
+are removed, and repeated drag-over events do not restart settled painting.
+A sustained-drag test at DPR 1 and 2 checks transparent surroundings, bounded
+filter dimensions, zero repeated layout after settling and clean cancellation.
+Local browser frame timing averaged 59.6 FPS at both DPI settings, with 95th
+percentile intervals of 16.8/16.7 ms. These measure the test browser’s frame
+scheduling, not a guarantee for every Windows display or GPU.

@@ -37,11 +37,16 @@
     if(Math.abs(amount-goal)<.002&&Math.abs(velocity)<.02){amount=goal;velocity=0;if(!goal)clear();else uiMotion.paint('attachment-gravity',paint,45);last=0;}
     else frame=uiMotion.frame(tick);
   }
-  function animate(value){goal=value;if(reduced.matches){amount=value;velocity=0;if(!value)clear();else paint();return;}if(!frame)frame=uiMotion.frame(tick);}
+  function animate(value){if(goal===value&&!frame&&amount===value)return;goal=value;if(reduced.matches){amount=value;velocity=0;if(!value)clear();else paint();return;}if(!frame)frame=uiMotion.frame(tick);}
   function select(cell){
     if(cell===target){animate(1);return;}
     clear();target=cell;const at=cell.querySelector('.ringwrap').getBoundingClientRect();for(const sibling of pill.querySelectorAll('.cell'))if(sibling!==cell){const r=sibling.querySelector('.ringwrap').getBoundingClientRect();pulls.set(sibling,{x:at.left+at.width/2-r.left-r.width/2,y:at.top+at.height/2-r.top-r.height/2});}cell.classList.add('drop-target');well=document.createElement('div');well.className='gravity-well';well.setAttribute('aria-hidden','true');
     well.innerHTML='<i class="gravity-orbit"></i><i class="gravity-orbit"></i><i class="gravity-stream"></i><i class="gravity-stream"></i><i class="gravity-stream"></i>';
+    // A small local filter merges neighboring beads; only transforms animate.
+    // Keep its raster bounds independent of the fullscreen transparent window.
+    const particles=document.createElementNS(SVG_NS,'svg');particles.classList.add('gravity-particles');particles.setAttribute('viewBox','-50 -50 100 100');
+    particles.innerHTML='<defs><filter id="attachment-particle-goo" filterUnits="userSpaceOnUse" x="-50" y="-50" width="100" height="100" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.4"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 16 -7"/></filter></defs><g filter="url(#attachment-particle-goo)">'+Array.from({length:8},(_,i)=>`<g class="gravity-beads" style="--particle-duration:${2.4+i*.17}s;--particle-delay:${-i*.43}s"><circle cx="${25+i%3*4}" cy="0" r="${2.6+i%3*.6}"/><circle cx="${29+i%3*4}" cy="2" r="1.8"/></g>`).join('')+'</g>';
+    well.append(particles);
     const account=agentAccounts.find(a=>a.id===cell.dataset.p),light=window.accountLight(account,agentAccounts);
     well.style.setProperty('--gravity-color',{'codex-a':'#74a9ff','codex-b':'#be99ff',claude:'#d97757',agy:'#7fabfa'}[light]||'#74a9ff');
     cell.querySelector('.ringwrap').append(well);document.body.classList.add('drop-hover');window.agentDropActive=true;
@@ -91,12 +96,13 @@
 // The screen-facing lip falls first, then the anchored screen edge releases.
 // The radial gradient stretches a neck while angular motion curves it into the disk.
 const gravityContours=new WeakMap();
-let gravityInk=null;
+let gravityInk=null,gravityField=null;
 function paintAttachmentGravity(){
   const group=document.getElementById('shape-gravity'),gravity=window.agentDropGravity;
   if(!group)return;
   group.removeAttribute('transform');
-  if(!gravity||!gravity.amount){shapeBody.style.removeProperty('visibility');gravityInk?.remove();gravityInk=null;return;}
+  if(!gravity||!gravity.amount){shapeBody.style.removeProperty('visibility');gravityInk?.remove();gravityInk=null;gravityField=null;return;}
+  if(gravity.amount>=.999){shapeBody.style.visibility='hidden';gravityInk?.remove();gravityInk=null;return;}
   const svgMatrix=shapeSvg.getScreenCTM();if(!svgMatrix)return;
   const inverse=svgMatrix.inverse(),point=new DOMPoint(gravity.x,gravity.y).matrixTransform(inverse),a=gravity.amount;
   if(!gravityInk){gravityInk=document.createElementNS(SVG_NS,'g');gravityInk.id='gravity-ink';group.append(gravityInk);}
@@ -105,12 +111,25 @@ function paintAttachmentGravity(){
     const d=source.getAttribute('d');if(!d)continue;
     const matrix=source.getScreenCTM();if(!matrix)continue;
     const stroke=source.classList.contains('arm')?Number(source.getAttribute('stroke-width')||0):0;
-    const key=d+'|'+[matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f,stroke].join(',');
+    const key=d+'|'+[matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f,stroke,innerWidth,innerHeight].join(',');
     let contour=gravityContours.get(source);
     if(!contour||contour.key!==key){
-      const length=source.getTotalLength(),count=Math.max(16,Math.min(320,Math.ceil(length/3))),points=[];
-      for(let i=0;i<=count;i++){
-        const local=source.getPointAtLength(length*i/count),screen=new DOMPoint(local.x,local.y).matrixTransform(matrix);
+      const points=[],locals=[];
+      if(!passage&&source===partA&&source.rimPart){
+        // Reuse the notch's analytic profile. SVG length queries repeatedly
+        // flatten the same arcs and caused a noticeable first-hover hitch.
+        const profile=rimGeometry.profile(source.rimPart);
+        for(let i=0;i<profile.length;i++){
+          const p=profile[i],q=profile[(i+1)%profile.length],steps=Math.max(1,Math.ceil(Math.hypot(q[0]-p[0],q[1]-p[1])/4));
+          for(let j=0;j<steps;j++)locals.push({x:p[0]+(q[0]-p[0])*j/steps,y:p[1]+(q[1]-p[1])*j/steps});
+        }
+        locals.push(locals[0]);
+      }else{
+        const length=source.getTotalLength(),count=Math.max(16,Math.min(120,Math.ceil(length/4)));
+        for(let i=0;i<=count;i++)locals.push(source.getPointAtLength(length*i/count));
+      }
+      for(const local of locals){
+        const screen=new DOMPoint(local.x,local.y).matrixTransform(matrix);
         // Off-screen bleed must stay clipped before being pulled into view.
         points.push(new DOMPoint(Math.max(0,Math.min(innerWidth,screen.x)),Math.max(0,Math.min(innerHeight,screen.y))).matrixTransform(inverse));
       }
@@ -118,25 +137,32 @@ function paintAttachmentGravity(){
     }
     contours.push(contour);
   }
-  const radius=Math.max(1,...contours.flatMap(c=>c.points.map(p=>Math.hypot(p.x-point.x,p.y-point.y))));
-  const depth=p=>{const s=p.matrixTransform(svgMatrix);return notchEdge==='top'?s.y:notchEdge==='bottom'?innerHeight-s.y:notchEdge==='left'?s.x:innerWidth-s.x;};
-  const maxDepth=Math.max(1,...contours.flatMap(c=>c.points.map(depth)));
+  const fieldKey=notchEdge+'|'+point.x+','+point.y+'|'+contours.map(c=>c.key).join('|');
+  if(gravityField?.key!==fieldKey){
+    const radius=Math.max(1,...contours.flatMap(c=>c.points.map(p=>Math.hypot(p.x-point.x,p.y-point.y))));
+    const depth=p=>{const s=p.matrixTransform(svgMatrix);return notchEdge==='top'?s.y:notchEdge==='bottom'?innerHeight-s.y:notchEdge==='left'?s.x:innerWidth-s.x;};
+    const maxDepth=Math.max(1,...contours.flatMap(c=>c.points.map(depth)));
+    gravityField={key:fieldKey,contours:contours.map(c=>c.points.map(p=>{
+      const inward=Math.max(0,Math.min(1,depth(p)/maxDepth)),dx=p.x-point.x,dy=p.y-point.y,r=Math.hypot(dx,dy);
+      return {r,angle:Math.atan2(dy,dx),delay:.58*Math.pow(1-inward,1.2),arrival:.52+.48*Math.pow(r/radius,.6)};
+    }))};
+  }
   while(gravityInk.children.length>contours.length)gravityInk.lastChild.remove();
   contours.forEach((contour,i)=>{
     let ink=gravityInk.children[i];if(!ink){ink=document.createElementNS(SVG_NS,'path');gravityInk.append(ink);}
-    const warped=contour.points.map(p=>{
-      const inward=Math.max(0,Math.min(1,depth(p)/maxDepth));
+    const warped=gravityField.contours[i].map(p=>{
       // Delay the rear boundary so a visible concave bite travels through the
       // material from the rounded inner lip, rather than peeling the screen line.
-      const delay=.58*Math.pow(1-inward,1.2),flow=Math.max(0,(a-delay)/(1-delay));
-      const dx=p.x-point.x,dy=p.y-point.y,r=Math.hypot(dx,dy),arrival=.52+.48*Math.pow(r/radius,.6),t=Math.min(1,flow/arrival);
-      const distance=r*Math.pow(1-t,1.15),angle=Math.atan2(dy,dx)+1.45*t*t;
+      const flow=Math.max(0,(a-p.delay)/(1-p.delay)),t=Math.min(1,flow/p.arrival);
+      const distance=p.r*Math.pow(1-t,1.15),angle=p.angle+1.45*t*t;
       return `${(point.x+Math.cos(angle)*distance).toFixed(2)} ${(point.y+Math.sin(angle)*distance).toFixed(2)}`;
     });
     ink.setAttribute('d','M'+warped.join('L')+(contour.closed?'Z':''));
     if(contour.stroke){ink.setAttribute('fill','none');ink.setAttribute('stroke','var(--pill)');ink.setAttribute('stroke-width',String(contour.stroke*Math.max(.05,1-a)));ink.setAttribute('stroke-linecap','round');ink.setAttribute('stroke-linejoin','round');}
   });
   shapeBody.style.visibility='hidden';
+  // Once absorbed, leave no material raster or contour work behind the hole.
+  gravityInk.style.opacity=String(Math.max(0,Math.min(1,(1-a)*5)));
 }
 async function prepareDroppedFiles(account,fileList){
   const list=Array.from(fileList);if(!list.length||list.length>5)throw new Error('Drop up to five files at a time.');

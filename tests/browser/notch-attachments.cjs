@@ -22,12 +22,12 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
    await page.evaluate(()=>__drag('.cell[data-p="codex-b"]'));await page.waitForTimeout(160);
    assert.ok(await page.locator('#gravity-ink path').count()>0,'material is deformed as contours');
    const direction=await page.evaluate(()=>{
-    const source=document.querySelector('#shape-body .part'),length=source.getTotalLength(),count=Math.max(16,Math.min(320,Math.ceil(length/3))),matrix=source.getScreenCTM();
-    const original=Array.from({length:count+1},(_,i)=>{const p=source.getPointAtLength(length*i/count),s=new DOMPoint(p.x,p.y).matrixTransform(matrix);return {x:Math.max(0,Math.min(innerWidth,s.x)),y:Math.max(0,Math.min(innerHeight,s.y))};});
-    const depth=p=>notchEdge==='top'?p.y:notchEdge==='bottom'?innerHeight-p.y:notchEdge==='left'?p.x:innerWidth-p.x;
-    const lip=original.reduce((best,p,i)=>depth(p)>depth(original[best])?i:best,0),saved=window.agentDropGravity.amount;
-    const sample=amount=>{window.agentDropGravity.amount=amount;paintAttachmentGravity();const values=document.querySelector('#gravity-ink path').getAttribute('d').match(/-?\d+(?:\.\d+)?/g).map(Number),m=shapeSvg.getScreenCTM();return original.map((p,i)=>{const s=new DOMPoint(values[i*2],values[i*2+1]).matrixTransform(m);return Math.hypot(s.x-p.x,s.y-p.y);});};
-    const early=sample(.25),late=sample(.8);window.agentDropGravity.amount=saved;paintAttachmentGravity();return {rearEarly:early[0],lipEarly:early[lip],rearLate:late[0]};
+    const saved=window.agentDropGravity.amount;
+    const sample=amount=>{window.agentDropGravity.amount=amount;paintAttachmentGravity();const values=document.querySelector('#gravity-ink path').getAttribute('d').match(/-?\d+(?:\.\d+)?/g).map(Number),m=shapeSvg.getScreenCTM();return Array.from({length:values.length/2},(_,i)=>new DOMPoint(values[i*2],values[i*2+1]).matrixTransform(m));};
+    const original=sample(.0000001),depth=p=>notchEdge==='top'?p.y:notchEdge==='bottom'?innerHeight-p.y:notchEdge==='left'?p.x:innerWidth-p.x;
+    const lip=original.reduce((best,p,i)=>depth(p)>depth(original[best])?i:best,0),early=sample(.25),late=sample(.8);
+    const distance=(points,i)=>Math.hypot(points[i].x-original[i].x,points[i].y-original[i].y);
+    window.agentDropGravity.amount=saved;paintAttachmentGravity();return {rearEarly:distance(early,0),lipEarly:distance(early,lip),rearLate:distance(late,0)};
    });
    assert.ok(direction.rearEarly<.1,'the screen boundary stays anchored initially');
    assert.ok(direction.lipEarly>5,'the screen-facing inner lip is absorbed first');
@@ -52,6 +52,7 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>__drag('.cell[data-p="codex-b"]'));
   assert.equal(await page.locator('.gravity-well').evaluate(e=>getComputedStyle(e).opacity),'1');assert.equal(await page.locator('.gravity-stream').first().evaluate(e=>getComputedStyle(e).animationName),'none');
   await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})));assert.equal(await page.locator('.gravity-well').count(),0);
+  assert.equal(await page.locator('.gravity-beads').count(),0,'particle animation is removed on cancellation');
   assert.deepEqual(errors,[]);
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.evaluate(()=>{window.agentTracking=true;});
