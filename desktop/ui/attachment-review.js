@@ -21,7 +21,7 @@ function refreshAttachmentSelection(){
   const selected=attachmentSelection;
   for(const row of card.querySelectorAll('.session-result'))row.classList.toggle('attachment-selected',!!selected&&sessionMatches[Number(row.dataset.index)]?.id===selected.id);
   for(const button of card.querySelectorAll('.attachment-send,.attachment-copy'))button.disabled=window.attachmentReviewBusy||!selected;
-  const note=card.querySelector('.attachment-target');if(note)note.textContent=window.attachmentReviewDraft.completed?'Sent to the selected session':selected?'To '+(selected.name||selected.workspace):'Select a session below';
+  const note=card.querySelector('.attachment-target');if(note)note.textContent=window.attachmentReviewDraft.completed?'Sent to the selected session':selected?'To '+(selected.name||selected.workspace):'Choose a session to continue';
   const send=card.querySelector('.attachment-send');if(send)send.hidden=agentAccounts.find(a=>a.id===window.attachmentReviewDraft.account)?.base!=='codex';
 }
 function renderAttachmentReview(){
@@ -38,7 +38,7 @@ function renderAttachmentReview(){
   for(const file of draft.files){const item=document.createElement('div');item.className='attachment-file';const visual=document.createElement(file.preview?'img':'span');if(file.preview){visual.src=file.preview;visual.alt=file.name;}else visual.textContent='▤';const name=document.createElement('span');name.textContent=file.name;item.append(visual,name);preview.append(item);}
   card.querySelector('.session-head').after(preview);
   const compose=document.createElement('div');compose.className='attachment-compose';
-  compose.innerHTML='<div class="attachment-target">Select a session below</div><textarea class="attachment-message" rows="2" maxlength="8000" aria-label="Attachment message" placeholder="What should the agent look at?"></textarea><div class="attachment-actions"><button type="button" class="attachment-copy session-tool-action" disabled>Copy context &amp; open</button><button type="button" class="attachment-send session-tool-action" disabled>Send to Codex</button><button type="button" class="attachment-close session-tool-action" aria-label="Cancel attachment">×</button></div><div class="attachment-status" role="status" aria-live="polite"></div>';
+  compose.innerHTML='<div class="attachment-target">Choose a session to continue</div><textarea class="attachment-message" rows="2" maxlength="8000" aria-label="Attachment message" placeholder="What should the agent look at?"></textarea><div class="attachment-actions"><button type="button" class="attachment-copy session-tool-action" disabled>Copy context &amp; open</button><button type="button" class="attachment-send session-tool-action" disabled>Send to Codex</button><button type="button" class="attachment-close session-tool-action" aria-label="Cancel attachment">×</button></div><div class="attachment-status" role="status" aria-live="polite"></div>';
   card.querySelector('.session-results').after(compose);
   compose.querySelector('.attachment-close').addEventListener('click',()=>hideCard());
   compose.querySelector('.attachment-copy').addEventListener('click',()=>sendAttachmentReview(false));

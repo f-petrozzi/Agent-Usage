@@ -35,12 +35,13 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   assert.deepEqual(errors,[]);
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.evaluate(()=>{window.agentTracking=true;});
-  await page.evaluate(()=>__emit('attachment_draft',{token:'fixture',account:'codex-b',files:[{name:'design.png',size:10}]}));
+  await page.evaluate(preview=>__emit('attachment_draft',{token:'fixture',account:'codex-b',files:[{name:'design.png',size:10,preview}]}),'data:image/png;base64,'+fs.readFileSync(path.resolve(UI,'../../docs/images/agent-identity-glow.png')).toString('base64'));
   await page.evaluate(()=>__emit('release'));
   await page.waitForTimeout(800);
   assert.equal(await page.locator('.attachment-preview').count(),1);assert.equal(await page.locator('.attachment-send').isDisabled(),true,'explicit selection is required');
   assert.equal(await page.locator('.session-result').count(),2);assert.equal(await page.locator('.session-filter-row').isVisible(),false);
   await page.locator('.session-open').nth(1).click();await page.locator('.attachment-message').fill('Compare this design');
+  await page.screenshot({path:path.join(OUT,'attachment-review-ready.png')});
   await page.locator('.attachment-send').click();
   assert.deepEqual(await page.evaluate(()=>__calls.filter(([c])=>c==='deliver_attachments').at(-1)[1]),{token:'fixture',id:'b',message:'Compare this design',queue:true});
   await page.screenshot({path:path.join(OUT,'attachment-review.png')});
