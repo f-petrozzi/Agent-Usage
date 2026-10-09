@@ -1,15 +1,19 @@
 param([string]$Mode,[string]$File,[int]$X=0,[int]$Y=0)
 $ErrorActionPreference = 'Stop'
+[Console]::WriteLine('fixture='+$Mode)
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+[Console]::WriteLine('assemblies ready')
 if ($Mode -eq 'image') {
   $image = [System.Drawing.Image]::FromFile($File)
   try { [System.Windows.Forms.Clipboard]::SetImage($image) } finally { $image.Dispose() }
+  [Console]::WriteLine('done')
   exit
 }
 if ($Mode -eq 'file') {
   $files = New-Object System.Collections.Specialized.StringCollection
   [void]$files.Add($File)
   [System.Windows.Forms.Clipboard]::SetFileDropList($files)
+  [Console]::WriteLine('done')
   exit
 }
 if ($Mode -eq 'paste') {
@@ -25,6 +29,7 @@ public static class HoverPaste {
   [void][HoverPaste]::SetCursorPos($X,$Y)
   Start-Sleep -Milliseconds 300
   [HoverPaste]::Paste()
+  [Console]::WriteLine('done')
   exit
 }
 if ($Mode -eq 'drag') {
@@ -59,6 +64,7 @@ public static class RealFileDrag {
 }
 '@
   [RealFileDrag]::Run($File,$X,$Y)
+  [Console]::WriteLine('done')
   exit
 }
 throw 'Unknown attachment fixture operation'

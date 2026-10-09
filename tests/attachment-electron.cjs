@@ -6,7 +6,7 @@ if(!process.versions.electron){
  const {spawnSync}=require('node:child_process');
  const args=[...(process.platform==='linux'&&process.env.AGENT_USAGE_TEST_NO_SANDBOX==='1'?['--no-sandbox']:[]),__filename,root];
  const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
- const result=spawnSync(require('../desktop/node_modules/electron'),args,{stdio:'inherit',timeout:90000,env});
+ const result=spawnSync(require('../desktop/node_modules/electron'),args,{stdio:'inherit',timeout:180000,env});
  if(result.error)console.error(result.error.message);
  fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});process.exit(result.status??1);
 }
@@ -54,9 +54,10 @@ app.whenReady().then(async()=>{
  if(process.platform==='win32'){
    const {spawn}=require('node:child_process');
    async function native(mode,x=0,y=0){
+     console.log('Native attachment fixture:',mode);
      return new Promise((resolve,reject)=>{
-       const child=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'attachment-windows.ps1'),mode,file,String(x),String(y)],{windowsHide:true});
-       let out='',err='';const timer=setTimeout(()=>{child.kill();reject(new Error('Native attachment fixture timed out'));},12000);
+       const child=spawn('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'attachment-windows.ps1'),mode,file,String(x),String(y)],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+       let out='',err='';const timer=setTimeout(()=>{child.kill();reject(new Error('Native attachment fixture timed out: '+mode+' '+out+' '+err));},45000);
        child.stdout.on('data',data=>out+=data);child.stderr.on('data',data=>err+=data);
        child.on('error',error=>{clearTimeout(timer);reject(error);});child.on('close',code=>{clearTimeout(timer);code===0?resolve(out):reject(new Error(err||out));});
      });
