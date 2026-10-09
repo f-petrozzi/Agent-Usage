@@ -159,3 +159,40 @@ apart. Local checks measured a minimum 14.2-pixel gap and approximately 60 FPS a
 DPR 1 and 2, with a bounded 100 × 100 filter and no frame-by-frame layout.
 
 ![Black liquid wakes and account-colored rings](images/black-liquid-trails-preview.png)
+
+## Inward liquid flow and reactive core (5.1.3)
+
+The approved design replaces fixed-radius orbits with independently timed, inward
+spirals. Streams have uneven entry angles, orbital tilts, pitch, lifetimes, sizes
+and trail lengths. Radius decreases and angular motion accelerates; the black
+core occludes incoming material before it recycles invisibly at the outer edge.
+Heads stretch while adjoining lobes move and merge through the existing bounded
+goo filter. Account-colored rings and transparent surroundings remain. Reduced
+motion presents a static field. The owner approved the actual-app GIF before
+release testing.
+
+[NASA’s accretion explanation](https://imagine.gsfc.nasa.gov/news/26jun06.html)
+describes loss of angular momentum enabling inward flow; its
+[disk visualization](https://www.nasa.gov/universe/nasa-visualization-shows-a-black-holes-warped-world/)
+shows knots stretching and shearing. The merged fluid surface draws on
+[metaball rendering](https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-7-point-based-visualization-metaballs-gpu).
+Black liquid is the owner’s visual direction, not the actual appearance of hot gas.
+
+The design also replaces complete ring outlines with uneven, thin account-colored
+arcs whose bright sections circulate at different rates. The core stays centered;
+its edge slowly deforms. A restrained ring-brightness pulse and approximately
+0.3-pixel core expansion share the largest incoming stream’s lifetime and phase,
+so the response follows absorption instead of an unrelated heartbeat. All new
+motion stops under reduced motion.
+
+Validation checks every stream’s radial range over a minute of sampled animation,
+ensuring it enters from outside and travels into the occluding core. Core and ring
+animation introduce local layout work, so the sustained-hover check measures its
+time cost (under 5 ms over 450 ms) instead of requiring zero layouts as with the
+previous static core. The particle raster remains bounded at 100 × 100.
+
+Local frame timing measured approximately 60 FPS at normal and high DPI, with
+95th-percentile frame intervals of 16.8 ms. Layout work measured 4.3/3.3 ms over
+450 ms. These browser measurements do not guarantee timing on every Windows GPU.
+
+![Approved inward liquid flow, circulating arcs and reactive core](images/inward-liquid-flow.gif)

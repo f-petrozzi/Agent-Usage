@@ -51,6 +51,9 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   const prepared=await page.evaluate(()=>__calls.filter(([c])=>c==='prepare_attachments'));assert.equal(prepared.length,1);assert.deepEqual(prepared[0][1],{account:'claude',paths:['/tmp/design.png']});
   await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>__drag('.cell[data-p="codex-b"]'));
   assert.equal(await page.locator('.gravity-well').evaluate(e=>getComputedStyle(e).opacity),'1');assert.equal(await page.locator('.gravity-stream').first().evaluate(e=>getComputedStyle(e).animationName),'none');
+  for(const selector of ['.gravity-swarm','.gravity-orbit','.gravity-tail','.gravity-grain','.gravity-lobe'])assert.equal(await page.locator(selector).first().evaluate(e=>getComputedStyle(e).animationName),'none',selector+' respects reduced motion');
+  assert.equal(await page.locator('.gravity-well').evaluate(e=>getComputedStyle(e,'::after').animationName),'none','core respects reduced motion');
+  assert.equal(await page.locator('.gravity-orbit').first().evaluate(e=>getComputedStyle(e,'::before').animationName),'none','ring highlights respect reduced motion');
   await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})));assert.equal(await page.locator('.gravity-well').count(),0);
   assert.equal(await page.locator('.gravity-beads').count(),0,'particle animation is removed on cancellation');
   assert.deepEqual(errors,[]);

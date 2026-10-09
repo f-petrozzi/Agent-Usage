@@ -28,24 +28,31 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    assert.equal(await page.locator('.gravity-well').evaluate(e=>getComputedStyle(e,'::before').content),'none','no opaque backdrop');
    assert.equal(await page.locator('.gravity-beads').count(),8);
    assert.deepEqual(await page.locator('#attachment-particle-goo').evaluate(e=>[e.getAttribute('width'),e.getAttribute('height')]),['100','100'],'goo raster is bounded to the particle area');
-   // Seek a full minute of motion: independently orbiting particles eventually
-   // overtake and clump even when a single screenshot happens to look spaced.
-   assert.equal(await page.locator('.gravity-plane').evaluateAll(es=>new Set(es.map(e=>e.dataset.axis)).size),8,'each wake has its own seeded orbital axis');
+   // Verify ongoing accretion, rather than fixed-radius orbits: every stream
+   // must travel from the outer field into the occluding core over time.
+   assert.equal(await page.locator('.gravity-plane').evaluateAll(es=>new Set(es.map(e=>e.dataset.axis)).size),8,'each stream has its own seeded orbital axis');
    assert.equal(await page.locator('.gravity-particles').evaluate(e=>getComputedStyle(e).fill),'rgb(0, 0, 0)','liquid wakes are black');
-   const spacing=await page.evaluate(async()=>{
-    const animations=document.querySelector('.gravity-particles').getAnimations({subtree:true});animations.forEach(a=>a.pause());
-    let minimum=Infinity;
+   const flows=await page.evaluate(async()=>{
+    const svg=document.querySelector('.gravity-particles'),animations=svg.getAnimations({subtree:true});animations.forEach(a=>a.pause());
+    const grains=[...svg.querySelectorAll('.gravity-grain')],ranges=grains.map(()=>({min:Infinity,max:0}));
     for(let ms=0;ms<=60000;ms+=137){
      animations.forEach(a=>a.currentTime=ms);await new Promise(requestAnimationFrame);
-     const points=[...document.querySelectorAll('.gravity-grain')].map(e=>new DOMPoint(e.cx.baseVal.value,e.cy.baseVal.value).matrixTransform(e.getScreenCTM()));
-     for(let i=0;i<points.length;i++)for(let j=i+1;j<points.length;j++)minimum=Math.min(minimum,Math.hypot(points[i].x-points[j].x,points[i].y-points[j].y));
+     const center=new DOMPoint(0,0).matrixTransform(svg.getScreenCTM());
+     grains.forEach((e,i)=>{
+      const p=new DOMPoint(e.cx.baseVal.value,e.cy.baseVal.value).matrixTransform(e.getScreenCTM()),r=Math.hypot(p.x-center.x,p.y-center.y);
+      ranges[i].min=Math.min(ranges[i].min,r);ranges[i].max=Math.max(ranges[i].max,r);
+     });
     }
-    animations.forEach(a=>a.play());return minimum;
+    animations.forEach(a=>a.play());return ranges;
    });
-   assert.ok(spacing>=10,'particle centers stay separated through sustained motion: '+spacing);timings.minimumParticleGap=spacing;
+   flows.forEach((r,i)=>assert.ok(r.min<10&&r.max>25&&r.max-r.min>20,'stream '+i+' enters from outside and plunges into core: '+JSON.stringify(r)));
+   timings.streamRadialRanges=flows;
    const cdp=await context.newCDPSession(page);await cdp.send('Performance.enable');const metrics=async()=>Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
    const before=await metrics();await page.waitForTimeout(450);const after=await metrics();
-   timings.settledLayouts=after.LayoutCount-before.LayoutCount;assert.ok(timings.settledLayouts<=2,'settled particles do not trigger frame-by-frame layout: '+timings.settledLayouts);
+   timings.settledLayouts=after.LayoutCount-before.LayoutCount;timings.settledLayoutMs=(after.LayoutDuration-before.LayoutDuration)*1000;
+   // The local core contour/ring masks animate. Budget their measured work,
+   // rather than requiring zero layout as the former static core did.
+   assert.ok(timings.settledLayoutMs<5,'local ring/core layout stays below 5 ms over a 450 ms sample: '+timings.settledLayoutMs);
    await page.screenshot({path:path.join(OUT,'particles-dpr-'+dpr+'.png'),clip:{x:650,y:0,width:600,height:140}});
    await page.evaluate(()=>{clearInterval(__keep);window.agentDropCancel();});assert.equal(await page.locator('.gravity-particles').count(),0);assert.equal(await page.locator('#shape-body').evaluate(e=>e.style.visibility),'');assert.deepEqual(errors,[]);
    results.push({dpr,...timings});await context.close();

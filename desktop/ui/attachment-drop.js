@@ -42,17 +42,21 @@
     if(cell===target){animate(1);return;}
     clear();target=cell;const at=cell.querySelector('.ringwrap').getBoundingClientRect();for(const sibling of pill.querySelectorAll('.cell'))if(sibling!==cell){const r=sibling.querySelector('.ringwrap').getBoundingClientRect();pulls.set(sibling,{x:at.left+at.width/2-r.left-r.width/2,y:at.top+at.height/2-r.top-r.height/2});}cell.classList.add('drop-target');well=document.createElement('div');well.className='gravity-well';well.setAttribute('aria-hidden','true');
     well.innerHTML='<i class="gravity-orbit"></i><i class="gravity-orbit"></i><i class="gravity-stream"></i><i class="gravity-stream"></i><i class="gravity-stream"></i>';
-    // Jitter eight separated angular strata once, never randomize per frame.
-    // One shared orbit prevents overtaking; bounded drift keeps the liquid alive.
+    // Seed incoming streams once. Different lifetimes and spiral pitch prevent
+    // a synchronized carousel; fluid is occluded by the core before recycling.
     // Keep the goo and soft bloom raster independent of the fullscreen window.
     const particles=document.createElementNS(SVG_NS,'svg');particles.classList.add('gravity-particles');particles.setAttribute('viewBox','-50 -50 100 100');
     const random=n=>{const x=Math.sin((n+1)*127.1+cell.dataset.p.charCodeAt(0)*311.7)*43758.5453;return x-Math.floor(x);};
+    let impact={size:0,duration:5,delay:0};
     const grains=Array.from({length:8},(_,i)=>{
-      const angle=i*45+(random(i*5)-.5)*8,radius=29+random(i*5+1)*6;
-      const axis=-18+(random(i*5+5)-.5)*12,flatten=.78+random(i*5+6)*.08;
-      const size=1.65+Math.pow(random(i*5+2),2)*1.2,stretch=1.12+random(i*5+3)*.55;
+      const angle=i*45+(random(i*11)-.5)*30,radius=32+random(i*11+1)*8;
+      const axis=-18+(random(i*11+5)-.5)*42,flatten=.68+random(i*11+6)*.25;
+      const lifetime=3.6+random(i*11+7)*3.8,turn=220+random(i*11+8)*140;
+      const size=1.1+Math.pow(random(i*11+2),1.8)*2.8,stretch=1.05+random(i*11+3)*.9;
+      const delay=-random(i*11+9)*lifetime;
+      if(size>impact.size)impact={size,duration:lifetime,delay};
       // A curved liquid wake narrows behind the head rather than a second dot.
-      const length=23+random(i*5+4)*7,edges=[[],[]];
+      const length=15+random(i*11+4)*36,edges=[[],[]];
       for(let step=0;step<=16;step++){
         const t=step/16,theta=-length*t*Math.PI/180;
         const width=size*(.95+Math.sin(t*Math.PI)*.3)*Math.pow(1-t,1.2),bend=Math.sin(t*Math.PI)*1.4;
@@ -62,9 +66,11 @@
         }
       }
       const wake='M'+edges[0].join('L')+'L'+edges[1].reverse().join('L')+'Z';
-      return `<g class="gravity-plane" data-axis="${axis}" transform="rotate(${axis}) scale(1 ${flatten})"><g class="gravity-swarm"><g transform="rotate(${angle})"><g class="gravity-beads" style="--particle-duration:${3.7+random(i*5+4)*2}s;--particle-delay:${-random(i*5+3)*6}s"><path class="gravity-tail" d="${wake}" style="transform-origin:${radius}px 0px"/><ellipse class="gravity-grain" style="transform-origin:${radius}px 0px" cx="${radius}" cy="0" rx="${size}" ry="${size*stretch}"/></g></g></g></g>`;
+      return `<g class="gravity-plane" data-axis="${axis}" transform="rotate(${axis}) scale(1 ${flatten})"><g class="gravity-swarm" style="--flow-duration:${lifetime}s;--flow-delay:${delay}s;--flow-turn:${turn}deg"><g transform="rotate(${angle})"><g class="gravity-beads" style="--particle-duration:${1.7+random(i*11+10)*2.4}s;--particle-delay:${-random(i*11+3)*4}s"><path class="gravity-tail" d="${wake}" style="transform-origin:${radius}px 0px"/><circle class="gravity-lobe" cx="${radius+size*.6}" cy="${-size*.65}" r="${size*.65}" style="transform-origin:${radius}px 0px"/><ellipse class="gravity-grain" style="transform-origin:${radius}px 0px" cx="${radius}" cy="0" rx="${size}" ry="${size*stretch}"/></g></g></g></g>`;
     }).join('');
     particles.innerHTML='<defs><filter id="attachment-particle-goo" filterUnits="userSpaceOnUse" x="-50" y="-50" width="100" height="100" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 12 -4" result="liquid"/><feGaussianBlur stdDeviation="1.1"/><feComponentTransfer><feFuncA type="linear" slope=".28"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="liquid"/></feMerge></filter></defs><g filter="url(#attachment-particle-goo)">'+grains+'</g>';
+    well.style.setProperty('--impact-duration',`${impact.duration}s`);
+    well.style.setProperty('--impact-delay',`${impact.delay}s`);
     well.append(particles);
     const account=agentAccounts.find(a=>a.id===cell.dataset.p),light=window.accountLight(account,agentAccounts);
     well.style.setProperty('--gravity-color',{'codex-a':'#74a9ff','codex-b':'#be99ff',claude:'#d97757',agy:'#7fabfa'}[light]||'#74a9ff');
