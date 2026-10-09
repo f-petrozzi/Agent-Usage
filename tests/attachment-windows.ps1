@@ -42,21 +42,26 @@ public static class RealFileDrag {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
   public static void Run(string file,int x,int y){
-    using(var form=new Form())using(var timer=new Timer()){
+    using(var form=new Form()){
       form.Text="Attachment drag fixture";form.StartPosition=FormStartPosition.Manual;
       form.Location=new Point(160,260);form.Size=new Size(160,100);
-      int step=0;timer.Interval=100;
-      timer.Tick+=(sender,args)=>{
-        step++;
-        if(step==1)SetCursorPos(x-8,y);
-        else if(step<14)SetCursorPos(x+(step%2),y);
-        else{timer.Stop();mouse_event(4,0,0,0,UIntPtr.Zero);}
-      };
-      form.Shown+=(sender,args)=>{
-        SetCursorPos(200,300);mouse_event(2,0,0,0,UIntPtr.Zero);timer.Start();
+      form.MouseDown+=(sender,args)=>{
+        Console.WriteLine("source press");
         var data=new DataObject(DataFormats.FileDrop,new string[]{file});
         var result=form.DoDragDrop(data,DragDropEffects.Copy);
         Console.WriteLine("drop="+result);form.Close();
+      };
+      form.Shown+=(sender,args)=>{
+        Console.WriteLine("source ready");
+        var input=new System.Threading.Thread(()=>{
+          System.Threading.Thread.Sleep(200);SetCursorPos(200,300);
+          mouse_event(2,0,0,0,UIntPtr.Zero);
+          System.Threading.Thread.Sleep(250);
+          for(int step=0;step<14;step++){
+            SetCursorPos(x+(step%2),y);System.Threading.Thread.Sleep(100);
+          }
+          Console.WriteLine("release at target");mouse_event(4,0,0,0,UIntPtr.Zero);
+        });input.IsBackground=true;input.Start();
       };
       Application.Run(form);
     }
