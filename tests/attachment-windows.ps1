@@ -55,6 +55,7 @@ public static class RealFileDrag {
         Console.WriteLine("source ready");
         var input=new System.Threading.Thread(()=>{
           System.Threading.Thread.Sleep(200);SetCursorPos(200,300);
+          System.Threading.Thread.Sleep(200);
           mouse_event(2,0,0,0,UIntPtr.Zero);
           System.Threading.Thread.Sleep(250);
           for(int step=0;step<14;step++){

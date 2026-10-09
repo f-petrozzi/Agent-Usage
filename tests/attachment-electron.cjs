@@ -30,7 +30,7 @@ app.whenReady().then(async()=>{
  subject._compile(fs.readFileSync(source,'utf8')+`\nmodule.exports={init(w){win=w;config={source:'ssh',sshTarget:'fixture',theme:'dark',sessionPins:[],scale:1,edge:'top',along:.5,slots:[],buttons:{},focusAccounts:[],alertLog:[]};configPath=require('node:path').join(${JSON.stringify(root)},'settings.json');monitor=screen.getPrimaryDisplay();visible=true;phase='shown';pinned=true;collector={accounts:[{id:'${account}',base:'codex',name:'Codex B',snap:{status:'ok',windows:[],details:[]}}]};},show(){sendLayout();send('appear');},tick,startTick(){timer=setInterval(tick,16);},get draft(){return attachmentDraft;}};`,source);
  const main=subject.exports, bounds=electron.screen.getPrimaryDisplay().bounds;
  const window=new BrowserWindow({...require('../desktop/platform-window.cjs').overlayOptions(bounds),webPreferences:{preload:path.resolve(UI,'../preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
- main.init(window);await window.loadFile(path.join(UI,'notch.html'));window.showInactive();main.show();main.startTick();
+ window.setIgnoreMouseEvents(true,{forward:true});main.init(window);await window.loadFile(path.join(UI,'notch.html'));window.showInactive();main.show();main.startTick();
  await until(()=>window.webContents.executeJavaScript("document.querySelector('.cell') && document.getElementById('root').classList.contains('visible')"));
  const file=path.join(root,'design.png');fs.copyFileSync(path.resolve(__dirname,'../docs/images/agent-identity-glow.png'),file);
  await diskFile(window,file);
