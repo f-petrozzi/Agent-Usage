@@ -422,6 +422,7 @@ test('hover Ctrl+V is owned only over a visible agent and rechecks the pointer w
  s.test.updatePasteShortcut({x:21,y:30});assert.equal(s.calls.filter(c=>c[0]==='shortcut').length,1);
  s.point({x:300,y:300});const callback=s.calls.find(c=>c[0]==='shortcut')[2];callback();assert.equal(s.test.attachments(),undefined);
  s.test.updatePasteShortcut({x:300,y:300});assert.equal(s.calls.at(-1)[0],'unregister');
+ s.test.inputLine('100');assert.equal(s.test.pasteTarget({x:30,y:30}),'codex-a','hover paste also works while the reveal key is held');s.test.inputLine('000');
  s.config.scale=1.25;assert.equal(s.test.pasteTarget({x:70,y:70}),'codex-a');
  await s.command('set_hot',{rects:[],agents:{'codex-a':[10,10,50,60]},expanded:true});assert.equal(s.test.pasteTarget({x:30,y:30}),'codex-a','usage peek keeps hover paste available');
  await s.command('session_switcher_focus');assert.equal(s.test.pasteTarget({x:30,y:30}),null);

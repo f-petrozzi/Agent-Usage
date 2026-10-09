@@ -27,7 +27,7 @@ function refreshAttachmentSelection(){
 function renderAttachmentReview(){
   const draft=window.attachmentReviewDraft;
   card.classList.toggle('attachment-card',!!draft);
-  if(!draft)return;
+  if(!draft||!sessionSwitcherShowing())return;
   card.querySelector('.session-head>span').textContent='Attach to '+(agentAccounts.find(a=>a.id===draft.account)?.name||'agent');
   card.querySelector('.session-back').hidden=true;
   card.querySelector('.session-filter-row').hidden=true;

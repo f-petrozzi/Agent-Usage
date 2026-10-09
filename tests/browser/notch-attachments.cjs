@@ -34,7 +34,9 @@ const glyphs=Object.fromEntries(['codex','claude','gemini'].map(base=>[base,{kin
   await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'})));assert.equal(await page.locator('.gravity-well').count(),0);
   assert.deepEqual(errors,[]);
   await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.evaluate(()=>{window.agentTracking=true;});
   await page.evaluate(()=>__emit('attachment_draft',{token:'fixture',account:'codex-b',files:[{name:'design.png',size:10}]}));
+  await page.evaluate(()=>__emit('release'));
   await page.waitForTimeout(800);
   assert.equal(await page.locator('.attachment-preview').count(),1);assert.equal(await page.locator('.attachment-send').isDisabled(),true,'explicit selection is required');
   assert.equal(await page.locator('.session-result').count(),2);assert.equal(await page.locator('.session-filter-row').isVisible(),false);

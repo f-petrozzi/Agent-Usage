@@ -27,11 +27,12 @@ app.whenReady().then(async()=>{
  const original=subject.require.bind(subject),sent=[];
  const proxy=new Proxy(app,{get(target,name){if(name==='whenReady')return()=>new Promise(()=>{});if(name==='requestSingleInstanceLock')return()=>true;const value=target[name];return typeof value==='function'?value.bind(target):value;}});
  subject.require=id=>id==='electron'?{...electron,app:proxy}:id==='./collector.cjs'?{...original(id),readSessionHistory:async()=>({sessions:[row]})}:id==='./session-open.cjs'?{...original(id),openSession:async()=>true}:id==='./attachments.cjs'?{...original(id),deliver:async(draft,target,options)=>{sent.push({draft,target,options});return {queued:options.queue,context:'Prepared context',paths:['/srv/project/attachment.png']};}}:original(id);
- subject._compile(fs.readFileSync(source,'utf8')+`\nmodule.exports={init(w){win=w;config={source:'ssh',sshTarget:'fixture',theme:'dark',sessionPins:[],scale:1,edge:'top',along:.5,slots:[],buttons:{},focusAccounts:[],alertLog:[]};configPath=require('node:path').join(${JSON.stringify(root)},'settings.json');monitor=screen.getPrimaryDisplay();visible=true;phase='shown';pinned=true;collector={accounts:[{id:'${account}',base:'codex',name:'Codex B',snap:{status:'ok',windows:[],details:[]}}]};},show(){sendLayout();send('appear');},tick,startTick(){timer=setInterval(tick,16);},get draft(){return attachmentDraft;}};`,source);
+ subject._compile(fs.readFileSync(source,'utf8')+`\nmodule.exports={init(w){win=w;config={source:'ssh',sshTarget:'fixture',theme:'dark',sessionPins:[],scale:1,edge:'top',along:.5,slots:[],buttons:{},focusAccounts:[],alertLog:[]};configPath=require('node:path').join(${JSON.stringify(root)},'settings.json');monitor=screen.getPrimaryDisplay();visible=true;phase='shown';pinned=true;collector={accounts:[{id:'${account}',base:'codex',name:'Codex B',snap:{status:'ok',windows:[],details:[]}}]};},show(){sendLayout();send('appear');},startNative(){if(process.platform==='win32')registerShortcut('Scrolllock');},tick,startTick(){timer=setInterval(tick,16);},get draft(){return attachmentDraft;}};`,source);
  const main=subject.exports, bounds=electron.screen.getPrimaryDisplay().bounds;
  const window=new BrowserWindow({...require('../desktop/platform-window.cjs').overlayOptions(bounds),webPreferences:{preload:path.resolve(UI,'../preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});
  window.setIgnoreMouseEvents(true,{forward:true});main.init(window);await window.loadFile(path.join(UI,'notch.html'));window.showInactive();main.show();main.startTick();
  await until(()=>window.webContents.executeJavaScript("document.querySelector('.cell') && document.getElementById('root').classList.contains('visible')"));
+ main.startNative();
  const file=path.join(root,'design.png');fs.copyFileSync(path.resolve(__dirname,'../docs/images/agent-identity-glow.png'),file);
  await diskFile(window,file);
  assert.equal(await window.webContents.executeJavaScript("window.agentUsage.filePath(document.getElementById('fixture-file').files[0])"),file);
@@ -76,7 +77,7 @@ app.whenReady().then(async()=>{
    assert.equal(main.draft.files[0].name,'design.png');assert.equal(main.draft.account,account);
    assert.equal(await window.webContents.executeJavaScript("window.agentDropActive"),false,'drop restores pointer interaction');
    await window.webContents.executeJavaScript("document.querySelector('.attachment-close').click()");await wait(700);
-   await window.webContents.executeJavaScript("document.querySelector('.cell').click()");await until(()=>window.webContents.executeJavaScript("document.getElementById('card').classList.contains('show')"));
+   await native('click',point.x,point.y);await until(()=>window.webContents.executeJavaScript("document.getElementById('card').classList.contains('show')"));
    console.log('Passed Windows bitmap/file clipboard, physical hover paste, real OLE file drag, and notch recovery.');
  }
  window.close();console.log('Passed native Electron file paths, inline image review, clipboard screenshot, account routing and reviewed queue IPC.');app.exit(0);

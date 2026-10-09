@@ -16,19 +16,21 @@ if ($Mode -eq 'file') {
   [Console]::WriteLine('done')
   exit
 }
-if ($Mode -eq 'paste') {
+if ($Mode -eq 'paste' -or $Mode -eq 'click') {
   Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class HoverPaste {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
+  public static void Click(){mouse_event(2,0,0,0,UIntPtr.Zero);System.Threading.Thread.Sleep(80);mouse_event(4,0,0,0,UIntPtr.Zero);}
   public static void Paste(){keybd_event(0x11,0,0,UIntPtr.Zero);keybd_event(0x56,0,0,UIntPtr.Zero);keybd_event(0x56,0,2,UIntPtr.Zero);keybd_event(0x11,0,2,UIntPtr.Zero);}
 }
 '@
   [void][HoverPaste]::SetCursorPos($X,$Y)
   Start-Sleep -Milliseconds 300
-  [HoverPaste]::Paste()
+  if ($Mode -eq 'click') { [HoverPaste]::Click() } else { [HoverPaste]::Paste() }
   [Console]::WriteLine('done')
   exit
 }

@@ -34,7 +34,7 @@ let historyCache = null, historyPending = null, historyAt = 0, historyGeneration
 let attachmentDraft, attachmentPreparation = 0, attachmentHoverUntil = 0;
 let attachmentAgents = {}, pasteRegistered = false;
 function pasteTarget(point) {
-  if(!visible || held || carrying || menuOpen || switcherFocused || switcherRequested || phase !== 'shown')return null;
+  if(!visible || carrying || menuOpen || switcherFocused || switcherRequested || phase !== 'shown')return null;
   return Object.keys(attachmentAgents).find(id=>controlHit(attachmentAgents[id],point)) || null;
 }
 function releasePasteShortcut(){if(pasteRegistered){globalShortcut.unregister('CommandOrControl+V');pasteRegistered=false;}}
@@ -64,6 +64,7 @@ async function prepareAttachments(args, paste = false) {
   if (scope !== sessionScope(config)) throw new Error('The connection changed. Drop the files again.');
   attachmentDraft = attachments.createDraft(args.account, scope, files);
   reveal(false);
+  sessionFollowUntil=Date.now()+1500;send('release');
   visibleUntil = Math.max(visibleUntil, Date.now()+3000);
   send('attachment_draft',attachments.publicDraft(attachmentDraft));
   return true;
@@ -417,7 +418,7 @@ function tick() {
 function followPointer(point,timestamp=null){
   if(!win||win.isDestroyed())return;
   if(Date.now()<attachmentHoverUntil)return;
-  if ((held || carrying) && Date.now()>=sessionFollowUntil && !dismissed && !menuOpen) {
+  if ((held || carrying) && !switcherFocused && Date.now()>=sessionFollowUntil && !dismissed && !menuOpen) {
     reveal();
     const display = screen.getDisplayNearestPoint(point);
     if (display.id !== monitor.id && pendingPlacement === null) switchMonitor(display, { atPointer: true });
