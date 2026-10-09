@@ -48,11 +48,23 @@
     const particles=document.createElementNS(SVG_NS,'svg');particles.classList.add('gravity-particles');particles.setAttribute('viewBox','-50 -50 100 100');
     const random=n=>{const x=Math.sin((n+1)*127.1+cell.dataset.p.charCodeAt(0)*311.7)*43758.5453;return x-Math.floor(x);};
     const grains=Array.from({length:8},(_,i)=>{
-      const angle=i*45+(random(i*5)-.5)*12,radius=29+random(i*5+1)*6;
-      const size=1.3+Math.pow(random(i*5+2),2)*1.2,stretch=1.12+random(i*5+3)*.55;
-      return `<g transform="rotate(${angle})"><g class="gravity-beads" style="--particle-duration:${3.7+random(i*5+4)*2}s;--particle-delay:${-random(i*5+3)*6}s;opacity:${.8+random(i*5+2)*.2}"><ellipse class="gravity-grain" cx="${radius}" cy="0" rx="${size}" ry="${size*stretch}"/><circle cx="${radius+.5}" cy="${size*stretch+1}" r="${size*.52}"/></g></g>`;
+      const angle=i*45+(random(i*5)-.5)*8,radius=29+random(i*5+1)*6;
+      const axis=-18+(random(i*5+5)-.5)*12,flatten=.78+random(i*5+6)*.08;
+      const size=1.65+Math.pow(random(i*5+2),2)*1.2,stretch=1.12+random(i*5+3)*.55;
+      // A curved liquid wake narrows behind the head rather than a second dot.
+      const length=23+random(i*5+4)*7,edges=[[],[]];
+      for(let step=0;step<=16;step++){
+        const t=step/16,theta=-length*t*Math.PI/180;
+        const width=size*(.95+Math.sin(t*Math.PI)*.3)*Math.pow(1-t,1.2),bend=Math.sin(t*Math.PI)*1.4;
+        for(let side=0;side<2;side++){
+          const r=radius+bend+(side?-width:width);
+          edges[side].push(`${(r*Math.cos(theta)).toFixed(3)},${(r*Math.sin(theta)).toFixed(3)}`);
+        }
+      }
+      const wake='M'+edges[0].join('L')+'L'+edges[1].reverse().join('L')+'Z';
+      return `<g class="gravity-plane" data-axis="${axis}" transform="rotate(${axis}) scale(1 ${flatten})"><g class="gravity-swarm"><g transform="rotate(${angle})"><g class="gravity-beads" style="--particle-duration:${3.7+random(i*5+4)*2}s;--particle-delay:${-random(i*5+3)*6}s"><path class="gravity-tail" d="${wake}" style="transform-origin:${radius}px 0px"/><ellipse class="gravity-grain" style="transform-origin:${radius}px 0px" cx="${radius}" cy="0" rx="${size}" ry="${size*stretch}"/></g></g></g></g>`;
     }).join('');
-    particles.innerHTML='<defs><filter id="attachment-particle-goo" filterUnits="userSpaceOnUse" x="-50" y="-50" width="100" height="100" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation=".65"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 12 -4" result="liquid"/><feGaussianBlur stdDeviation="1.1"/><feComponentTransfer><feFuncA type="linear" slope=".28"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="liquid"/></feMerge></filter></defs><g transform="rotate(-18) scale(1 .8)"><g class="gravity-swarm" filter="url(#attachment-particle-goo)">'+grains+'</g></g>';
+    particles.innerHTML='<defs><filter id="attachment-particle-goo" filterUnits="userSpaceOnUse" x="-50" y="-50" width="100" height="100" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 12 -4" result="liquid"/><feGaussianBlur stdDeviation="1.1"/><feComponentTransfer><feFuncA type="linear" slope=".28"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="liquid"/></feMerge></filter></defs><g filter="url(#attachment-particle-goo)">'+grains+'</g>';
     well.append(particles);
     const account=agentAccounts.find(a=>a.id===cell.dataset.p),light=window.accountLight(account,agentAccounts);
     well.style.setProperty('--gravity-color',{'codex-a':'#74a9ff','codex-b':'#be99ff',claude:'#d97757',agy:'#7fabfa'}[light]||'#74a9ff');

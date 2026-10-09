@@ -30,6 +30,8 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/a
    assert.deepEqual(await page.locator('#attachment-particle-goo').evaluate(e=>[e.getAttribute('width'),e.getAttribute('height')]),['100','100'],'goo raster is bounded to the particle area');
    // Seek a full minute of motion: independently orbiting particles eventually
    // overtake and clump even when a single screenshot happens to look spaced.
+   assert.equal(await page.locator('.gravity-plane').evaluateAll(es=>new Set(es.map(e=>e.dataset.axis)).size),8,'each wake has its own seeded orbital axis');
+   assert.equal(await page.locator('.gravity-particles').evaluate(e=>getComputedStyle(e).fill),'rgb(0, 0, 0)','liquid wakes are black');
    const spacing=await page.evaluate(async()=>{
     const animations=document.querySelector('.gravity-particles').getAnimations({subtree:true});animations.forEach(a=>a.pause());
     let minimum=Infinity;

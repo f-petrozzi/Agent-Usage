@@ -134,25 +134,28 @@ Local browser frame timing averaged 59.6 FPS at both DPI settings, with 95th
 percentile intervals of 16.8/16.7 ms. These measure the test browser’s frame
 scheduling, not a guarantee for every Windows display or GPU.
 
-## Spaced, varied particles (5.1.1)
+## Black liquid wakes with varied orbits (5.1.2)
 
 Purely independent random samples can clump. Applying the
 [PBRT stratified-sampling principle](https://www.pbr-book.org/4ed/Sampling_and_Reconstruction/Stratified_Sampler)
 to this visual effect, eight angular regions each hold one seeded, slightly
-jittered droplet. A shared orbit prevents overtaking; bounded individual angular
-and radial drift preserves irregular motion without losing the gaps. Random
-values are generated once per target, avoiding frame-to-frame flicker.
+jittered droplet. Random values are generated once per target, avoiding flicker.
+Each wake has its own randomized orbital tilt and flattening. The variation is
+bounded, and shared orbital timing prevents overtaking; individual drift,
+squash and stretch give each wake its own fluid rhythm.
 
-Most grains are small, with fewer larger knots, tangentially stretched ellipses
-and tiny merging tails. A tighter goo filter preserves these differences; a
-faint local bloom and varied brightness avoid uniformly large glowing blobs.
-Shapes take inspiration from the stretched bright knots described in
+Black liquid heads connect to curved, tapering wakes. A bounded local goo filter
+smooths their connection, while the orbital rings retain the selected account’s
+color. Head stretch is coordinated with wake length, width and shear. Shapes take
+inspiration from the stretched bright knots described in
 [NASA’s accretion-disk visualization](https://www.nasa.gov/universe/nasa-visualization-shows-a-black-holes-warped-world/).
-The coordinated orbit is an intentional UI spacing choice, not a physics model.
-Existing provider colors, transparent surroundings and notch absorption stay intact.
-Reduced motion retains the separated static positions.
+This remains a visual metaphor rather than a physics simulation. Transparent
+surroundings and notch absorption stay intact; reduced motion retains static,
+separated wakes. The owner approved the actual-app preview before release testing.
 
-The sustained-hover test seeks a minute of animation and verifies particle
-centers remain at least 10 CSS pixels apart. Local checks measured a minimum
-14.2-pixel gap and approximately 60 FPS at DPR 1 and 2, with a bounded 100 × 100
-filter and no repeated layout after settling.
+The sustained-hover test checks eight distinct axes and black fill, then seeks a
+minute of animation and verifies particle centers remain at least 10 CSS pixels
+apart. Local checks measured a minimum 14.2-pixel gap and approximately 60 FPS at
+DPR 1 and 2, with a bounded 100 × 100 filter and no frame-by-frame layout.
+
+![Black liquid wakes and account-colored rings](images/black-liquid-trails-preview.png)
