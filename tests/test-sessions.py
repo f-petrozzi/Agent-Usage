@@ -102,6 +102,23 @@ class CodexSessionTests(unittest.TestCase):
                          [('rollout-open', 'busy', 'codex:a', 'Nest')])
         self.assertEqual(got[0]['since'], 1790708400)
 
+    def test_resumed_old_session_is_visible_and_completion_clears_working(self):
+        old=self.home/'sessions'/'2020'/'01'/'01';old.mkdir(parents=True)
+        current=self.day;self.day=old
+        self.rollout('resumed','task_started')
+        got=usage.codex_sessions([('b',self.home)],self.now)
+        self.assertEqual([(s['account'],s['state']) for s in got],[('codex:b','busy')])
+        self.rollout('resumed','task_started','task_complete')
+        self.assertEqual(usage.codex_sessions([('b',self.home)],self.now),[])
+        self.day=current
+
+    def test_process_owned_work_survives_quiet_cutoff(self):
+        from unittest.mock import patch
+        self.rollout('long-tool','task_started',age=usage.CODEX_QUIET_SECONDS+60)
+        path=(self.day/'rollout-long-tool.jsonl').resolve()
+        with patch.object(usage,'rollout_processes',return_value={str(path):[123]}):
+            self.assertEqual(usage.codex_sessions([('b',self.home)],self.now)[0]['state'],'busy')
+
     def test_codex_session_link_uses_uuid_from_rollout_name(self):
         identity = '12345678-1234-5678-abcd-123456789012'
         self.rollout('2026-09-30T12-00-00-' + identity, 'task_started')

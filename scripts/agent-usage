@@ -1050,36 +1050,66 @@ def _codex_turn_state(path: Path) -> tuple[str | None, int | None, str | None]:
     return result
 
 
+# Historical discovery is bounded to one metadata scan per 30 seconds. Open
+# rollout handles and today's files are added on every poll so resumed work
+# becomes visible without repeatedly scanning an entire account archive.
+_codex_live_paths: dict[str, tuple[float, set[Path]]] = {}
+
+
+def _codex_session_paths(home: Path, now: float, processes: dict[str, list[int]]) -> set[Path]:
+    root = (home / "sessions").resolve()
+    key = str(root)
+    scanned, paths = _codex_live_paths.get(key, (0.0, set()))
+    paths = set(paths)
+    clock = time.monotonic()
+    if key not in _codex_live_paths or clock - scanned >= 30:
+        paths = set()
+        for path in root.glob("*/*/*/rollout-*.jsonl"):
+            try:
+                if now - path.stat().st_mtime <= CODEX_QUIET_SECONDS or str(path) in processes:
+                    paths.add(path)
+            except OSError:
+                continue
+        scanned = clock
+    for raw in processes:
+        path = Path(raw)
+        if path.is_relative_to(root):
+            paths.add(path)
+    for offset in (0, 86400):
+        day = dt.datetime.fromtimestamp(now - offset).strftime("%Y/%m/%d")
+        paths.update((root / day).glob("rollout-*.jsonl"))
+    _codex_live_paths[key] = (scanned, paths)
+    return paths
+
+
 def codex_sessions(profiles: list[tuple[str, Path]], now: float, include_terminal: bool = False) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     seen: set[Path] = set()
     processes = rollout_processes()
-    days = {dt.datetime.fromtimestamp(now - offset).strftime("%Y/%m/%d") for offset in (0, 86400)}
     for name, home in profiles:
-        for day in sorted(days):
-            for path in sorted((home / "sessions" / day).glob("rollout-*.jsonl")):
-                try:
-                    real = path.resolve()
-                    if real in seen or now - path.stat().st_mtime > CODEX_QUIET_SECONDS:
-                        continue
-                    seen.add(real)
-                    state, started, cwd = _codex_turn_state(path)
-                except OSError:
+        for path in sorted(_codex_session_paths(home, now, processes)):
+            try:
+                real = path.resolve()
+                if real in seen or (now - path.stat().st_mtime > CODEX_QUIET_SECONDS and str(real) not in processes):
                     continue
-                if state is None or (state not in {"busy", "waiting"} and not include_terminal):
-                    continue
-                sessions.append({
-                    "provider": "codex",
-                    "account": f"codex:{name}",
-                    "id": _short(path.stem),
-                    "sessionId": path.stem[-36:] if re.fullmatch(r"[0-9a-fA-F-]{36}", path.stem[-36:]) else None,
-                    "terminalPids": processes.get(str(real), []),
-                    "cwd": cwd,
-                    "name": _short(Path(cwd).name if cwd else "Codex"),
-                    "state": state,
-                    "waitingFor": "input needed" if state == "waiting" else None,
-                    "since": started,
-                })
+                seen.add(real)
+                state, started, cwd = _codex_turn_state(path)
+            except OSError:
+                continue
+            if state is None or (state not in {"busy", "waiting"} and not include_terminal):
+                continue
+            sessions.append({
+                "provider": "codex",
+                "account": f"codex:{name}",
+                "id": _short(path.stem),
+                "sessionId": path.stem[-36:] if re.fullmatch(r"[0-9a-fA-F-]{36}", path.stem[-36:]) else None,
+                "terminalPids": processes.get(str(real), []),
+                "cwd": cwd,
+                "name": _short(Path(cwd).name if cwd else "Codex"),
+                "state": state,
+                "waitingFor": "input needed" if state == "waiting" else None,
+                "since": started,
+            })
     return sessions
 
 

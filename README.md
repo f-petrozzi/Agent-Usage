@@ -7,7 +7,7 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.1.3**.
+The current release is **5.1.4**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
@@ -196,3 +196,5 @@ keep accessible names without native hover tooltips.
 Settings → General → Performance recording → Record 10 seconds creates a local,
 bounded trace for testing on your Windows display. See the
 [performance guide](docs/performance.md) for native refresh-rate and mixed-DPI checks.
+
+Session discovery in 5.1.4 includes resumed Codex rollouts from any creation date. Working sessions stay visible during long quiet tool calls when a live Codex process owns the rollout; abandoned quiet rollouts still expire.
