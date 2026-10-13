@@ -536,3 +536,20 @@ Reuse the notch’s analytic profile and cache the pull field to reduce first-ho
 work. Repeated drag events no longer repaint a settled effect. A sustained-drag
 browser check covers DPR 1 and 2; local frame timing averaged 59.6 FPS and
 settled particle motion caused no repeated layout.
+
+## 5.1.5 — Recover hidden notification placement
+
+Hidden reveals move the masked window onto the destination display before waiting
+for renderer frames. Placement handshakes can proceed when animation frames pause,
+while viewport checks and stale-token protection remain in place. Auto-hide no
+longer interrupts placement and grants a fresh hold after landing. This addresses
+waiting alerts that failed with “Display placement could not finish.”
+
+Error notices now have a bounded, positioned surface and clear after six seconds
+or a new placement attempt, so old warning text does not reappear at the top left.
+Timeout diagnostics include native bounds, display bounds, viewport and zoom.
+
+Validation includes 144 desktop checks, six collector suites, Chromium coverage
+for paused/late frames and viewport mismatches, and a real Electron fixture for
+hidden Claude waiting alerts on all four edges at Small, Medium and Large sizes.
+The Windows build runs that fixture before packaging the release.

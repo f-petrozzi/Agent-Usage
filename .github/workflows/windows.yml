@@ -61,6 +61,8 @@ jobs:
         working-directory: desktop
       - name: Verify native session shortcut and keyboard focus
         run: node tests/shortcut-windows.cjs
+      - name: Verify hidden alerts and placement with suspended animation frames
+        run: node tests/placement-electron.cjs
       - name: Verify bitmap clipboard, hover paste and real OLE drag
         run: node tests/attachment-electron.cjs
   package:

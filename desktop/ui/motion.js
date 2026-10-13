@@ -111,6 +111,16 @@ function loadAccounts(value){const renewals=notchEffects.renewals(agentAccounts,
 window.agentUsage.on('agent_accounts',loadAccounts);
 invoke('get_agent_accounts').then(loadAccounts).catch(e=>notice(String(e)));
 let placementRevision=0, placing=false;
+// Native opacity is zero throughout placement. Animation frames may pause while
+// the window is parked or masked, so those frames cannot be a prerequisite for
+// moving or unmasking it. Timers keep the handshake moving in that case; ordinary
+// animation still uses the shared frame scheduler exclusively.
+function placementFrame(callback){
+  let done=false,timer;
+  const finish=()=>{if(done)return;done=true;clearTimeout(timer);uiMotion.cancel(id);callback();};
+  const id=uiMotion.frame(finish);
+  timer=setTimeout(finish,100);
+}
 function stowPlacement(){
   placing=true;document.getElementById('root').classList.add('placing');
   uiMotion.cancel(frame);frame=0;position=null;last=0;
@@ -119,9 +129,9 @@ function stowPlacement(){
   void pill.offsetWidth;document.body.classList.remove('no-motion');
 }
 window.agentUsage.on('monitor_stow',value=>{
-  const revision=++placementRevision;stowPlacement();
-  // Two frame boundaries ensure the previous fully opened surface has been replaced by transparent pixels.
-  uiMotion.frame(()=>uiMotion.frame(()=>{
+  const revision=++placementRevision;clearNotice();stowPlacement();
+  // Prefer two painted frame boundaries; the native mask also covers the timer fallback.
+  placementFrame(()=>placementFrame(()=>{
     if(revision===placementRevision)invoke('monitor_stowed',{placement:value.placement}).catch(e=>notice(String(e)));
   }));
 });
@@ -137,16 +147,16 @@ window.agentUsage.on('layout',value=>{
     const ready=()=>{
       if(revision!==placementRevision)return;
       const resized=Math.abs(innerWidth-value.width/value.scale)<=2&&Math.abs(innerHeight-value.height/value.scale)<=2;
-      if(!resized){paints=0;uiMotion.frame(ready);return;}
+      if(!resized){paints=0;placementFrame(ready);return;}
       if(!paints){
         setShown(!!value.visible,value.edge);document.getElementById('root').classList.remove('placing');
         if(value.visible)uiMotion.frame(()=>{if(revision===placementRevision)for(const p of providers())turnReading(p.id,true);});
       }
       aim(value.edge,value.along,true);
-      if(++paints<3){uiMotion.frame(ready);return;}
+      if(++paints<3){placementFrame(ready);return;}
       invoke('monitor_placed',{placement:value.placement}).then(accepted=>{if(accepted!==false&&revision===placementRevision)placing=false;}).catch(e=>notice(String(e)));
     };
-    uiMotion.frame(ready);return;
+    placementFrame(ready);return;
   }
   const appearing=!!value.visible&&!shown; // arrives just before `appear`: place it now, never glide in from where it was hidden
   aim(value.edge,value.along,position===null||appearing);setShown(!!value.visible,value.edge);

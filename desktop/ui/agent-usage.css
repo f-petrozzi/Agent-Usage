@@ -32,7 +32,8 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{transition:non
 /* Small shrinks the notch, not what is read on it: cards and alerts keep their text near medium size (--tz, motion.js) */
 #card{width:calc(var(--card-width,310px) * var(--tz,1))!important;max-width:calc(100vw - 110px)!important;max-height:calc(100vh - 24px);font-size:calc(13px * var(--tz,1));margin:0}
 #rest{display:none!important}
-#notice{pointer-events:none}
+#notice{display:none;position:absolute;z-index:10;left:50%;bottom:24px;transform:translateX(-50%);max-width:calc(100% - 48px);width:max-content;padding:10px 14px;border:1px solid #444;border-radius:12px;background:#080808;color:var(--ink);font-size:calc(13px * var(--tz,1));line-height:1.4;overflow-wrap:anywhere;pointer-events:none}
+#notice.show{display:block}
 @media(prefers-reduced-motion:reduce){#root,#root.visible,#pill{transition:none}}
 /* The handles keep the Mac's arc, disc and glyph; the button only supplies a full square hit target.
    Disc and glyph are sized to the notch's own rings (56 px) rather than the Mac's larger orb. */

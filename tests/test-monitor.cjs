@@ -27,7 +27,7 @@ function setup(t, initialVisible = true, dependencies = {}) {
   const localRequire = createRequire(main);
   const context = vm.createContext({ require: id => id === 'electron' ? electron : dependencies[id]?{...localRequire(id),...dependencies[id]}:localRequire(id),
     __dirname: path.dirname(main), process:{...process,platform:dependencies.platform||'linux'}, setTimeout, clearTimeout, setInterval, clearInterval });
-  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentDraft=d;}, attachments:()=>attachmentDraft, setPasteAgents(value){attachmentAgents=value;phase="shown";}, pasteTarget, updatePasteShortcut, releasePasteShortcut, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
+  vm.runInContext(fs.readFileSync(main, 'utf8') + '\n globalThis.monitorTest = { init(w,s,c,file,d,shown){win=w;settings=s;config=c;configPath=file;monitor=d;visible=shown;sessionAlerts=new SessionAlerts();}, switchMonitor, reveal, tick, beginMove, overNotch, controlHit, setHot(r){hot=r;}, phase:()=>phase, expireVisibility(){visibleUntil=0;}, physicalPress, physicalRelease, setControls(c){controls=c;}, registerSessionShortcut, registerShortcut, inputLine, nativePointer, followPointer, recoverPlacement, setFresh(rows,age=0){liveSnapshot=rows;liveSnapshotAt=Date.now()-age;liveSnapshotScope=sessionScope(config);}, inputState:()=>({held,carrying,mouseDown,sessionKeyHeld,inputPresent:!!input}), closeTimers(){clearTimeout(placementTimer);nativeInput?.close?.();}, setInput(value){input=value;nativeInput={ready:!!value};}, setActive(rows){sessionAlerts.previous=new Map(rows.map(s=>[s.account+":"+s.id,s]));}, setAccounts(a){collector={accounts:a};}, setAttachments(w,d){attachmentDraft=d;}, attachments:()=>attachmentDraft, setPasteAgents(value){attachmentAgents=value;phase="shown";}, pasteTarget, updatePasteShortcut, releasePasteShortcut, clearHistory(){historyCache=null;historyAt=0;historyGeneration++;} };', context, { filename: main });
   const config = { edge: 'right', along: .5, scale: 1,source:'ssh',sshTarget:'homelab',sessionPins:[],slots:[],focusAccounts:[] };
   context.monitorTest.init(win, settings, config, path.join(root, 'settings.json'), displays[0], initialVisible);
   t.after(()=>{context.monitorTest.closeTimers();fs.rmSync(root,{recursive:true,force:true});});
@@ -148,11 +148,12 @@ test('pointer transfers use destination coordinates and hidden relocations stay 
   await s.command('monitor_placed', { placement: hidden.placement });
   assert.equal(s.calls.some(c => c[0] === 'appear'), false);
 });
-test('revealing a hidden notch clears it before emitting any old-edge layout', async t => {
+test('revealing a hidden notch moves while masked without emitting an old-edge layout', async t => {
   const s = setup(t, false);
   s.reveal();
   assert.deepEqual(s.calls.slice(0, 2), [['opacity', 0], ['ignore', true]]);
-  assert.equal(s.calls.some(c=>c[0]==='bounds'||c[0]==='layout'),false);
+  assert.equal(s.calls.some(c=>c[0]==='layout'),false);
+  assert.deepEqual(s.calls.find(c=>c[0]==='bounds')[1],s.displays[1].bounds);
   await stow(s);
   const layouts = s.calls.filter(c => c[0] === 'layout');
   assert.equal(layouts.length, 1);
@@ -182,7 +183,7 @@ test('the clearing acknowledgment selects the latest pointer screen and position
   const s=setup(t,false);s.reveal();
   s.point({x:1270,y:500});await stow(s);
   const layout=s.calls.filter(c=>c[0]==='layout').at(-1)[1];
-  assert.deepEqual(s.calls.find(c=>c[0]==='bounds')[1],s.displays[0].bounds);
+  assert.deepEqual(s.calls.filter(c=>c[0]==='bounds').at(-1)[1],s.displays[0].bounds);
   assert.equal(layout.edge,'right');assert.equal(layout.along,.625);
   assert.equal(await s.command('monitor_placed',{placement:layout.placement}),true);
 });
@@ -433,4 +434,28 @@ test('closing an older inline review cannot clear a replacement draft',async t=>
  await s.command('close_attachments',{token:'old'});assert.equal(s.test.attachments(),draft);
  draft.busy=true;await s.command('close_attachments',{token:'new'});assert.equal(s.test.attachments(),draft);
  draft.busy=false;await s.command('close_attachments',{token:'new'});assert.equal(s.test.attachments(),null);
+});
+
+
+test('a hidden reveal moves the masked window on-screen before requesting renderer frames',async t=>{
+ const s=setup(t,false);s.reveal(false);
+ const mask=s.calls.findIndex(c=>c[0]==='opacity'&&c[1]===0);
+ const move=s.calls.findIndex(c=>c[0]==='bounds');
+ const stowed=s.calls.findIndex(c=>c[0]==='monitor_stow');
+ assert.ok(mask>=0&&move>mask&&stowed>move);
+ assert.deepEqual(s.calls[move][1],s.displays[0].bounds);
+ assert.equal(s.calls.some(c=>c[0]==='opacity'&&c[1]===1),false);
+ await stow(s);
+ await s.command('monitor_placed',{placement:s.calls.filter(c=>c[0]==='layout').at(-1)[1].placement});
+ assert.equal(s.test.phase(),'shown');
+});
+
+test('visibility cannot expire during placement and gets a fresh hold after landing',async t=>{
+ const s=setup(t,false);s.reveal(false);s.test.expireVisibility();s.test.tick();
+ assert.equal(s.test.phase(),'transfer');
+ assert.equal(s.calls.some(c=>c[0]==='disappear'),false);
+ await stow(s);s.test.expireVisibility();s.test.tick();assert.equal(s.test.phase(),'transfer');
+ await s.command('monitor_placed',{placement:s.calls.filter(c=>c[0]==='layout').at(-1)[1].placement});
+ s.test.tick();assert.equal(s.test.phase(),'shown');
+ assert.equal(s.calls.some(c=>c[0]==='disappear'),false);
 });

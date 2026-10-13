@@ -272,6 +272,25 @@ Main's hit test (`overNotch`) and the input helper's control test (`controlHit`)
 
 Regression checks: `tests/test-monitor.cjs` (re-placement before unmasking, the retry bound, the log, and hit/control tests from an offset window) and the switch checks in `tests/browser/notch-bell.cjs` (necks stretch before parting, part once, and never below their least waist).
 
+### Hidden reveal recovery (5.1.5)
+
+A parked hidden window moves to its destination with native opacity still zero
+before asking the renderer to clear its old layout. Placement boundaries prefer
+the shared animation-frame scheduler but fall back to a 100ms timer when frames
+are suspended. The destination viewport must still match before acknowledgment;
+stale placement tokens cannot reveal an older position. Visible monitor transfers
+retain their clear-before-move ordering. Auto-hide waits for placement to finish,
+then grants a fresh visibility interval.
+
+Status notices are positioned inside the window, hidden by default and cleared
+after six seconds or on a new placement attempt. Placement timeouts record the
+native bounds, monitor bounds, last reported viewport and app zoom in the existing
+bounded diagnostic log. `tests/placement-electron.cjs` exercises the real main,
+preload and renderer with stalled animation frames and a Claude waiting alert on
+all four edges and all three sizes; it runs in the Windows native CI job.
+`tests/browser/notch-placement.cjs` covers stale and late frames, viewport mismatch
+and notice placement/expiry; main checks cover masked moves and visibility expiry.
+
 ## Relayed presses, smooth goo edges and legible small mode (3.3.4)
 
 3.3.3 did not fix the first-open dead clicks: hover still worked, presses did not, until the notch was moved to another screen and back. The input helper already caught presses on the pin and gear for overlays that do not receive clicks; `physicalPress` now covers the rest of the notch. A press over a hot rectangle that is no control waits `RELAY_MS` (140 ms). The page reports every `pointerdown` as `page_pressed`, and a report within 150 ms of the press is spent on it. Without one, main sends `mouseMove` + `mouseDown` into the page at the same window-relative spot with `webContents.sendInputEvent`, and `mouseUp` when the button is released (at once for a click shorter than the wait). Controls and presses off the notch behave as before. Each press within a minute of a placement is logged with whether the page got it.

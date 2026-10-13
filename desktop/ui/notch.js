@@ -812,10 +812,14 @@ document.addEventListener('contextmenu',e=>{
 });
 listen('drag_end',()=>{dragging=false;press=null;reportHot();scheduleFold();}).catch(()=>{});
 
+function clearNotice(){
+  const n=document.getElementById('notice');
+  clearTimeout(n._h);n.classList.remove('show');n.textContent='';
+}
 function notice(msg){
   const n=document.getElementById('notice');
   n.textContent=msg;n.classList.add('show');
-  clearTimeout(n._h);n._h=setTimeout(()=>n.classList.remove('show'),6000);
+  clearTimeout(n._h);n._h=setTimeout(clearNotice,6000);
 }
 
 /* ---- The handles ----------------------------------------------------------

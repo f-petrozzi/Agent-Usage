@@ -333,7 +333,7 @@ function armPlacementTimeout() {
 }
 function recoverPlacement(token) {
   if (pendingPlacement !== token || token === null || !win || win.isDestroyed()) return;
-  diagnose('placement timeout token=' + token + ' stage=' + pendingPlacementStage);
+  diagnose(`placement timeout token=${token} stage=${pendingPlacementStage} monitor=${JSON.stringify(monitor.bounds)} window=${JSON.stringify(win.getBounds?.())} page=${JSON.stringify(pageViewport)} zoom=${config.scale}`);
   if (++placementFailures <= 2) {
     pendingPlacement = ++placementSerial;pendingPlacementStage='stow';
     send('monitor_stow',{placement:pendingPlacement});armPlacementTimeout();return;
@@ -345,6 +345,7 @@ function recoverPlacement(token) {
   broadcast('notice','Display placement could not finish. Reveal the notch again to retry.');
 }
 function switchMonitor(display, { show = visible, atPointer = false } = {}) {
+  const wasVisible = visible;
   // Clear Chromium's last painted surface before moving a settled notch to another screen.
   win.setOpacity(0); win.setIgnoreMouseEvents(true, { forward: true });
   hot = []; controls = {}; lastCursor = ''; inside = false;
@@ -356,6 +357,9 @@ function switchMonitor(display, { show = visible, atPointer = false } = {}) {
     const at = cursorPlacement(screen.getCursorScreenPoint()); config.edge = at.edge; config.along = at.along;
   }
   pendingPlacementEdge = config.edge;
+  // A parked window has no on-screen surface to clear. Bring it onto the destination
+  // while still masked so Chromium can resume frames before the clearing handshake.
+  if (!wasVisible) place();
   send('monitor_stow', { placement: pendingPlacement });armPlacementTimeout();
   if (show) visibleUntil = Math.max(visibleUntil, Date.now() + 1800);
 }
@@ -412,7 +416,7 @@ function tick() {
   const hit = visible && phase !== 'transfer' && overNotch(cursor);
   if (hit !== inside) { inside = hit; send('notch_pointer', hit); win.setIgnoreMouseEvents(!hit, { forward: true }); }
   if (hit || Date.now()<attachmentHoverUntil || alerting || expanded || menuOpen || settings?.isVisible()) visibleUntil = Math.max(visibleUntil, Date.now() + 500);
-  if (visible && !pinned && !held && !carrying && !menuOpen && Date.now() > visibleUntil) hide();
+  if (visible && phase !== 'transfer' && !pinned && !held && !carrying && !menuOpen && Date.now() > visibleUntil) hide();
 }
 // Fast input updates only the target; click-through, topmost and hiding stay on tick().
 function followPointer(point,timestamp=null){
@@ -664,6 +668,7 @@ ipcMain.handle('command', async (event, command, args = {}) => {
       replacements = 0; lastPlacedAt = Date.now();
       pendingPlacement = null; pendingPlacementEdge = null; pendingPlacementStage = null; pendingPlacementAtPointer = false;
       phase = visible ? 'shown' : 'hidden';
+      if (visible) visibleUntil = Math.max(visibleUntil, Date.now() + 1800);
       win.setOpacity(1);if(switcherRequested)send('session_switcher',true);else if(switcherFocused)win.focus();return true;
     }
     case 'stage_bounds': stage = { x: Number(args.x) || 0, y: Number(args.y) || 0 }; return null;
