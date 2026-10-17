@@ -7,6 +7,17 @@ const { SessionFeed, parseSessions, accountId } = require('../desktop/collector.
 const line = sessions => JSON.stringify({ schema: 1, sessions });
 const fake = script => () => [process.execPath, ['-e', script]];
 
+test('ephemeral Orbit workers drive the correct account activity without a resume link', () => {
+  const row={provider:'codex',account:'codex:a',id:'orbit-worker:synthetic',sessionId:'',terminalPids:[],name:'Orbit worker',state:'busy',since:1000};
+  const [working]=parseSessions(line([row]),true);
+  assert.equal(working.account,accountId('codex','codex:a'));
+  assert.equal(working.state,'busy');
+  assert.equal(working.detail,'Working');
+  assert.equal(working.sessionId,'');
+  assert.deepEqual(parseSessions(line([{...row,state:'idle'}])),[]);
+  assert.deepEqual(parseSessions(line([{...row,state:'canceled'}])),[]);
+});
+
 test('feed lines become per-account activity with the usage snapshot ids', () => {
   const got = parseSessions(line([
     { provider: 'claude', account: 'claude', id: 's1', name: 'homelab-b7', state: 'busy', waitingFor: null, since: 1790711656 },

@@ -553,3 +553,10 @@ Validation includes 144 desktop checks, six collector suites, Chromium coverage
 for paused/late frames and viewport mismatches, and a real Electron fixture for
 hidden Claude waiting alerts on all four edges at Small, Medium and Large sizes.
 The Windows build runs that fixture before packaging the release.
+# Orbit worker activity (5.1.6)
+
+Guarded Orbit workers run Codex with `--ephemeral`, so they produce no rollout for the normal activity watcher. The collector now reads the optional owner-local Orbit worker service's status endpoint, cached for five seconds with a 200 ms socket timeout and a bounded response. Running jobs contribute Working activity only while their recorded worker PID/start identity is alive. Queued and usage-waiting jobs do not spin. Explicit completion and cancellation retain their different meanings; an unavailable service or vanished process never invents a completion.
+
+These disposable workers have no resume target: their activity rows remain plain text. No prompts, worker logs, queue database, credentials, process environments or provider APIs are read by this addition. Ordinary native sessions, worker execution and the 95% usage guard are unchanged. Update the host collector and reconnect its activity stream to enable detection; the Windows patch carries the matching release version.
+
+Validation: all seven collector fixture suites pass, including five new worker checks; desktop session-feed/alert checks cover the Account A activity mapping and absent resume link. The reported worker had finished before live inspection, so running-state acceptance uses synthetic live-process metadata rather than starting paid model work.

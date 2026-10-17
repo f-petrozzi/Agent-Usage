@@ -7,7 +7,7 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.1.5**.
+The current release is **5.1.6**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
@@ -24,7 +24,8 @@ and **Codex · Harbor**.
 - **Usage at a glance.** Account gauges, five-hour and weekly limits, reset times,
   and credits or banked resets where the provider reports them.
 - **Live activity.** Working and Waiting indicators, clickable active sessions,
-  AGY approval requests and Codex questions.
+  AGY approval requests and Codex questions. Guarded Orbit workers also show activity
+  through the collector, including disposable Codex runs without saved chat logs.
 - **Find any recent chat.** Search Sessions by title, workspace or session ID,
   filter by agent, pin favorites and keep the list fresh automatically. A quiet
   history icon opens that account's Sessions; Back returns to usage in the same
