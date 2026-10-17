@@ -51,3 +51,6 @@ desktop/resources/*.vsix
 
 # Browser validation dependencies
 tests/browser/node_modules/
+
+# Local design previews and review captures
+/artifacts/
