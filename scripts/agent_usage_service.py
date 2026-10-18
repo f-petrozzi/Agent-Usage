@@ -196,7 +196,8 @@ class UsageService:
         self.rows = {ident: {'id': ident, 'provider': ident.split(':')[0], 'label': ident.split(':')[-1],
                             'limits': [], 'sampledAt': None, 'stale': True, 'error': 'Waiting for first usage reading.'}
                      for ident in self.queries}
-        self.revisions = dict.fromkeys(self.queries, 0)
+        self.inflight = {}
+        self.last_attempt = dict.fromkeys(self.queries, 0)
         self.failures = dict.fromkeys(self.queries, 0)
         self.unchanged = dict.fromkeys(self.queries, 0)
         self.due = dict.fromkeys(self.queries, 0)
@@ -225,17 +226,13 @@ class UsageService:
             target.write(raw)
         temp.replace(self.root / 'shared.json')
 
-    def accept(self, ident, value, sampled=None, source='poll'):
-        """Called under lock; preserves timestamps returned by provider caches."""
+    def accept(self, ident, value, sampled=None, source='poll', persist=True):
+        """Accept an authoritative provider poll, never a socket publication."""
+        if source != 'poll':
+            raise ValueError('Only provider polls can replace authoritative readings.')
         now = time.time()
         if ident.startswith('codex:'):
             native = codex_native(value)
-            # Notifications may omit auxiliary reset-credit data; retain only that
-            # metadata. Missing quota/credit fields are never synthesized for guards.
-            if source == 'push' and 'rateLimitResetCredits' not in native:
-                previous = self.rows[ident].get('_native', {})
-                if 'rateLimitResetCredits' in previous:
-                    native['rateLimitResetCredits'] = previous['rateLimitResetCredits']
             row = self.usage.normalize_codex({'account': ident[6:], 'result': native}, self.usage.active_codex_account())
             row['_native'] = native
         else:
@@ -253,7 +250,6 @@ class UsageService:
         row.update(sampledAt=sampled, stale=False, available=True, source=source, error=None)
         row.pop('warning', None)
         self.rows[ident] = row
-        self.revisions[ident] += 1
         self.failures[ident] = 0
         high = any(w['usedPercent'] >= 90 for w in row['limits'])
         interval = (30 if high else min(90, 60 + 10 * self.unchanged[ident])) if row['provider'] == 'codex' else (60 if high and row['provider'] == 'antigravity' else 300)
@@ -262,7 +258,8 @@ class UsageService:
         if resets:
             interval = min(interval, max(5, min(resets) - now + 1))
         self.due[ident] = time.monotonic() + interval
-        self.save()
+        if persist:
+            self.save()
         return True
 
     def failed(self, ident, error, retry_at=None):
@@ -275,24 +272,81 @@ class UsageService:
         self.due[ident] = time.monotonic() + delay
         self.save()
 
+    def raise_only(self, ident, native):
+        """Overlay conservative bounds without granting freshness or recovery.
+
+        Window identity/reset times, credits and metadata remain poll-owned.
+        Missing/new/lower windows are only hints to check the provider again.
+        """
+        row = self.rows[ident]
+        previous = row.get('_native')
+        if not isinstance(previous, dict):
+            return False, True
+        merged = copy.deepcopy(previous)
+        bucket, incoming = merged['rateLimits'], native['rateLimits']
+        changed, recheck = False, False
+        for key in ('primary', 'secondary'):
+            update = incoming.get(key)
+            if update is None:
+                continue
+            current = bucket.get(key)
+            if (not current or update.get('resetsAt') != current.get('resetsAt')
+                    or update.get('windowDurationMins') != current.get('windowDurationMins')):
+                recheck = True
+                continue
+            if update['usedPercent'] > current['usedPercent']:
+                current['usedPercent'] = update['usedPercent']
+                changed = True
+            elif update['usedPercent'] < current['usedPercent']:
+                recheck = True
+        for key in ('rateLimitReachedType', 'spendControlReached'):
+            if incoming.get(key) and not bucket.get(key):
+                bucket[key] = incoming[key]
+                changed = True
+            elif key in incoming and bucket.get(key) and not incoming[key]:
+                recheck = True
+        if 'credits' in incoming and incoming['credits'] != bucket.get('credits'):
+            recheck = True
+        if changed:
+            normalized = self.usage.normalize_codex({'account': ident[6:], 'result': merged}, None)
+            row.update(_native=merged, limits=normalized['limits'],
+                       blocked=bool(row.get('blocked') or normalized.get('blocked')), source='poll+push')
+        return changed, recheck
+
+    def request_check(self, ident):
+        # Publications cannot evade provider backoff or force an RPC flood.
+        if self.failures[ident] or ident in self.inflight:
+            return False
+        earliest = max(time.monotonic(), self.last_attempt[ident] + 15)
+        self.due[ident] = min(self.due[ident], earliest)
+        return True
+
     def poll(self, ident):
         with self.lock:
-            revision = self.revisions[ident]
+            self.inflight[ident] = None
+            self.last_attempt[ident] = time.monotonic()
         retry_at = None
         try:
             value = self.queries[ident]()
             completed = time.time()
             retry_at = value.get('retryAt')
             with self.lock:
-                if revision == self.revisions[ident]:
-                    self.accept(ident, value, sampled=completed if ident.startswith('codex:') else None)
+                pending = self.inflight[ident]
+                if not self.accept(ident, value, sampled=completed if ident.startswith('codex:') else None, persist=False):
+                    raise ValueError('Provider returned an older reading.')
+                # A push during a slow poll can only retain a higher bound for
+                # the same windows. It cannot prevent a poll/failure committing.
+                if pending is not None:
+                    self.raise_only(ident, pending)
+                self.save()
         except Exception:
             if ident in self.readers:
                 self.readers[ident].close()
             with self.lock:
-                # A push arriving during a slow/failing poll wins.
-                if revision == self.revisions[ident]:
-                    self.failed(ident, 'Provider usage unavailable; retrying with backoff (last reading).', retry_at)
+                self.failed(ident, 'Provider usage unavailable; retrying with backoff (last reading).', retry_at)
+        finally:
+            with self.lock:
+                self.inflight.pop(ident, None)
 
     def publish(self, request):
         if not isinstance(request, dict) or set(request) != {'account', 'sampledAt', 'result'}:
@@ -300,8 +354,15 @@ class UsageService:
         ident, sampled = request['account'], request['sampledAt']
         if ident not in self.readers or type(sampled) not in (int, float) or not 0 <= time.time() - sampled < 120:
             raise ValueError('Unknown account or expired update.')
+        native = codex_native(request['result'])
         with self.lock:
-            return {'accepted': self.accept(ident, request['result'], sampled, 'push')}
+            changed, recheck = self.raise_only(ident, native)
+            if changed:
+                if ident in self.inflight:
+                    self.inflight[ident] = copy.deepcopy(self.rows[ident]['_native'])
+                self.save()
+            check = self.request_check(ident) if recheck else False
+            return {'accepted': changed, 'checkRequested': check}
 
     def worker(self, ident):
         while not self.stop.is_set():

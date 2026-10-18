@@ -28,7 +28,7 @@ healthy Codex account's quota.
 
 Codex uses one persistent, read-only app-server per account, disabling hooks,
 plugins and apps. Normal checks run every 60–90 seconds (30 seconds near a
-limit), and pushes defer the next poll. Reader disconnects reconnect with
+limit). Pushes never defer a poll or renew its sample timestamp. Reader disconnects reconnect with
 backoff; a reader recycles after an hour and discovers new CLI installations
 every five minutes. Codex uses its matching Node even with SSH's limited PATH.
 Claude retains its credential-scoped five-minute cache and Retry-After
@@ -43,6 +43,20 @@ overridable with `AGENT_USAGE_STATE_DIR`. `shared.json` is replaced atomically
 prevent duplicate readers. `updates.sock` (0600, matching peer UID required)
 accepts bounded Codex quota publications; it offers no commands, profile-path
 arguments, session access or execution RPCs.
+
+Socket publications are conservative hints, even from the same UID: they can
+only raise percentages for the exact already-polled window/reset or set a
+blocking flag. They cannot lower usage, clear a block, alter reset times or
+credits, seed an unmeasured account, clear provider failures, or make a reading
+fresh. Lower values and changed windows request an early provider check, limited
+to one attempt per 15 seconds and subject to existing backoff. A publication
+arriving during a poll cannot suppress that poll's success/failure; only a
+successful provider poll can lower the cached reading or restore freshness.
+
+Codex readings still expire at 120 seconds, matching the worker guard. With
+60–90-second normal polls, a delayed/missed check can briefly produce
+`waiting_for_usage`. This pause is intentional: the service never extends a
+reading's lifetime to keep the queue moving.
 
 Schema 2 is preserved. Every account has its own `sampledAt`, `available`,
 `stale`, provider, limits and optional warning. Stale accounts retain their
