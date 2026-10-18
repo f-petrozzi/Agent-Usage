@@ -11,12 +11,14 @@ SOURCE="$SCRIPT_DIR/agent-usage"
 BIN_DIR="$HOME/.local/bin"
 TARGET="$BIN_DIR/agent-usage"
 FORCE=false
+SHARED=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --force) FORCE=true ;;
+        --shared-service) SHARED=true ;;
         -h|--help)
-            printf 'Usage: %s [--force]\n' "${0##*/}"
+            printf 'Usage: %s [--force] [--shared-service]\n' "${0##*/}"
             exit 0
             ;;
         *)
@@ -44,8 +46,30 @@ python3 "$SOURCE" --self-test || {
 }
 
 mkdir -p "$BIN_DIR"
+install -m 644 "$SCRIPT_DIR/agent_usage_service.py" "$BIN_DIR/agent_usage_service.py"
 install -m 755 "$SOURCE" "$TARGET"
 printf 'Installed %s\n' "$TARGET"
+
+STATE_DIR="${AGENT_USAGE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-usage}"
+[[ ! -f "$STATE_DIR/shared.enabled" ]] || SHARED=true
+if [[ "$SHARED" == true ]]; then
+    UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    mkdir -p "$UNIT_DIR" "$STATE_DIR"
+    chmod 700 "$STATE_DIR"
+    install -m 644 "$SCRIPT_DIR/agent-usage.service" "$UNIT_DIR/agent-usage.service"
+    # Quote systemd environment values; do not interpret shell syntax in paths.
+    python3 - "$UNIT_DIR/agent-usage.service" "$STATE_DIR" <<'PY'
+import json, pathlib, sys
+unit = pathlib.Path(sys.argv[1])
+unit.write_text(unit.read_text().replace('Environment=PYTHONDONTWRITEBYTECODE=1',
+    'Environment=PYTHONDONTWRITEBYTECODE=1\nEnvironment=' + json.dumps('AGENT_USAGE_STATE_DIR=' + sys.argv[2])))
+PY
+    touch "$STATE_DIR/shared.enabled"
+    systemctl --user daemon-reload
+    systemctl --user enable agent-usage.service
+    systemctl --user restart agent-usage.service
+    printf 'Shared Codex, Claude and Agy service enabled. Check: systemctl --user status agent-usage\n'
+fi
 
 missing=()
 command -v codex >/dev/null 2>&1 || missing+=('codex')

@@ -178,11 +178,11 @@ def _wait_for_response(
 
 
 def query_codex(name: str, profile_home: Path, timeout: float) -> dict[str, Any]:
-    binary = os.environ.get("CODEX_BIN") or shutil.which("codex")
+    binary = _codex_cli()
     if not binary:
         return {"account": name, "error": "codex is not installed or not on PATH"}
 
-    env = os.environ.copy()
+    env = _codex_env(binary)
     env["CODEX_HOME"] = str(profile_home)
     command = [binary, "-c", AUTH_STORE_OVERRIDE, "app-server", "--listen", "stdio://"]
 
@@ -385,13 +385,46 @@ def _claude_token() -> tuple[str | None, str | None, bool]:
     return token, subscription, expired
 
 
-def _cli_version(binary: str) -> tuple[int, ...] | None:
+def _cli_version(binary: str, env: dict[str, str] | None = None) -> tuple[int, ...] | None:
     try:
-        result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3, check=True)
+        result = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=3, check=True, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
     found = re.search(r"\b(\d+)\.(\d+)\.(\d+)\b", result.stdout)
     return tuple(int(part) for part in found.groups()) if found else None
+
+
+def _codex_env(binary: str) -> dict[str, str]:
+    """An nvm install's launcher is ``#!/usr/bin/env node``; run it with the Node beside it."""
+    env = os.environ.copy()
+    if (Path(binary).parent / "node").exists():
+        env["PATH"] = str(Path(binary).parent) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+@lru_cache(maxsize=1)
+def _codex_cli() -> str | None:
+    """The newest Codex on this host.
+
+    As with Claude, PATH alone is not enough: over non-interactive SSH it lacks the nvm
+    install that Orbit and interactive shells use, and it once found a stale npm global in
+    /usr/bin instead. CODEX_BIN overrides.
+    """
+    if os.environ.get("CODEX_BIN"):
+        return os.environ["CODEX_BIN"]
+    home = Path.home()
+    nvm = sorted(str(path) for path in (home / ".nvm" / "versions" / "node").glob("*/bin/codex"))
+    candidates = [shutil.which("codex"), str(home / ".local" / "bin" / "codex"), *nvm]
+    best: tuple[str | None, tuple[int, ...] | None] = (None, None)
+    seen: set[str] = set()
+    for binary in candidates:
+        if not binary or not os.access(binary, os.X_OK) or os.path.realpath(binary) in seen:
+            continue
+        seen.add(os.path.realpath(binary))
+        version = _cli_version(binary, _codex_env(binary))
+        if best[0] is None or (version is not None and (best[1] is None or version > best[1])):
+            best = (binary, version)
+    return best[0]
 
 
 @lru_cache(maxsize=1)
@@ -1760,6 +1793,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=20.0, help="per-provider timeout")
     parser.add_argument("--compact", action="store_true", help="emit JSON without indentation")
     parser.add_argument("--self-test", action="store_true", help="check the parsers and exit")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--serve", action="store_true", help="run the shared Codex, Claude and Agy usage service")
+    mode.add_argument("--shared", action="store_true", help="require the shared cache; never query providers")
+    mode.add_argument("--direct", action="store_true", help="one-off provider diagnostics, bypassing the shared service")
     parser.add_argument(
         "--watch-sessions",
         action="store_true",
@@ -1775,8 +1812,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test:
         return 0 if self_test() else 1
     try:
-        if args.timeout <= 0:
-            raise UsageError("--timeout must be greater than zero")
+        if not math.isfinite(args.timeout) or not 0 < args.timeout <= 300:
+            raise UsageError("--timeout must be between zero and 300 seconds")
         profiles = codex_profiles(args.codex_accounts)
         if args.session_links:
             document = {"schema": 1, "sessions": session_links(profiles, claude_config_dir(), time.time())}
@@ -1796,8 +1833,19 @@ def main(argv: list[str] | None = None) -> int:
                 return watch_sessions(profiles, include_claude, include_antigravity)
             except KeyboardInterrupt:
                 return 0
-        document = collect(profiles, include_claude, args.timeout, include_antigravity)
-    except UsageError as exc:
+        # Installed shared services leave an enabled marker. A missing/stopped
+        # service must not silently resurrect independent provider polling.
+        from agent_usage_service import state_root, shared_snapshot, serve
+        root = state_root()
+        if args.serve:
+            return serve(sys.modules[__name__], profiles, include_claude, not args.no_antigravity, args.timeout)
+        shared = args.shared or (not args.direct and
+                                 ((root / 'shared.enabled').exists() or (root / 'shared.json').exists()))
+        if shared:
+            document = shared_snapshot(profiles, include_claude, not args.no_antigravity)
+        else:
+            document = collect(profiles, include_claude, args.timeout, include_antigravity)
+    except (UsageError, OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     json.dump(document, sys.stdout, indent=None if args.compact else 2)

@@ -3,6 +3,14 @@
 Historical implementation and validation notes, preserved from the original README.
 Older entries describe the behavior of that release; see the [current README](../README.md) for the latest features and controls.
 
+## Shared usage collector (5.1.7)
+
+A shared homelab service now owns Codex, Claude and Agy quota collection, with
+persistent Codex readers, Orbit notification updates, independent backoff and
+an atomic cache. The Windows app preserves stale flags and never dates an
+unmeasured shared account as freshly fetched. Install the service separately
+from the Windows update; see [shared usage](shared-usage.md).
+
 ## Alerts and account order (3.1)
 
 Settings → General now offers usage warnings at 80% and 100%, optional alerts when

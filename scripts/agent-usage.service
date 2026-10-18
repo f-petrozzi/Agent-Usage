@@ -1,0 +1,23 @@
+[Unit]
+Description=Shared Codex, Claude and Agy usage collector
+After=default.target network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+ExecStart=%h/.local/bin/agent-usage --serve --timeout 20
+WorkingDirectory=%h
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=100
+KillMode=control-group
+NoNewPrivileges=true
+LockPersonality=true
+RestrictSUIDSGID=true
+MemoryMax=768M
+CPUQuota=50%
+TasksMax=256
+
+[Install]
+WantedBy=default.target

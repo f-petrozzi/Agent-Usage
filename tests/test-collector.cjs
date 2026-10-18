@@ -53,3 +53,14 @@ test('Resets are a count and the soonest expiry, not metadata lines',()=>{
   const [none]=normalize({schema:2,accounts:[{provider:'claude',resetCredits:0,limits:[]}]});
   assert.equal(none.snap.resets,null,'no resets, no row');
 });
+
+test('Shared cache keeps stale flags and never assigns a fresh timestamp to an unmeasured account',()=>{
+  const rows=normalize({schema:2,source:'shared',generatedAt:200,accounts:[
+    {id:'codex:a',provider:'codex',sampledAt:100,stale:true,limits:[{usedPercent:40}]},
+    {id:'claude',provider:'claude',available:false,sampledAt:null,limits:[]},
+    {id:'antigravity',provider:'antigravity',sampledAt:120,stale:false,limits:[{usedPercent:10}]}
+  ]});
+  assert.equal(rows[0].snap.status,'stale');assert.equal(rows[0].snap.fetched_at,100000);
+  assert.equal(rows[1].snap.status,'error');assert.equal(rows[1].snap.fetched_at,0);
+  assert.equal(rows[2].snap.status,'ok');assert.equal(rows[2].snap.fetched_at,120000);
+});

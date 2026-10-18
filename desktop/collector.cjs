@@ -49,8 +49,8 @@ function normalize(raw) {
       resets_at: finite(l.resetsAt) ? l.resetsAt * 1000 : null, count: null, derived: false
     }));
     return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
-      status: a.error || a.warning ? (windows.length ? 'stale' : 'error') : 'ok', windows,
-      fetched_at: finite(a.sampledAt) ? a.sampledAt * 1000 : timestamp,
+      status: a.error || a.warning || a.stale || a.available === false ? (windows.length ? 'stale' : 'error') : 'ok', windows,
+      fetched_at: finite(a.sampledAt) ? a.sampledAt * 1000 : raw.source === 'shared' ? 0 : timestamp,
       note: clean([a.error, a.warning].filter(Boolean).join(' · '), 1500), details, resets
     }};
   }).filter(Boolean);

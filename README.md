@@ -7,7 +7,7 @@ know which agents need you, and return to a chat in VS Code without hunting for
 its terminal or choosing the account again.
 
 [Download the latest Windows installer](https://github.com/f-petrozzi/Agent-Usage/releases/latest).
-The current release is **5.1.6**.
+The current release is **5.1.7**.
 
 <p><img src="docs/images/notch.png" width="720" alt="The top-edge Agent Usage notch with four fictional accounts, provider icons, usage gauges and a yellow unread notification dot"></p>
 
@@ -21,6 +21,9 @@ and **Codex · Harbor**.
   screenshot. Review previews and choose a chat before sending. Codex supports
   native image queuing when its CLI provides `queue`; Claude and AGY use an
   open-chat-and-copy-prompt handoff. See [attachment behavior and limits](docs/attachment-drop.md).
+- **One shared collector.** Codex, Claude and Agy usage comes from one homelab
+  service shared with Orbit and its worker queue. Cached readings keep their
+  timestamps; provider failures stay visibly stale. See [setup and behavior](docs/shared-usage.md).
 - **Usage at a glance.** Account gauges, five-hour and weekly limits, reset times,
   and credits or banked resets where the provider reports them.
 - **Live activity.** Working and Waiting indicators, clickable active sessions,
@@ -105,7 +108,7 @@ with the matching Remote SSH or WSL support.
    ```bash
    git clone https://github.com/f-petrozzi/Agent-Usage.git
    cd Agent-Usage
-   scripts/install-agent-usage.sh --force
+   scripts/install-agent-usage.sh --force --shared-service
    ```
 
 2. Download **AgentUsage-Setup-<version>.exe** from the
@@ -159,7 +162,7 @@ Update the collector separately on the machine running your agents:
 ```bash
 cd Agent-Usage
 git pull --ff-only
-scripts/install-agent-usage.sh --force
+scripts/install-agent-usage.sh --force --shared-service
 ```
 
 ## Development and documentation
