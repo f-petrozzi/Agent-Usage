@@ -64,3 +64,12 @@ test('Shared cache keeps stale flags and never assigns a fresh timestamp to an u
   assert.equal(rows[1].snap.status,'error');assert.equal(rows[1].snap.fetched_at,0);
   assert.equal(rows[2].snap.status,'ok');assert.equal(rows[2].snap.fetched_at,120000);
 });
+
+test('cached readings expire locally even while the stream is disconnected', () => {
+  const { Collector } = require('../desktop/collector.cjs');
+  const collector = new Collector(() => ({})), sampledAt = Date.now()/1000 - 121;
+  collector.acceptSnapshot({schema:2,source:'shared',accounts:[{id:'codex:a',provider:'codex',sampledAt,source:'live',limits:[{usedPercent:25}]}]});
+  assert.equal(collector.accounts[0].snap.status,'stale');
+  assert.equal(collector.accounts[0].snap.fetched_at,sampledAt*1000);
+  collector.close();
+});

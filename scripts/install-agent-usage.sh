@@ -46,6 +46,8 @@ python3 "$SOURCE" --self-test || {
 }
 
 mkdir -p "$BIN_DIR"
+install -m 644 "$SCRIPT_DIR/agent_usage_live.py" "$BIN_DIR/agent_usage_live.py"
+install -m 755 "$SCRIPT_DIR/agent-usage-claude-statusline" "$BIN_DIR/agent-usage-claude-statusline"
 install -m 644 "$SCRIPT_DIR/agent_usage_service.py" "$BIN_DIR/agent_usage_service.py"
 install -m 755 "$SOURCE" "$TARGET"
 printf 'Installed %s\n' "$TARGET"

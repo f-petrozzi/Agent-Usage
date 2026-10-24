@@ -22,13 +22,12 @@ and **Codex · Harbor**.
   native image queuing when its CLI provides `queue`; Claude and AGY use an
   open-chat-and-copy-prompt handoff. See [attachment behavior and limits](docs/attachment-drop.md).
 - **One shared collector.** Codex, Claude and Agy usage comes from one homelab
-  service shared with Orbit and its worker queue. Cached readings keep their
+  service shared with Orbit. Cached readings keep their
   timestamps; provider failures stay visibly stale. See [setup and behavior](docs/shared-usage.md).
 - **Usage at a glance.** Account gauges, five-hour and weekly limits, reset times,
   and credits or banked resets where the provider reports them.
 - **Live activity.** Working and Waiting indicators, clickable active sessions,
-  AGY approval requests and Codex questions. Guarded Orbit workers also show activity
-  through the collector, including disposable Codex runs without saved chat logs.
+  AGY approval requests and Codex questions.
 - **Find any recent chat.** Search Sessions by title, workspace or session ID,
   filter by agent, pin favorites and keep the list fresh automatically. A quiet
   history icon opens that account's Sessions; Back returns to usage in the same

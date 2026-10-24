@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Capture Claude's existing response quota and preserve the owner's statusline."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+from agent_usage_live import claude_row
+from agent_usage_service import read_snapshot, state_root
+
+
+def atomic_json(path, value):
+    fd, temp = tempfile.mkstemp(prefix=path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as target:
+            json.dump(value, target, allow_nan=False)
+        os.replace(temp, path)
+    finally:
+        Path(temp).unlink(missing_ok=True)
+
+
+def install(settings):
+    root = state_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    data = json.loads(settings.read_text()) if settings.exists() else {}
+    previous = data.get('statusLine')
+    script = str(Path(__file__).resolve())
+    if not (isinstance(previous, dict) and previous.get('command') == shlex.quote(script)):
+        atomic_json(root / 'statusline-previous.json', previous)
+        data['statusLine'] = {**(previous if isinstance(previous, dict) else {}),
+                              'type': 'command', 'command': shlex.quote(script)}
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json(settings, data)
+    print('Claude statusline capture installed; the previous command is preserved.')
+
+
+def render(raw):
+    root = state_root()
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            data = {}
+    except ValueError:
+        data = {}
+    try:
+        row = claude_row(data.get('rate_limits'))
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # Claude redraws the footer during tools as well as responses. Identical
+        # quota + response counters must not renew the sample time on a redraw.
+        counters = {k: (data.get('context_window') or {}).get(k) for k in ('total_input_tokens', 'total_output_tokens')}
+        signature = hashlib.sha256(json.dumps([data.get('session_id'), data.get('prompt_id'), counters,
+                                              data['rate_limits']], sort_keys=True).encode()).hexdigest()
+        with (root / 'claude-statusline.lock').open('a') as lock:
+            os.chmod(lock.name, 0o600)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            path = root / 'claude-live.json'
+            try:
+                previous = json.loads(path.read_text())
+            except (OSError, ValueError):
+                previous = {}
+            if not isinstance(previous, dict):
+                previous = {}
+            session_key = hashlib.sha256(str(data.get('session_id') or '').encode()).hexdigest()
+            seen = previous.get('seen') or {}
+            if not isinstance(seen, dict):
+                seen = {}
+            if seen.get(session_key) != signature:
+                # Store quota only, never the input JSON/transcript/workspace.
+                rate = {k: {'used_percentage': w['used_percentage'], 'resets_at': w['resets_at']}
+                        for k, w in data['rate_limits'].items() if isinstance(w, dict)
+                        and k in ('five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet')
+                        and 'used_percentage' in w and 'resets_at' in w}
+                seen.pop(session_key, None)
+                seen[session_key] = signature
+                seen = dict(list(seen.items())[-64:])
+                atomic_json(path, {'rate_limits': rate, 'sampledAt': time.time(), 'seen': seen})
+    except (OSError, ValueError, TypeError, KeyError):
+        pass  # Missing rate_limits never removes or refreshes the last sample.
+    try:
+        previous = json.loads((root / 'statusline-previous.json').read_text())
+        if isinstance(previous, dict) and isinstance(previous.get('command'), str):
+            result = subprocess.run(previous['command'], shell=True, input=raw, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3)
+            sys.stdout.write(result.stdout)
+            return
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    try:
+        row = next(r for r in read_snapshot()['accounts'] if r['id'] == 'claude')
+        text = ' · '.join(('5h' if w.get('windowMins') == 300 else '7d') + f" {w['usedPercent']:g}%" for w in row['limits'])
+        if row.get('stale'):
+            text += ' (last reading)'
+    except (OSError, ValueError, KeyError, StopIteration):
+        text = 'Claude'
+    print(text or 'Claude')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--install', action='store_true')
+    parser.add_argument('--settings', type=Path, default=Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home()/'.claude')/'settings.json')
+    args = parser.parse_args()
+    if args.install:
+        install(args.settings)
+    else:
+        render(sys.stdin.read(1024 * 1024))

@@ -103,80 +103,68 @@ class SharedTests(unittest.TestCase):
         self.assertFalse(self.service.publish({'account': 'codex:a', 'sampledAt': stamp-1, 'result': native(10)})['accepted'])
     def push(self, value):
         return self.service.publish({'account':'codex:a','sampledAt':time.time(),'result':value})
-    def test_lower_push_cannot_admit_a_worker_or_clear_blocked_state(self):
+    def test_newer_live_reading_can_reset_usage_and_clear_block(self):
         self.service.accept('codex:a', native(96, rateLimitReachedType='rate_limit_reached'))
+        self.assertTrue(self.push(native(1, rateLimitReachedType=None))['accepted'])
+        row = self.service.rows['codex:a']
+        self.assertEqual(row['limits'][0]['usedPercent'], 1)
+        self.assertFalse(row['blocked'])
+        self.assertEqual(row['source'], 'live')
+        self.assertFalse(row['stale'])
+    def test_partial_event_keeps_omitted_windows_and_their_time(self):
+        self.seed()
         previous = copy.deepcopy(self.service.rows['codex:a'])
-        reply = self.push(native(1, rateLimitReachedType=None))
-        self.assertFalse(reply['accepted'])
-        self.assertTrue(reply['checkRequested'])
-        self.assertEqual(self.service.rows['codex:a'], previous)
-        self.assertGreaterEqual(self.service.rows['codex:a']['limits'][0]['usedPercent'],95)
-        self.assertTrue(self.service.rows['codex:a']['blocked'])
-        # A provider poll is the authority that can reduce usage/clear the block.
-        self.service.queries['codex:a'] = lambda: native(1)
-        self.service.poll('codex:a')
-        self.assertEqual(self.service.rows['codex:a']['limits'][0]['usedPercent'],1)
-        self.assertFalse(self.service.rows['codex:a']['blocked'])
-    def test_push_preserves_poll_freshness_due_time_and_other_windows(self):
-        self.seed()
-        previous=copy.deepcopy(self.service.rows['codex:a'])
-        due=self.service.due['codex:a']
-        update=native(99)
+        update = native(99)
         update['rateLimits'].pop('secondary')
-        update['rateLimits']['credits']['balance']='9999999'
+        update['rateLimits'].pop('credits')
         self.assertTrue(self.push(update)['accepted'])
-        row=self.service.rows['codex:a']
-        self.assertEqual(row['sampledAt'],previous['sampledAt'])
-        self.assertEqual(row['limits'][1],previous['limits'][1])
-        self.assertEqual(row['_native']['rateLimits']['credits'],previous['_native']['rateLimits']['credits'])
-        self.assertLessEqual(self.service.due['codex:a'],due)
-    def test_push_cannot_seed_unknown_account_or_make_old_reading_fresh(self):
-        self.assertFalse(self.push(native(1))['accepted'])
-        self.assertIsNone(self.service.rows['codex:a']['sampledAt'])
+        row = self.service.rows['codex:a']
+        self.assertEqual(row['sampledAt'], previous['sampledAt'])
+        self.assertEqual(row['limits'][1], previous['limits'][1])
+        self.assertGreater(row['limits'][0]['sampledAt'], previous['sampledAt'])
+        self.assertEqual(row['_native']['rateLimits']['credits'], previous['_native']['rateLimits']['credits'])
+    def test_live_can_seed_and_recover_a_known_account_but_rejects_old_events(self):
+        self.assertTrue(self.push(native(1))['accepted'])
+        stamp = self.service.rows['codex:a']['sampledAt']
+        self.assertFalse(self.service.publish({'account':'codex:a','sampledAt':stamp-1,'result':native(90)})['accepted'])
+        with self.assertRaises(ValueError):
+            self.service.publish({'account':'codex:unknown','sampledAt':time.time(),'result':native(1)})
+        with self.assertRaises(ValueError):
+            self.service.publish({'account':'codex:a','sampledAt':time.time()-121,'result':native(1)})
+    def test_new_reset_replaces_window_without_retaining_old_duplicate(self):
         self.seed()
-        self.service.rows['codex:a']['sampledAt']=time.time()-121
-        self.push(native(99))
-        row=shared.read_snapshot(self.root/'shared.json')['accounts'][0]
-        self.assertTrue(row['stale'])
-        self.assertGreater(time.time()-row['sampledAt'],120)
-    def test_changed_reset_or_duration_only_requests_check(self):
-        self.seed()
-        previous=copy.deepcopy(self.service.rows['codex:a'])
-        for field,value in (('resetsAt',FIXTURE_TIME+9000),('windowDurationMins',10080)):
-            update=native(1)
-            update['rateLimits']['primary'][field]=value
-            self.assertFalse(self.push(update)['accepted'])
-            self.assertEqual(self.service.rows['codex:a'],previous)
-    def test_push_does_not_clear_failure_or_bypass_backoff(self):
+        update = native(1)
+        update['rateLimits']['primary']['resetsAt'] += 9000
+        self.push(update)
+        row = self.service.rows['codex:a']
+        self.assertEqual(len(row['limits']), 2)
+        self.assertEqual(row['limits'][0]['resetsAt'], update['rateLimits']['primary']['resetsAt'])
+        self.assertEqual(row['_native']['rateLimits']['primary'], update['rateLimits']['primary'])
+    def test_live_recovers_freshness_without_bypassing_poll_backoff(self):
         self.seed()
         self.service.failed('codex:a','Synthetic failure', time.time()+900)
-        row=copy.deepcopy(self.service.rows['codex:a']);due=self.service.due['codex:a']
+        due = self.service.due['codex:a']
         self.assertTrue(self.push(native(99))['accepted'])
-        self.assertFalse(self.push(native(1))['checkRequested'])
-        self.assertTrue(self.service.rows['codex:a']['stale'])
-        self.assertEqual(self.service.rows['codex:a']['sampledAt'],row['sampledAt'])
-        self.assertEqual(self.service.rows['codex:a']['warning'],row['warning'])
-        self.assertEqual(self.service.due['codex:a'],due)
-        self.assertEqual(self.service.failures['codex:a'],1)
-    def test_push_during_failed_poll_cannot_suppress_failure(self):
+        self.assertFalse(self.service.rows['codex:a']['stale'])
+        self.assertAlmostEqual(self.service.due['codex:a'], due, delta=.01)
+        self.assertEqual(self.service.failures['codex:a'], 1)
+    def test_live_during_failed_poll_survives_and_endpoint_still_backs_off(self):
         self.seed()
         def query():
             self.push(native(99))
             raise OSError('Unavailable')
-        self.service.queries['codex:a']=query
+        self.service.queries['codex:a'] = query
         self.service.poll('codex:a')
-        self.assertTrue(self.service.rows['codex:a']['stale'])
-        self.assertEqual(self.service.failures['codex:a'],1)
-        self.assertGreater(self.service.due['codex:a']-time.monotonic(),59)
-    def test_lower_hints_rate_limit_checks_and_higher_pushes_never_defer_poll(self):
+        self.assertFalse(self.service.rows['codex:a']['stale'])
+        self.assertEqual(self.service.rows['codex:a']['limits'][0]['usedPercent'], 99)
+        self.assertEqual(self.service.failures['codex:a'], 1)
+        self.assertGreater(self.service.due['codex:a']-time.monotonic(), 59)
+    def test_live_events_defer_idle_polls_until_the_sample_expires(self):
         self.seed()
-        self.service.due['codex:a']=time.monotonic()+90
-        due=self.service.due['codex:a']
         self.push(native(40))
-        self.assertEqual(self.service.due['codex:a'],due)
-        for _ in range(20):self.push(native(1))
-        self.assertGreaterEqual(self.service.due['codex:a'],self.service.last_attempt['codex:a']+15)
-        self.assertLessEqual(self.service.due['codex:a'],due)
+        self.assertGreater(self.service.due['codex:a']-time.monotonic(), 119)
+        for _ in range(20): self.push(native(1))
+        self.assertGreater(self.service.due['codex:a']-time.monotonic(), 119)
     def test_credit_precision_partial_metadata_and_invalid_push(self):
         with self.service.lock:
             initial = native()

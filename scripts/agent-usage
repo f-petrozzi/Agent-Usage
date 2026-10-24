@@ -673,7 +673,7 @@ def _claude_reset_credits(payload: dict[str, Any]) -> tuple[int | None, list[dic
     return count, details
 
 
-def _query_claude_uncached(timeout: float) -> dict[str, Any]:
+def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
     account: dict[str, Any] = {
         "id": "claude",
         "provider": "claude",
@@ -705,6 +705,10 @@ def _query_claude_uncached(timeout: float) -> dict[str, Any]:
             first_error = _short(exc)
         except (urllib.error.URLError, OSError, ValueError, UsageError) as exc:
             first_error = _short(exc)
+
+    if payload is None and not allow_cli:
+        account["error"] = first_error or "Claude credentials unavailable or expired; sign in with the CLI."
+        return account
 
     if payload is None:
         # Running Claude Code's own /usage refreshes an expired token and gives
@@ -753,7 +757,7 @@ def _retry_seconds(value: str | None, now: float) -> float:
             return 0.0
 
 
-def query_claude(timeout: float) -> dict[str, Any]:
+def query_claude(timeout: float, allow_cli=True) -> dict[str, Any]:
     """Share a credential-scoped cache/cooldown across polling processes.
 
     A 429 never launches the CLI fallback or immediately retries the endpoint.
@@ -786,7 +790,7 @@ def query_claude(timeout: float) -> dict[str, Any]:
                 return saved["account"]
         streak = min(8, max(0, int(saved.get("streak", 0))))
         try:
-            account = _query_claude_uncached(timeout)
+            account = _query_claude_uncached(timeout) if allow_cli else _query_claude_uncached(timeout, allow_cli=False)
             streak = 0
             next_attempt = now + 300
             if not account.get("error"):
@@ -1554,7 +1558,18 @@ def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool, inclu
         if include_antigravity:
             sessions += antigravity_sessions(Path.home() / ".gemini" / "antigravity-cli", include_terminal=True)
         sessions.sort(key=lambda s: (s["state"] not in {"busy", "waiting"}, s["provider"], s["account"], s["id"]))
-        line = json.dumps({"schema": 1, "sessions": sessions[:40]}, separators=(",", ":"))
+        document = {"schema": 1, "sessions": sessions[:40]}
+        # Additive to the existing SSH/WSL stream; old clients ignore usage.
+        # Only read the shared cache here, including its recomputed stale flags.
+        try:
+            from agent_usage_service import shared_snapshot
+            snapshot = shared_snapshot(profiles, include_claude, include_antigravity)
+            snapshot.pop('generatedAt', None)
+            snapshot.pop('updatedAt', None)
+            document['usage'] = snapshot
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        line = json.dumps(document, separators=(",", ":"))
         if line != last_line or now - last_sent >= SESSION_HEARTBEAT_SECONDS:
             try:
                 sys.stdout.write(line + "\n")

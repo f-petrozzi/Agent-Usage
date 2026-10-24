@@ -50,6 +50,12 @@ function normalize(raw) {
     }));
     return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
       status: a.error || a.warning || a.stale || a.available === false ? (windows.length ? 'stale' : 'error') : 'ok', windows,
+      source: ['live', 'poll', 'estimate'].includes(a.source) ? a.source : null,
+      origin: clean(a.origin || '', 100),
+      received_at: finite(a.receivedAt) ? a.receivedAt * 1000 : finite(a.sampledAt) ? a.sampledAt * 1000 : 0,
+      expires_at: raw.source === 'shared' && finite(a.sampledAt) ? Math.min(
+        a.sampledAt * 1000 + (a.provider === 'codex' ? 120000 : 600000),
+        ...windows.map(w => w.resets_at).filter(t => finite(t) && t > 0)) : null,
       fetched_at: finite(a.sampledAt) ? a.sampledAt * 1000 : raw.source === 'shared' ? 0 : timestamp,
       note: clean([a.error, a.warning].filter(Boolean).join(' · '), 1500), details, resets
     }};
@@ -80,14 +86,38 @@ class Collector extends EventEmitter {
       if (this.closed) return;
       if (error) return this.failed(new Error(clean(stderr || error.message, 1200)));
       try {
-        const raw = JSON.parse(stdout), accounts = normalize(raw);
-        if (!accounts.length) throw new Error('The collector returned no accounts');
-        this.accounts = accounts; this.failures = 0; this.emit('change', accounts);
+        const raw = JSON.parse(stdout);
+        this.acceptSnapshot(raw);
         const busy = finite(raw.activityAt) && Date.now() / 1000 - raw.activityAt < 360;
         this.schedule(busy ? 60000 : 180000);
       } catch (error) { this.failed(error); }
     });
     return true;
+  }
+  acceptSnapshot(raw) {
+    const accounts = normalize(raw);
+    if (!accounts.length) throw new Error('The collector returned no accounts');
+    const previous = new Map(this.accounts.map(a => [a.id, a]));
+    this.accounts = accounts.map(a => {
+      const old = previous.get(a.id);
+      return old && old.snap.received_at > a.snap.received_at ? old : a;
+    });
+    this.failures = 0;
+    this.armExpiry(false);
+    this.emit('change', this.accounts);
+  }
+  armExpiry(emit = true) {
+    clearTimeout(this.expiry);
+    let changed = false;
+    const now = Date.now();
+    this.accounts = this.accounts.map(a => {
+      if (a.snap.status !== 'ok' || !finite(a.snap.expires_at) || a.snap.expires_at > now) return a;
+      changed = true;
+      return { ...a, snap: { ...a.snap, status: 'stale', note: 'Usage reading is stale; waiting for a provider update.' } };
+    });
+    if (changed && emit) this.emit('change', this.accounts);
+    const deadlines = this.accounts.filter(a => a.snap.status === 'ok' && finite(a.snap.expires_at)).map(a => a.snap.expires_at);
+    if (deadlines.length) this.expiry = setTimeout(() => this.armExpiry(), Math.max(1, Math.min(...deadlines) - now + 1));
   }
   failed(error) {
     const note = clean(error.message, 1500);
@@ -97,7 +127,7 @@ class Collector extends EventEmitter {
     this.schedule(Math.min(600000, 45000 * 2 ** Math.min(this.failures++, 4)));
   }
   schedule(delay) { this.timer = setTimeout(() => this.refresh(), delay); }
-  close() { this.closed = true; clearTimeout(this.timer); this.child?.kill(); }
+  close() { this.closed = true; clearTimeout(this.timer); clearTimeout(this.expiry); this.child?.kill(); }
 }
 // One line of `agent-usage --watch-sessions`: the sessions working or waiting right now, as notch activity
 function parseSessions(line, includeTerminal = false, limit = 40) {
@@ -141,6 +171,7 @@ class SessionFeed extends EventEmitter {
     let sessions;
     try { sessions = parseSessions(text, true); } catch { this.emit('disconnected'); return; }
     this.failures = 0; this.watchdog();
+    try { const usage = JSON.parse(text).usage; if (usage) this.emit('usage', usage); } catch {}
     this.emit('snapshot', sessions);
     this.set(sessions.filter(s => ['busy', 'waiting'].includes(s.state)));
   }

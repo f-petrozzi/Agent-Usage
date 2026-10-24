@@ -119,3 +119,18 @@ test('malformed stream data resets alert continuity', () => {
   let disconnected=0;feed.on('disconnected',()=>disconnected++);
   feed.line('not json');assert.equal(disconnected,1);feed.close();
 });
+
+test('usage rides the existing session stream and preserves sample age and source', () => {
+  const { Collector } = require('../desktop/collector.cjs');
+  const feed = new SessionFeed(() => ({})), collector = new Collector(() => ({}));
+  feed.on('usage', raw => collector.acceptSnapshot(raw));
+  const usage = { schema: 2, source: 'shared', accounts: [{id:'codex:a',provider:'codex',label:'a',sampledAt:100,source:'live',origin:'codex-session',limits:[{usedPercent:25,windowMins:300}]}] };
+  feed.line(JSON.stringify({schema:1,sessions:[],usage}));
+  assert.equal(collector.accounts[0].snap.fetched_at,100000);
+  assert.equal(collector.accounts[0].snap.source,'live');
+  usage.accounts[0].stale=true;
+  feed.line(JSON.stringify({schema:1,sessions:[],usage}));
+  assert.equal(collector.accounts[0].snap.status,'stale');
+  assert.equal(collector.accounts[0].snap.fetched_at,100000);
+  feed.close();collector.close();
+});

@@ -1,7 +1,7 @@
 """Shared, owner-local usage cache. Consumers never trigger a provider request.
 
 The JSON file is the read API; the private Unix socket accepts native Codex
-updates. Only this process polls providers. No model turns or session reads.
+updates. Only this process polls providers. No model turns are started.
 """
 from __future__ import annotations
 
@@ -21,7 +21,10 @@ import subprocess
 import threading
 import time
 
+from agent_usage_live import LocalFeeds, claude_row
+
 MAX_BYTES = 1024 * 1024
+MIN_GAP = {'codex': 60, 'claude': 300, 'antigravity': 60}
 FRESHNESS = {'codex': 120, 'claude': 600, 'antigravity': 600}
 
 
@@ -190,25 +193,27 @@ class UsageService:
         self.readers = {f'codex:{n}': CodexReader(usage, n, h, timeout) for n, h in profiles}
         self.queries = {ident: reader.read for ident, reader in self.readers.items()}
         if include_claude:
-            self.queries['claude'] = lambda: usage.query_claude(timeout)
+            self.queries['claude'] = lambda: usage.query_claude(timeout, allow_cli=False)
         if include_agy:
             self.queries['antigravity'] = lambda: usage.query_antigravity(timeout)
         self.rows = {ident: {'id': ident, 'provider': ident.split(':')[0], 'label': ident.split(':')[-1],
                             'limits': [], 'sampledAt': None, 'stale': True, 'error': 'Waiting for first usage reading.'}
                      for ident in self.queries}
         self.inflight = {}
-        self.last_attempt = dict.fromkeys(self.queries, 0)
         self.failures = dict.fromkeys(self.queries, 0)
-        self.unchanged = dict.fromkeys(self.queries, 0)
         self.due = dict.fromkeys(self.queries, 0)
         self.activity = None
+        self.local = LocalFeeds(self)
 
     def load(self):
         try:
             saved = read_snapshot(self.root / 'shared.json', internal=True)
             for row in saved['accounts']:
                 if row['id'] in self.rows:
-                    self.rows[row['id']] = {**row, 'stale': True, 'warning': 'Usage service restarted; verifying last reading.'}
+                    ident = row['id']
+                    self.rows[ident] = {**row, 'stale': True, 'warning': 'Usage service restarted; verifying last reading.'}
+                    wait = max(row.get('pollRetryAt') or 0, (row.get('pollAttemptedAt') or 0) + MIN_GAP.get(row['provider'], 60)) - time.time()
+                    self.due[ident] = time.monotonic() + max(0, wait)
         except (OSError, ValueError, KeyError, TypeError):
             pass
 
@@ -226,15 +231,15 @@ class UsageService:
             target.write(raw)
         temp.replace(self.root / 'shared.json')
 
-    def accept(self, ident, value, sampled=None, source='poll', persist=True):
-        """Accept an authoritative provider poll, never a socket publication."""
-        if source != 'poll':
-            raise ValueError('Only provider polls can replace authoritative readings.')
+    def accept(self, ident, value, sampled=None, source='poll', persist=True, origin=None):
+        """Native response readings and polls share one timestamp-ordered merge."""
+        if source not in ('poll', 'live') or ident not in self.rows:
+            raise ValueError('Unknown usage source or account.')
         now = time.time()
+        previous = self.rows[ident]
         if ident.startswith('codex:'):
             native = codex_native(value)
             row = self.usage.normalize_codex({'account': ident[6:], 'result': native}, self.usage.active_codex_account())
-            row['_native'] = native
         else:
             row = copy.deepcopy(value)
         if row.get('error') or row.get('warning') or row.get('stale') or not row.get('limits'):
@@ -242,127 +247,131 @@ class UsageService:
         sampled = sampled if sampled is not None else row.get('sampledAt', now)
         if type(sampled) not in (int, float) or not 0 <= now - sampled <= FRESHNESS[row['provider']]:
             raise ValueError('Provider returned an expired reading.')
-        # A delayed update must not replace a newer reading.
-        previous = self.rows[ident]
-        if sampled < (previous.get('sampledAt') or 0):
+        origin = origin or ('provider-poll' if source == 'poll' else 'codex-runtime')
+        # Keep each window's age; a partial event cannot refresh omitted windows.
+        if ident.startswith('codex:'):
+            for w, slot in zip(row['limits'], [k for k in ('primary', 'secondary') if k in native['rateLimits']]):
+                w['id'] = slot
+            for index, w in enumerate(previous.get('limits', [])):
+                w.setdefault('id', ('primary', 'secondary')[min(index, 1)])
+        key = lambda w: w.get('id') if ident.startswith('codex:') else (w.get('label'), w.get('windowMins'))
+        windows = {key(w): copy.deepcopy(w) for w in previous.get('limits', [])}
+        changed = False
+        for w in row['limits']:
+            old = windows.get(key(w), {})
+            if sampled <= (old.get('sampledAt', previous.get('sampledAt')) or 0):
+                continue
+            windows[key(w)] = {**w, 'sampledAt': sampled, 'source': source, 'origin': origin}
+            changed = True
+        if not changed:
             return False
-        self.unchanged[ident] = min(3, self.unchanged[ident] + 1) if row.get('limits') == previous.get('limits') else 0
-        row.update(sampledAt=sampled, stale=False, available=True, source=source, error=None)
+        if ident.startswith('codex:'):
+            # Optional metadata omitted by notifications retains its own old value.
+            merged = copy.deepcopy(previous.get('_native') or {'rateLimits': {}})
+            bucket = merged['rateLimits']
+            for k, v in native['rateLimits'].items():
+                if k in ('primary', 'secondary'):
+                    # Window merge above is the timestamp authority.
+                    label = self.usage._limit('5 hours' if k == 'primary' else 'Weekly', v)
+                    if label and windows[k]['sampledAt'] == sampled:
+                        bucket[k] = v
+                elif sampled > (previous.get('receivedSampleAt') or 0):
+                    bucket[k] = v
+            if 'rateLimitResetCredits' in native and sampled > (previous.get('receivedSampleAt') or 0):
+                merged['rateLimitResetCredits'] = native['rateLimitResetCredits']
+            normalized = self.usage.normalize_codex({'account': ident[6:], 'result': merged}, self.usage.active_codex_account())
+            row = {**previous, **normalized, '_native': merged}
+        else:
+            row = {**previous, **row}
+        row['limits'] = list(windows.values())
+        oldest = min(w['sampledAt'] if 'sampledAt' in w else previous.get('sampledAt') or 0 for w in row['limits'])
+        row.update(sampledAt=oldest, receivedSampleAt=max(sampled, previous.get('receivedSampleAt') or 0),
+                   receivedAt=now, stale=False, available=True, source=source, origin=origin, error=None,
+                   blocked=any(w['usedPercent'] >= 100 for w in row['limits']))
+        if ident.startswith('codex:'):
+            bucket = row['_native']['rateLimits']
+            row['blocked'] |= bool(bucket.get('rateLimitReachedType') or bucket.get('spendControlReached'))
         row.pop('warning', None)
         self.rows[ident] = row
-        self.failures[ident] = 0
-        high = any(w['usedPercent'] >= 90 for w in row['limits'])
-        interval = (30 if high else min(90, 60 + 10 * self.unchanged[ident])) if row['provider'] == 'codex' else (60 if high and row['provider'] == 'antigravity' else 300)
-        # Poll before an observed reset. Do not guess that usage becomes zero.
-        resets = [w['resetsAt'] for w in row['limits'] if type(w.get('resetsAt')) in (int, float) and w['resetsAt'] > now]
-        if resets:
-            interval = min(interval, max(5, min(resets) - now + 1))
-        self.due[ident] = time.monotonic() + interval
+        if source == 'poll':
+            self.failures[ident] = 0
+            row.pop('retryAt', None)
+            row.pop('pollRetryAt', None)
+            high = any(w['usedPercent'] >= 90 for w in row['limits'])
+            interval = 60 if row['provider'] == 'codex' or (high and row['provider'] == 'antigravity') else 300
+            self.due[ident] = time.monotonic() + interval
+        else:
+            # No fallback provider request while all represented windows are fresh.
+            resets = [w['resetsAt'] for w in row['limits'] if type(w.get('resetsAt')) in (int, float)]
+            expires = min([oldest + FRESHNESS[row['provider']]] + resets)
+            self.due[ident] = time.monotonic() + max(0, expires - now)
+        floor = max(row.get('pollRetryAt') or 0, (row.get('pollAttemptedAt') or 0) + MIN_GAP[row['provider']])
+        self.due[ident] = max(self.due[ident], time.monotonic() + floor - now)
         if persist:
             self.save()
         return True
 
-    def failed(self, ident, error, retry_at=None):
+    def failed(self, ident, error, retry_at=None, started=None):
         self.failures[ident] = min(6, self.failures[ident] + 1)
-        delay = min(900, 60 * 2 ** (self.failures[ident] - 1))
+        base = MIN_GAP[self.rows[ident]['provider']]
+        delay = min(3600, base * 2 ** (self.failures[ident] - 1))
         if type(retry_at) in (int, float) and math.isfinite(retry_at):
             delay = max(delay, retry_at - time.time())
-        self.rows[ident] = {**self.rows[ident], 'stale': True, 'warning': error,
-                            'retryAt': int(time.time() + delay)}
+        row = self.rows[ident]
+        row['pollRetryAt'] = row['retryAt'] = time.time() + delay
+        # An older failed request must not invalidate a newer native reading.
+        if started is None or (row.get('receivedAt') or 0) <= started:
+            row.update(stale=True, warning=error)
         self.due[ident] = time.monotonic() + delay
         self.save()
 
-    def raise_only(self, ident, native):
-        """Overlay conservative bounds without granting freshness or recovery.
-
-        Window identity/reset times, credits and metadata remain poll-owned.
-        Missing/new/lower windows are only hints to check the provider again.
-        """
-        row = self.rows[ident]
-        previous = row.get('_native')
-        if not isinstance(previous, dict):
-            return False, True
-        merged = copy.deepcopy(previous)
-        bucket, incoming = merged['rateLimits'], native['rateLimits']
-        changed, recheck = False, False
-        for key in ('primary', 'secondary'):
-            update = incoming.get(key)
-            if update is None:
-                continue
-            current = bucket.get(key)
-            if (not current or update.get('resetsAt') != current.get('resetsAt')
-                    or update.get('windowDurationMins') != current.get('windowDurationMins')):
-                recheck = True
-                continue
-            if update['usedPercent'] > current['usedPercent']:
-                current['usedPercent'] = update['usedPercent']
-                changed = True
-            elif update['usedPercent'] < current['usedPercent']:
-                recheck = True
-        for key in ('rateLimitReachedType', 'spendControlReached'):
-            if incoming.get(key) and not bucket.get(key):
-                bucket[key] = incoming[key]
-                changed = True
-            elif key in incoming and bucket.get(key) and not incoming[key]:
-                recheck = True
-        if 'credits' in incoming and incoming['credits'] != bucket.get('credits'):
-            recheck = True
-        if changed:
-            normalized = self.usage.normalize_codex({'account': ident[6:], 'result': merged}, None)
-            row.update(_native=merged, limits=normalized['limits'],
-                       blocked=bool(row.get('blocked') or normalized.get('blocked')), source='poll+push')
-        return changed, recheck
-
     def request_check(self, ident):
-        # Publications cannot evade provider backoff or force an RPC flood.
-        if self.failures[ident] or ident in self.inflight:
+        if ident in self.inflight:
             return False
-        earliest = max(time.monotonic(), self.last_attempt[ident] + 15)
-        self.due[ident] = min(self.due[ident], earliest)
+        row = self.rows[ident]
+        earliest = max(time.time(), row.get('pollRetryAt') or 0,
+                       (row.get('pollAttemptedAt') or 0) + MIN_GAP[row['provider']])
+        self.due[ident] = min(self.due[ident], time.monotonic() + earliest - time.time())
         return True
 
     def poll(self, ident):
+        started = time.time()
         with self.lock:
-            self.inflight[ident] = None
-            self.last_attempt[ident] = time.monotonic()
+            self.inflight[ident] = started
+            self.rows[ident]['pollAttemptedAt'] = started
+            self.save()  # Preserve the minimum gap even across a daemon restart.
         retry_at = None
         try:
             value = self.queries[ident]()
-            completed = time.time()
             retry_at = value.get('retryAt')
             with self.lock:
-                pending = self.inflight[ident]
-                if not self.accept(ident, value, sampled=completed if ident.startswith('codex:') else None, persist=False):
-                    raise ValueError('Provider returned an older reading.')
-                # A push during a slow poll can only retain a higher bound for
-                # the same windows. It cannot prevent a poll/failure committing.
-                if pending is not None:
-                    self.raise_only(ident, pending)
+                sampled = started if ident.startswith('codex:') else min(started, value.get('sampledAt') or started)
+                accepted = self.accept(ident, value, sampled=sampled, persist=False)
+                if not accepted:
+                    self.due[ident] = max(self.due[ident], time.monotonic() + MIN_GAP[self.rows[ident]['provider']])
                 self.save()
         except Exception:
             if ident in self.readers:
                 self.readers[ident].close()
             with self.lock:
-                self.failed(ident, 'Provider usage unavailable; retrying with backoff (last reading).', retry_at)
+                self.failed(ident, 'Provider usage unavailable; retrying with backoff (last reading).', retry_at, started)
         finally:
             with self.lock:
                 self.inflight.pop(ident, None)
 
     def publish(self, request):
-        if not isinstance(request, dict) or set(request) != {'account', 'sampledAt', 'result'}:
+        if not isinstance(request, dict):
+            raise ValueError('Invalid usage publication.')
+        if set(request) != {'account', 'sampledAt', 'result'}:
             raise ValueError('Invalid usage publication.')
         ident, sampled = request['account'], request['sampledAt']
-        if ident not in self.readers or type(sampled) not in (int, float) or not 0 <= time.time() - sampled < 120:
-            raise ValueError('Unknown account or expired update.')
-        native = codex_native(request['result'])
+        if ident not in self.rows:
+            raise ValueError('Unknown account.')
+        value = claude_row(request['result']) if ident == 'claude' else request['result']
         with self.lock:
-            changed, recheck = self.raise_only(ident, native)
-            if changed:
-                if ident in self.inflight:
-                    self.inflight[ident] = copy.deepcopy(self.rows[ident]['_native'])
-                self.save()
-            check = self.request_check(ident) if recheck else False
-            return {'accepted': changed, 'checkRequested': check}
+            accepted = self.accept(ident, value, sampled, source='live',
+                                   origin='claude-runtime' if ident == 'claude' else 'codex-runtime')
+        return {'accepted': accepted, 'checkRequested': False}
 
     def worker(self, ident):
         while not self.stop.is_set():
@@ -382,6 +391,7 @@ class UsageService:
         with os.fdopen(lockfd, 'w') as owner:
             fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.load()
+            self.local.scan()
             path = self.root / 'updates.sock'
             if path.exists():
                 if not stat.S_ISSOCK(path.lstat().st_mode):
@@ -412,9 +422,17 @@ class UsageService:
             for thread in threads:
                 thread.start()
             heartbeat = 0
+            local_scan = 0
             try:
                 while not self.stop.is_set():
                     server.handle_request()
+                    if time.monotonic() - local_scan >= 1:
+                        self.local.scan()
+                        if 'claude' in self.queries:
+                            sessions = self.usage.claude_sessions(self.usage.claude_config_dir(), include_terminal=True)
+                            with self.lock:
+                                self.local.observe_sessions(sessions)
+                        local_scan = time.monotonic()
                     if time.monotonic() - heartbeat >= 10:
                         try:
                             self.activity = self.usage.latest_activity([h for _, h in self.profiles], 'claude' in self.queries)

@@ -314,6 +314,7 @@ function restartCollector() {
   broadcast('activity', []);
   feed = new SessionFeed(() => config);
   feed.on('change', value => broadcast('activity', value));
+  feed.on('usage', value => { try { collector.acceptSnapshot(value); } catch {} });
   feed.on('snapshot', value => {
     liveSnapshot=value;liveSnapshotAt=Date.now();liveSnapshotScope=sessionScope(config);
     showAlerts(sessionAlerts.update(value, config.alerts));
