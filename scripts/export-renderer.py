@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def export(destination):
+    subprocess.run(['git', '-C', str(ROOT), 'diff', '--quiet', 'HEAD', '--', 'desktop/ui'], check=True)
     source = ROOT / 'desktop/ui'
     destination.mkdir(parents=True, exist_ok=True)
     files = sorted(p for p in source.rglob('*') if p.is_file())
