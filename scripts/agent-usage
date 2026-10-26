@@ -70,7 +70,58 @@ CLAUDE_WINDOW_MINS = {
 
 
 class UsageError(RuntimeError):
-    pass
+    def __init__(self, message, kind="unknown", http_status=None, retry_after=None):
+        super().__init__(message)
+        self.kind = kind if kind in ("rate_limited", "auth", "network", "parse", "process", "unknown") else "unknown"
+        self.http_status, self.retry_after = http_status, retry_after
+
+
+def classify_error(error):
+    """Project failures to safe metadata; never retain provider bodies or stderr."""
+    if isinstance(error, UsageError) and error.kind != "unknown":
+        return error
+    status = error.code if isinstance(error, urllib.error.HTTPError) else None
+    text = str(error).lower()
+    # CLI failures sometimes carry an HTTP status only in their diagnostic text.
+    if status is None:
+        found = re.search(r'\b(?:http(?: status)?|status(?: code)?|code)["\s:=]+(\d{3})\b', text)
+        status = int(found[1]) if found else None
+    retry = None
+    if isinstance(error, urllib.error.HTTPError) and error.headers:
+        retry = _retry_seconds(error.headers.get("Retry-After"), time.time())
+    if status == 429 or any(s in text for s in ("rate limit", "rate_limit", "too many requests")):
+        kind = "rate_limited"
+    elif status in (401, 403) or any(s in text for s in ("sign in", "sign-in", "signed out", "unauthorized", "unauthenticated", "credentials", "token expired")):
+        kind = "auth"
+    elif isinstance(error, (FileNotFoundError, PermissionError)) or any(s in text for s in ("not installed", "not on path", "cannot start")):
+        kind = "process"
+    elif (status is not None and status >= 500) or isinstance(error, (TimeoutError, subprocess.TimeoutExpired, urllib.error.URLError, ConnectionError, OSError)) or any(s in text for s in ("timed out", "timeout", "connection", "dns")):
+        kind = "network"
+    elif isinstance(error, (ValueError, TypeError, UnicodeError)):
+        kind = "parse"
+    else:
+        kind = "unknown"
+    return UsageError("Usage refresh failed (" + kind + ").", kind, status, retry)
+
+
+def retry_delay(provider, kind, count, retry_after=None):
+    """Per-source failure streak; positive server hints may exceed every cap."""
+    minimum = 300 if provider in ("claude", "antigravity") else 60
+    index = max(0, min(2, count - 1))
+    if kind == "parse":
+        delay = 3600
+    elif kind == "auth":
+        delay = 1800
+    elif kind == "rate_limited":
+        delay = ((300, 600, 900) if provider == "claude" else (300, 900, 900))[index]
+        if provider == "claude":
+            delay = min(900, delay + int.from_bytes(os.urandom(2), 'big') / 65535 * 15)
+    elif provider == "claude":
+        delay = 300
+    else:
+        delay = (60, 120, 300)[index]
+    hint = retry_after if type(retry_after) in (int, float) and math.isfinite(retry_after) and retry_after > 0 else 0
+    return max(minimum, delay, hint)
 
 
 # ---------------------------------------------------------------- codex ----
@@ -149,18 +200,20 @@ def _wait_for_response(
         while b"\n" not in pending:
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not selector.select(remaining):
-                raise UsageError(f"Timed out waiting for Codex response {request_id}")
+                raise UsageError("Codex response timed out", "network")
             chunk = os.read(proc.stdout.fileno(), 65536)
             if not chunk:
                 raise UsageError(f"Codex app-server exited before responding (status {proc.poll()})")
             pending += chunk
             if len(pending) > 4 * 1024 * 1024:
-                raise UsageError("Codex response is too large")
+                raise UsageError("Codex response is too large", "parse")
         line, proc._usage_pending = pending.split(b"\n", 1)
         try:
             message = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+        except json.JSONDecodeError as exc:
+            raise UsageError("Codex returned unreadable output", "parse") from exc
+        if not isinstance(message, dict):
+            raise UsageError("Codex returned an invalid message", "parse")
         if message.get("id") != request_id:
             continue
         if "error" in message:
@@ -170,10 +223,10 @@ def _wait_for_response(
                 if isinstance(error, dict)
                 else str(error)
             )
-            raise UsageError(f"Codex request failed: {detail}")
+            raise classify_error(RuntimeError(str(detail)))
         result = message.get("result")
         if not isinstance(result, dict):
-            raise UsageError("Codex returned an invalid response")
+            raise UsageError("Codex returned an invalid response", "parse")
         return result
 
 
@@ -473,10 +526,10 @@ def _claude_fetch(token: str, timeout: float) -> dict[str, Any]:
     with urllib.request.urlopen(request, timeout=timeout) as response:
         body = response.read(MAX_RESPONSE_BYTES + 1)
     if len(body) > MAX_RESPONSE_BYTES:
-        raise UsageError("Claude usage response was too large")
+        raise UsageError("Claude usage response was too large", "parse")
     parsed = json.loads(body.decode("utf-8"))
     if not isinstance(parsed, dict):
-        raise UsageError("Claude usage response was not an object")
+        raise UsageError("Claude usage response was not an object", "parse")
     return parsed
 
 
@@ -484,7 +537,7 @@ def _claude_cli_usage(timeout: float) -> str:
     """Run Claude Code's own /usage command, which also refreshes the token."""
     binary, _ = _claude_cli()
     if not binary:
-        raise UsageError("claude is not installed or not on PATH")
+        raise UsageError("claude is not installed or not on PATH", "process")
     completed = subprocess.run(
         [binary, "-p", "/usage", "--output-format", "json", "--no-session-persistence"],
         capture_output=True,
@@ -494,14 +547,16 @@ def _claude_cli_usage(timeout: float) -> str:
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise UsageError(detail[0] if detail else "claude /usage failed")
+        raise classify_error(RuntimeError(detail[0] if detail else "claude /usage failed"))
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
-        raise UsageError("claude /usage returned unreadable output") from exc
+        raise UsageError("claude /usage returned unreadable output", "parse") from exc
+    if not isinstance(payload, dict):
+        raise UsageError("claude /usage returned an invalid object", "parse")
     text = payload.get("result")
     if not isinstance(text, str) or not text.strip():
-        raise UsageError("claude /usage returned no usage text")
+        raise UsageError("claude /usage returned no usage text", "parse")
     return text
 
 
@@ -694,7 +749,7 @@ def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
 
     payload: dict[str, Any] | None = None
     fallback_text: str | None = None
-    first_error: str | None = None
+    first_error = None
 
     if token and not expired:
         try:
@@ -702,13 +757,12 @@ def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
         except urllib.error.HTTPError as exc:
             if exc.code == 429:
                 raise
-            first_error = _short(exc)
+            first_error = classify_error(exc)
         except (urllib.error.URLError, OSError, ValueError, UsageError) as exc:
-            first_error = _short(exc)
+            first_error = classify_error(exc)
 
     if payload is None and not allow_cli:
-        account["error"] = first_error or "Claude credentials unavailable or expired; sign in with the CLI."
-        return account
+        raise first_error or UsageError("Claude sign-in is missing or expired.", "auth")
 
     if payload is None:
         # Running Claude Code's own /usage refreshes an expired token and gives
@@ -716,8 +770,7 @@ def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
         try:
             fallback_text = _claude_cli_usage(max(timeout, 30.0))
         except (subprocess.SubprocessError, OSError, UsageError) as exc:
-            account["error"] = first_error or _short(exc)
-            return account
+            raise classify_error(exc) from exc
         token, subscription, _ = _claude_token()
         if subscription:
             account["plan"] = str(subscription)
@@ -739,8 +792,7 @@ def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
         account["limits"] = parse_claude_usage_text(fallback_text)
 
     if not account["limits"]:
-        account["error"] = first_error or "Claude returned no limits."
-        return account
+        raise UsageError("Claude returned no measured limits.", "parse")
 
     account["blocked"] = any(limit["usedPercent"] >= 100 for limit in account["limits"])
     return account
@@ -757,7 +809,7 @@ def _retry_seconds(value: str | None, now: float) -> float:
             return 0.0
 
 
-def query_claude(timeout: float, allow_cli=True) -> dict[str, Any]:
+def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=None) -> dict[str, Any]:
     """Share a credential-scoped cache/cooldown across polling processes.
 
     A 429 never launches the CLI fallback or immediately retries the endpoint.
@@ -774,6 +826,8 @@ def query_claude(timeout: float, allow_cli=True) -> dict[str, Any]:
         path = root / ("claude-" + key + ".json")
         fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     except OSError:
+        if strict:
+            raise UsageError("Cannot open usage cache.", "process")
         return {"id": "claude", "provider": "claude", "label": "Claude", "limits": [],
                 "error": "Cannot open usage cache; Claude polling paused."}
     with os.fdopen(fd, "r+", encoding="utf-8") as cache:
@@ -785,40 +839,67 @@ def query_claude(timeout: float, allow_cli=True) -> dict[str, Any]:
         except (ValueError, OSError):
             saved = {}
         now = time.time()
+        def expose(account):
+            if account.get("limits"):
+                read_now = time.time()
+                sampled = account.get("sampledAt") or 0
+                account["stale"] = not 0 <= read_now - sampled <= 600 or any(
+                    type(w.get("resetsAt")) in (int, float) and w["resetsAt"] <= read_now for w in account["limits"])
+            refresh = account.get("refresh", {})
+            if not refresh and account.get("retryAt") and (account.get("warning") or account.get("error")):
+                # Cooldowns written by older collectors remain authoritative.
+                refresh = {"state": "rate_limited", "httpStatus": 429, "retryAt": account["retryAt"]}
+            if strict and refresh.get("state", "ok") != "ok":
+                failure = UsageError("Claude refresh failed.", refresh["state"],
+                                     refresh.get("httpStatus"), refresh.get("retryAfter"))
+                failure.retry_at = refresh.get("retryAt")
+                raise failure
+            return account
+
         if isinstance(saved.get("nextAttempt"), (int, float)) and now < saved["nextAttempt"]:
             if isinstance(saved.get("account"), dict):
-                return saved["account"]
+                return expose(saved["account"])
         streak = min(8, max(0, int(saved.get("streak", 0))))
+        failure = None
         try:
             account = _query_claude_uncached(timeout) if allow_cli else _query_claude_uncached(timeout, allow_cli=False)
             streak = 0
             next_attempt = now + 300
-            if not account.get("error"):
-                account["sampledAt"] = int(time.time())
-        except urllib.error.HTTPError as exc:
-            if exc.code != 429:
-                raise
-            # Even Retry-After: 0 must not cause a hammering loop.
-            delay = max(min(3600, 300 * (2 ** streak)),
-                        _retry_seconds(exc.headers.get("Retry-After") if exc.headers else None, now))
+            account["sampledAt"] = int(time.time())
+            account["refresh"] = {"state": "ok", "attemptAt": now, "successAt": time.time(), "retryAt": None}
+        except Exception as exc:
+            failure = classify_error(exc)
+            streak = streak + 1 if saved.get("failureClass") == failure.kind else 1
+            if failure_count is not None:
+                streak = min(8, failure_count + 1)
+            delay = retry_delay("claude", failure.kind, streak, failure.retry_after)
             next_attempt = now + delay
-            streak += 1
             previous = saved.get("account")
             account = dict(previous) if isinstance(previous, dict) else {
                 "id": "claude", "provider": "claude", "label": "Claude", "limits": []}
-            message = "Claude is rate limited; retry after " + dt.datetime.fromtimestamp(next_attempt).strftime("%H:%M")
-            account["retryAt"] = int(next_attempt)
-            account["stale"] = True
+            account["retryAt"] = next_attempt
+            account["refresh"] = {"state": failure.kind, "attemptAt": now,
+                "successAt": account.get("refresh", {}).get("successAt"), "retryAt": next_attempt,
+                "httpStatus": failure.http_status, "retryAfter": failure.retry_after}
+            name = failure.kind.replace("_", "-")
+            message = "Refresh " + name + "; next try " + dt.datetime.fromtimestamp(next_attempt).strftime("%H:%M")
+            sampled = account.get("sampledAt") or 0
+            account["stale"] = not 0 <= now - sampled <= 600 or any(
+                type(w.get("resetsAt")) in (int, float) and w["resetsAt"] <= now for w in account.get("limits", []))
             if account.get("limits"):
                 account["error"] = None
-                account["warning"] = message + " (last reading)"
+                account["warning"] = message
             else:
                 account["error"] = message
         cache.seek(0)
         cache.truncate()
-        json.dump({"account": account, "nextAttempt": next_attempt, "streak": streak}, cache)
+        # Only 429 cooldowns persist for failures here; other pauses belong to
+        # the service, which can wake on credential/CLI changes. Keep legacy 429s.
+        cached_until = next_attempt if failure is None or failure.kind == "rate_limited" else now
+        json.dump({"account": account, "nextAttempt": cached_until, "streak": streak,
+                   "failureClass": failure.kind if failure else None}, cache)
         cache.flush()
-        return account
+        return expose(account)
 
 
 def _short(value: Any) -> str:
@@ -1589,16 +1670,18 @@ def watch_sessions(profiles: list[tuple[str, Path]], include_claude: bool, inclu
 def normalize_antigravity(report: dict[str, Any]) -> dict[str, Any]:
     """Accept measured buckets from agy's usage command, never model availability."""
     if not isinstance(report, dict):
-        raise UsageError("Antigravity returned an invalid usage report.")
+        raise UsageError("Antigravity returned an invalid usage report.", "parse")
     command = report.get("command")
     if not isinstance(command, dict):
-        raise UsageError("Antigravity returned an invalid usage report.")
-    if report.get("status") != "SUCCESS" or command.get("name") != "usage":
-        raise UsageError("Antigravity usage unavailable; check agy sign-in.")
+        raise UsageError("Antigravity returned an invalid usage report.", "parse")
+    if report.get("status") != "SUCCESS":
+        raise classify_error(RuntimeError(json.dumps(report)))
+    if command.get("name") != "usage":
+        raise UsageError("Antigravity returned an unexpected command.", "parse")
     limits = []
     data = command.get("data")
     if not isinstance(data, dict) or not isinstance(data.get("groups"), list):
-        raise UsageError("Antigravity did not report measured usage limits.")
+        raise UsageError("Antigravity did not report measured usage limits.", "parse")
     for group in data["groups"][:20]:
         if not isinstance(group, dict):
             continue
@@ -1621,7 +1704,7 @@ def normalize_antigravity(report: dict[str, Any]) -> dict[str, Any]:
                 "usedPercent": round((1 - remaining) * 100, 4), "windowMins": minutes,
                 "resetsAt": _parse_iso(bucket.get("reset_time"))})
     if not limits:
-        raise UsageError("Antigravity did not report measured usage limits.")
+        raise UsageError("Antigravity did not report measured usage limits.", "parse")
     return {"id": "antigravity", "provider": "antigravity", "label": "Antigravity",
         "sampledAt": int(time.time()), "limits": limits}
 
@@ -1635,30 +1718,33 @@ def antigravity_executable() -> str | None:
     return str(local) if local.is_file() and os.access(local, os.X_OK) else None
 
 
-def query_antigravity(timeout: float) -> dict[str, Any]:
+def query_antigravity(timeout: float, strict=False) -> dict[str, Any]:
     account = {"id": "antigravity", "provider": "antigravity", "label": "Antigravity", "limits": []}
     executable = antigravity_executable()
     try:
         if not executable:
-            raise UsageError("Install and sign into agy on the collector machine.")
+            raise UsageError("Install and sign into agy on the collector machine.", "process")
         version = subprocess.run([executable, "--version"], stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, timeout=min(timeout, 3), check=True).stdout
         match = re.search(r"(\d+)\.(\d+)\.(\d+)", version)
         if not match or tuple(map(int, match.groups())) < (1, 1, 11):
-            raise UsageError("Update agy to use structured usage reports.")
+            raise UsageError("Update agy to use structured usage reports.", "parse")
         # A private empty directory avoids project prompts and project-specific configuration.
-        with tempfile.TemporaryDirectory(prefix="agent-usage-agy-") as work, tempfile.TemporaryFile() as output:
+        with tempfile.TemporaryDirectory(prefix="agent-usage-agy-") as work, tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as diagnostic:
             proc = subprocess.Popen([executable, "-p", "/usage", "--output-format", "json"],
-                cwd=work, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL,
+                cwd=work, stdin=subprocess.DEVNULL, stdout=output, stderr=diagnostic,
                 start_new_session=True)
             try:
                 proc.wait(timeout=timeout)
                 if proc.returncode:
-                    raise UsageError("Antigravity usage unavailable; check agy sign-in and connection.")
+                    output.seek(0)
+                    diagnostic.seek(0)
+                    detail = (output.read(16384) + diagnostic.read(16384)).decode("utf-8", errors="replace")
+                    raise classify_error(RuntimeError(detail))
                 output.seek(0)
                 raw = output.read(MAX_RESPONSE_BYTES + 1)
                 if len(raw) > MAX_RESPONSE_BYTES:
-                    raise UsageError("Antigravity usage report exceeded the size limit.")
+                    raise UsageError("Antigravity usage report exceeded the size limit.", "parse")
                 return normalize_antigravity(json.loads(raw))
             finally:
                 # Only signal the process group created for this read, never an existing agy.
@@ -1672,12 +1758,15 @@ def query_antigravity(timeout: float) -> dict[str, Any]:
                     except subprocess.TimeoutExpired:
                         os.killpg(proc.pid, signal.SIGKILL)
                         proc.wait()
-    except UsageError as exc:
-        account["error"] = str(exc)
-    except subprocess.TimeoutExpired:
-        account["error"] = "Antigravity usage timed out."
-    except (OSError, ValueError, TypeError, subprocess.CalledProcessError):
-        account["error"] = "Antigravity usage could not be read."
+    except (UsageError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+        failure = classify_error(exc)
+        if strict:
+            raise failure from exc
+        account["error"] = ("Antigravity usage timed out." if isinstance(exc, subprocess.TimeoutExpired)
+                            else "Antigravity refresh failed (" + failure.kind + ").")
+        account["refresh"] = {"state": failure.kind, "httpStatus": failure.http_status,
+                              "retryAfter": failure.retry_after}
+
     return account
 
 

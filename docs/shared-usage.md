@@ -60,10 +60,45 @@ Claude turns, detected from the same local activity as `--watch-sessions`,
 schedule one coalesced fallback three seconds later if no native reading arrived.
 The minimum gap and persistent Retry-After/backoff apply to these checks too.
 The shared service never starts `claude -p /usage`; expired credentials require
-normal CLI sign-in. Its credential-scoped cache retains exponential 429 backoff
-from five minutes up to one hour, or longer Retry-After. Restarting the service
-preserves attempt times and cooldowns. Agy retains its five-minute polling (one
-minute near a limit). Resets never imply zero usage.
+normal CLI sign-in. Agy fallback runs every five minutes, including near a limit.
+Resets never imply zero usage.
+
+Refresh failures keep the last measurement and its sample time. `refresh.state`
+reports `rate_limited`, `auth`, `network`, `parse`, `process`, or `unknown`; a short
+warning gives the next retry time. Warnings do not themselves make readings
+stale. Every accepted poll, live, rollout or statusline reading resets the
+account's failure count and sets `refresh.state=ok`. A persisted endpoint 429
+cooldown still applies after native readings recover the account.
+
+Claude 429 retries use five, ten, then fifteen minutes, with up to fifteen seconds
+of positive jitter bounded by the fifteen-minute cap. Network failures retry in
+five minutes. Auth failures pause thirty minutes, or until the credentials file's
+mtime changes; parse failures pause an hour, or until the installed CLI version
+changes. Change checks run at most once a minute and still respect the
+five-minute request gap. Codex network retries use one, two, then five minutes;
+Agy's five-minute minimum takes precedence. Codex/Agy 429 retries use five then
+fifteen minutes; parse failures pause an hour. Positive Retry-After values can
+exceed these caps; zero or missing values use the class schedule. Restarting the
+service preserves attempt times and cooldowns, including older cached 429s.
+
+The collector writes `refresh.jsonl` with only time, account, source, outcome,
+HTTP status and parsed Retry-After seconds. Claude live publications also record
+booleans for the presence of five-hour and weekly utilization. The journal keeps
+at most 512 KiB plus one previous file (`refresh.jsonl.1`), both mode 0600. It
+never records exception text, headers, credentials, bodies, paths or transcripts.
+
+The alternative CLI fallback remains unverified: the 2026-10-26 helper sandbox
+denies access to Claude credentials, so no real `/usage` probe was run. The owner
+can inspect both window percentages and JSON turn/token/cost metadata with:
+
+```sh
+claude -p /usage --output-format json --no-session-persistence
+```
+
+The current endpoint and three-second completion delay remain until this shows
+both windows with zero model turns/tokens or no cost. Switching to a verified CLI
+fallback would also require making the undocumented endpoint explicitly opt-in
+and extending the completion delay to about ten seconds.
 
 Stale values keep their last sample times and percentages. Consumers recompute
 age and reset expiry on read; a heartbeat older than 45 seconds means the service

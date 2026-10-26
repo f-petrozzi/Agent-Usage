@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {'AGENT_USAGE
 }), patch('time.time', clock):
     first = query(1)
     assert first['retryAt'] == 1800000900
-    assert 'rate limited' in first['error']
+    assert first['refresh']['state'] == 'rate_limited'
     assert query(1) == first
     assert fetch.call_count == 1 and cli.call_count == 0
     clock.return_value += 901
@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {'AGENT_USAGE
     clock.return_value += 301
     fetch.side_effect = error
     stale = query(1)
-    assert stale['error'] is None and stale['warning'] and stale['stale']
+    assert stale['error'] is None and stale['warning'] and not stale['stale']
     assert stale['limits'] == success['limits'] and stale['sampledAt'] == success['sampledAt']
     assert query(1) == stale and fetch.call_count == 3
     assert cli.call_count == 0

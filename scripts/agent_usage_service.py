@@ -24,8 +24,9 @@ import time
 from agent_usage_live import LocalFeeds, claude_row
 
 MAX_BYTES = 1024 * 1024
-MIN_GAP = {'codex': 60, 'claude': 300, 'antigravity': 60}
+MIN_GAP = {'codex': 60, 'claude': 300, 'antigravity': 300}
 FRESHNESS = {'codex': 120, 'claude': 600, 'antigravity': 600}
+JOURNAL_BYTES = 512 * 1024
 
 
 def state_root():
@@ -49,16 +50,20 @@ def read_snapshot(path=None, *, internal=False, now=None):
     if data.get('schema') != 2 or data.get('source') != 'shared' or not isinstance(data.get('accounts'), list):
         raise ValueError('Invalid shared usage cache.')
     heartbeat = data.get('updatedAt')
-    alive = type(heartbeat) in (int, float) and 0 <= now - heartbeat <= 45
+    alive = not data.get('stoppedAt') and type(heartbeat) in (int, float) and 0 <= now - heartbeat <= 45
     for account in data['accounts']:
         sampled = account.get('sampledAt')
         age = now - sampled if type(sampled) in (int, float) else math.inf
         expired = any(type(w.get('resetsAt')) in (int, float) and w['resetsAt'] <= now
                       for w in account.get('limits', []))
-        stale = (not alive or not 0 <= age <= FRESHNESS.get(account.get('provider'), 120)
-                 or expired or bool(account.get('error') or account.get('warning') or account.get('stale')))
+        stale = not alive or not 0 <= age <= FRESHNESS.get(account.get('provider'), 120) or expired
         account['available'] = bool(account.get('limits'))
         account['stale'] = stale
+        if not stale and account.get('warning') in (
+                'Shared usage service is unavailable (last reading).',
+                'Shared usage service stopped (last reading).',
+                'Usage reading is stale; waiting for a provider update.'):
+            account.pop('warning', None)
         if stale and not account.get('error') and not account.get('warning'):
             account['warning'] = ('Shared usage service is unavailable (last reading).' if not alive
                                   else 'Usage reading is stale; waiting for a provider update.')
@@ -139,7 +144,7 @@ class CodexReader:
             self.discovery_at = time.monotonic()
         binary = self.usage._codex_cli()
         if not binary:
-            raise RuntimeError('Codex is not installed.')
+            raise self.usage.UsageError('Codex is not installed.', 'process')
         if self.proc and (self.proc.poll() is not None or binary != self.binary or time.monotonic() - self.started > 3600):
             self.close()
         if self.proc is None:
@@ -193,15 +198,18 @@ class UsageService:
         self.readers = {f'codex:{n}': CodexReader(usage, n, h, timeout) for n, h in profiles}
         self.queries = {ident: reader.read for ident, reader in self.readers.items()}
         if include_claude:
-            self.queries['claude'] = lambda: usage.query_claude(timeout, allow_cli=False)
+            self.queries['claude'] = lambda: usage.query_claude(timeout, allow_cli=False, strict=True,
+                failure_count=self.failures['claude'] if self.rows['claude'].get('pollFailureClass') == 'rate_limited' else 0)
         if include_agy:
-            self.queries['antigravity'] = lambda: usage.query_antigravity(timeout)
+            self.queries['antigravity'] = lambda: usage.query_antigravity(timeout, strict=True)
         self.rows = {ident: {'id': ident, 'provider': ident.split(':')[0], 'label': ident.split(':')[-1],
-                            'limits': [], 'sampledAt': None, 'stale': True, 'error': 'Waiting for first usage reading.'}
+                            'limits': [], 'sampledAt': None, 'stale': True, 'error': 'Waiting for first usage reading.',
+                            'refresh': dict(state='unknown', attemptAt=None, successAt=None, retryAt=None)}
                      for ident in self.queries}
         self.inflight = {}
         self.failures = dict.fromkeys(self.queries, 0)
         self.due = dict.fromkeys(self.queries, 0)
+        self.pause_checked = dict.fromkeys(self.queries, 0)
         self.activity = None
         self.local = LocalFeeds(self)
 
@@ -211,7 +219,14 @@ class UsageService:
             for row in saved['accounts']:
                 if row['id'] in self.rows:
                     ident = row['id']
-                    self.rows[ident] = {**row, 'stale': True, 'warning': 'Usage service restarted; verifying last reading.'}
+                    self.rows[ident] = row
+                    if row.get('pollRetryAt') and 'pollFailureClass' not in row and 'refresh' not in row:
+                        # Older snapshots did not distinguish 429 from other
+                        # failures; conservatively preserve their cooldown.
+                        row['pollRateLimitedUntil'] = row['pollRetryAt']
+                    row.setdefault('refresh', dict(state='unknown', attemptAt=row.get('pollAttemptedAt'),
+                                                   successAt=None, retryAt=row.get('pollRetryAt')))
+                    self.failures[ident] = row.get('pollFailures', 0)
                     wait = max(row.get('pollRetryAt') or 0, (row.get('pollAttemptedAt') or 0) + MIN_GAP.get(row['provider'], 60)) - time.time()
                     self.due[ident] = time.monotonic() + max(0, wait)
         except (OSError, ValueError, KeyError, TypeError):
@@ -222,6 +237,8 @@ class UsageService:
         document = {'schema': 2, 'source': 'shared', 'generatedAt': int(time.time()),
                     'updatedAt': time.time(), 'activityAt': self.activity,
                     'accounts': list(self.rows.values())}
+        if self.stop.is_set():
+            document['stoppedAt'] = time.time()
         raw = json.dumps(document, allow_nan=False, separators=(',', ':'))
         if len(raw.encode()) > MAX_BYTES:
             raise ValueError('Shared usage snapshot is too large.')
@@ -230,6 +247,27 @@ class UsageService:
         with os.fdopen(fd, 'w') as target:
             target.write(raw)
         temp.replace(self.root / 'shared.json')
+
+    def journal(self, ident, source, outcome, failure=None, presence=None):
+        """An allowlist, never exception strings, paths or publication payloads."""
+        if ident not in self.rows or source not in ('poll', 'live', 'rollout', 'statusline'):
+            return
+        event = dict(time=time.time(), account=ident, source=source, outcome=outcome,
+                     httpStatus=failure.http_status if failure else None,
+                     retryAfter=failure.retry_after if failure else None)
+        if presence is not None:
+            event.update({key: bool(presence.get(key)) for key in ('five_hour', 'seven_day')})
+        raw = (json.dumps(event, allow_nan=False, separators=(',', ':')) + '\n').encode()
+        with self.lock:
+            try:
+                path = self.root / 'refresh.jsonl'
+                if path.exists() and path.lstat().st_size + len(raw) > JOURNAL_BYTES:
+                    path.replace(self.root / 'refresh.jsonl.1')
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, 'ab') as target:
+                    target.write(raw)
+            except OSError:
+                pass  # Diagnostics must not discard a measurement or stop polling.
 
     def accept(self, ident, value, sampled=None, source='poll', persist=True, origin=None):
         """Native response readings and polls share one timestamp-ordered merge."""
@@ -248,6 +286,7 @@ class UsageService:
         if type(sampled) not in (int, float) or not 0 <= now - sampled <= FRESHNESS[row['provider']]:
             raise ValueError('Provider returned an expired reading.')
         origin = origin or ('provider-poll' if source == 'poll' else 'codex-runtime')
+        journal_source = {'codex-session': 'rollout', 'claude-statusline': 'statusline'}.get(origin, source)
         # Keep each window's age; a partial event cannot refresh omitted windows.
         if ident.startswith('codex:'):
             for w, slot in zip(row['limits'], [k for k in ('primary', 'secondary') if k in native['rateLimits']]):
@@ -264,6 +303,7 @@ class UsageService:
             windows[key(w)] = {**w, 'sampledAt': sampled, 'source': source, 'origin': origin}
             changed = True
         if not changed:
+            self.journal(ident, journal_source, 'ignored')
             return False
         if ident.startswith('codex:'):
             # Optional metadata omitted by notifications retains its own old value.
@@ -293,12 +333,21 @@ class UsageService:
             row['blocked'] |= bool(bucket.get('rateLimitReachedType') or bucket.get('spendControlReached'))
         row.pop('warning', None)
         self.rows[ident] = row
+        self.failures[ident] = 0
+        row['pollFailures'] = 0
+        row.pop('pollFailureClass', None)
+        row.pop('pollPauseKey', None)
+        row.pop('retryAt', None)
+        # Keep a source's persisted 429 cooldown even when native events recover.
+        row.pop('pollRetryAt', None)
+        if (row.get('pollRateLimitedUntil') or 0) > now:
+            row['pollRetryAt'] = row['pollRateLimitedUntil']
+        row['refresh'] = dict(state='ok', attemptAt=previous.get('refresh', {}).get('attemptAt'),
+                              successAt=now, retryAt=None)
         if source == 'poll':
-            self.failures[ident] = 0
-            row.pop('retryAt', None)
             row.pop('pollRetryAt', None)
-            high = any(w['usedPercent'] >= 90 for w in row['limits'])
-            interval = 60 if row['provider'] == 'codex' or (high and row['provider'] == 'antigravity') else 300
+            row.pop('pollRateLimitedUntil', None)
+            interval = 60 if row['provider'] == 'codex' else 300
             self.due[ident] = time.monotonic() + interval
         else:
             # No fallback provider request while all represented windows are fresh.
@@ -307,23 +356,63 @@ class UsageService:
             self.due[ident] = time.monotonic() + max(0, expires - now)
         floor = max(row.get('pollRetryAt') or 0, (row.get('pollAttemptedAt') or 0) + MIN_GAP[row['provider']])
         self.due[ident] = max(self.due[ident], time.monotonic() + floor - now)
+        self.journal(ident, journal_source, 'ok')
         if persist:
             self.save()
         return True
 
     def failed(self, ident, error, retry_at=None, started=None):
-        self.failures[ident] = min(6, self.failures[ident] + 1)
-        base = MIN_GAP[self.rows[ident]['provider']]
-        delay = min(3600, base * 2 ** (self.failures[ident] - 1))
-        if type(retry_at) in (int, float) and math.isfinite(retry_at):
-            delay = max(delay, retry_at - time.time())
+        failure = self.usage.classify_error(error)
         row = self.rows[ident]
-        row['pollRetryAt'] = row['retryAt'] = time.time() + delay
-        # An older failed request must not invalidate a newer native reading.
+        now = time.time()
+        count = min(8, self.failures[ident] + 1) if row.get('pollFailureClass') == failure.kind else 1
+        delay = self.usage.retry_delay(row['provider'], failure.kind, count, failure.retry_after)
+        retry_at = retry_at or getattr(error, 'retry_at', None)
+        if type(retry_at) in (int, float) and math.isfinite(retry_at):
+            delay = max(delay, retry_at - now)
+        self.journal(ident, 'poll', failure.kind, failure)
+        # A failed in-flight request can retain its 429 cooldown, but cannot
+        # replace the health of a native reading received after it started.
+        row['pollRetryAt'] = max(row.get('pollRetryAt') or 0, now + delay)
+        if failure.kind == 'rate_limited':
+            row['pollRateLimitedUntil'] = row['pollRetryAt']
         if started is None or (row.get('receivedAt') or 0) <= started:
-            row.update(stale=True, warning=error)
-        self.due[ident] = time.monotonic() + delay
+            self.failures[ident] = row['pollFailures'] = count
+            row['pollFailureClass'] = failure.kind
+            row['retryAt'] = row['pollRetryAt']
+            row['refresh'] = dict(state=failure.kind, attemptAt=started or now,
+                successAt=row.get('refresh', {}).get('successAt'), retryAt=row['pollRetryAt'])
+            row['warning'] = ('Refresh ' + failure.kind.replace('_', '-') + '; next try ' +
+                              time.strftime('%H:%M', time.localtime(row['pollRetryAt'])))
+            row['error'] = None if row.get('limits') else row['warning']
+            if ident == 'claude' and failure.kind in ('auth', 'parse'):
+                row['pollPauseKey'] = self.pause_key(failure.kind)
+        due = time.monotonic() + row['pollRetryAt'] - now
+        self.due[ident] = due if started is None or (row.get('receivedAt') or 0) <= started else max(self.due[ident], due)
         self.save()
+
+    def pause_key(self, kind):
+        if kind == 'auth':
+            try:
+                return (self.usage.claude_config_dir() / '.credentials.json').stat().st_mtime_ns
+            except OSError:
+                return None
+        clear = getattr(self.usage._claude_cli, 'cache_clear', None)
+        if clear:
+            clear()
+        _, version = self.usage._claude_cli()
+        return list(version) if version else None
+
+    def wake_changed_claude(self, ident):
+        row = self.rows[ident]
+        kind = row.get('pollFailureClass')
+        if ident != 'claude' or kind not in ('auth', 'parse') or time.monotonic() < self.pause_checked[ident]:
+            return
+        self.pause_checked[ident] = time.monotonic() + 60
+        if self.pause_key(kind) != row.get('pollPauseKey'):
+            row.pop('pollRetryAt', None)
+            row.pop('pollPauseKey', None)
+            self.due[ident] = time.monotonic() + max(0, (row.get('pollAttemptedAt') or 0) + MIN_GAP['claude'] - time.time())
 
     def request_check(self, ident):
         if ident in self.inflight:
@@ -339,22 +428,27 @@ class UsageService:
         with self.lock:
             self.inflight[ident] = started
             self.rows[ident]['pollAttemptedAt'] = started
+            self.rows[ident].setdefault('refresh', {})['attemptAt'] = started
             self.save()  # Preserve the minimum gap even across a daemon restart.
         retry_at = None
         try:
             value = self.queries[ident]()
             retry_at = value.get('retryAt')
+            if value.get('error') or value.get('warning') or not value.get('limits') and not ident.startswith('codex:'):
+                refresh = value.get('refresh', {})
+                raise self.usage.UsageError('Provider returned no fresh reading.', refresh.get('state', 'parse'),
+                                            refresh.get('httpStatus'), refresh.get('retryAfter'))
             with self.lock:
                 sampled = started if ident.startswith('codex:') else min(started, value.get('sampledAt') or started)
                 accepted = self.accept(ident, value, sampled=sampled, persist=False)
                 if not accepted:
                     self.due[ident] = max(self.due[ident], time.monotonic() + MIN_GAP[self.rows[ident]['provider']])
                 self.save()
-        except Exception:
+        except Exception as exc:
             if ident in self.readers:
                 self.readers[ident].close()
             with self.lock:
-                self.failed(ident, 'Provider usage unavailable; retrying with backoff (last reading).', retry_at, started)
+                self.failed(ident, exc, retry_at, started)
         finally:
             with self.lock:
                 self.inflight.pop(ident, None)
@@ -367,8 +461,20 @@ class UsageService:
         ident, sampled = request['account'], request['sampledAt']
         if ident not in self.rows:
             raise ValueError('Unknown account.')
-        value = claude_row(request['result']) if ident == 'claude' else request['result']
         with self.lock:
+            if ident == 'claude':
+                result = request['result']
+                presence = {key: isinstance(result, dict) and isinstance(result.get(key), dict) and
+                            type(result[key].get('used_percentage')) in (int, float)
+                            for key in ('five_hour', 'seven_day')}
+                try:
+                    value = claude_row(result)
+                except ValueError:
+                    self.journal(ident, 'live', 'unmeasured', presence=presence)
+                    return {'accepted': False, 'checkRequested': False}
+                self.journal(ident, 'live', 'publication', presence=presence)
+            else:
+                value = request['result']
             accepted = self.accept(ident, value, sampled, source='live',
                                    origin='claude-runtime' if ident == 'claude' else 'codex-runtime')
         return {'accepted': accepted, 'checkRequested': False}
@@ -376,6 +482,7 @@ class UsageService:
     def worker(self, ident):
         while not self.stop.is_set():
             with self.lock:
+                self.wake_changed_claude(ident)
                 delay = self.due[ident] - time.monotonic()
             if delay > 0:
                 self.stop.wait(min(delay, 1))

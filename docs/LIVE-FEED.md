@@ -17,6 +17,17 @@ Additive fields:
 - Each limit carries its own `sampledAt`, `source`, and `origin`, because Claude
   SDK events can update just one window. Account `sampledAt` is the oldest
   represented window; the collector never stamps retained windows as new.
+- `refresh`: an additive object separating measurement freshness from the last
+  refresh attempt. `state` is `ok`, `rate_limited`, `auth`, `network`, `parse`,
+  `process`, or `unknown` (also used before the first reading). `attemptAt` is the
+  latest fallback attempt time, `successAt` the receipt time of the latest
+  accepted reading from any source, and `retryAt` the planned failed-refresh
+  retry time. Times are Unix seconds or null when not applicable/known. Accepted
+  readings clear the refresh error and failure count, even if another source's
+  persisted 429 cooldown still defers polling. A failure preserves `limits`,
+  `sampledAt`, `source` and `origin`, with a specific short `warning` such as
+  `Refresh rate-limited; next try 14:32`. A warning does not itself imply stale;
+  `error` remains null when a last reading exists.
 
 Orbit's compatibility response keeps `fetched_at` and adds `sampledAt`, `source`,
 `origin`, `receivedAt`, `provider`, `warning`, and `error` per account. A refreshed
@@ -42,11 +53,28 @@ One-window events cannot freshen another window. No usage endpoint is called by
 Orbit, statuslines, Windows refreshes, or session watchers.
 
 Claude polling has a five-minute minimum gap. Fresh native samples defer it;
-429 uses persistent exponential backoff (at least five minutes, up to one hour,
-and longer Retry-After). A completed Claude turn schedules one fallback check
+429 retries use five, ten, then fifteen minutes, with small positive jitter
+within that cap. Positive Retry-After values override the cap; zero or missing
+values use the schedule. Network failures retry in five minutes, auth failures
+pause thirty minutes or until credentials mtime changes, and parse failures pause
+an hour or until the CLI version changes. Attempt times and 429 cooldowns persist
+across restarts. A completed Claude turn schedules one fallback check
 three seconds later, only if no newer native reading arrived, subject to the
 same minimum gap and backoff. Duplicate session watchers cannot multiply polls.
 Idle checks use the same gap. Reset times never imply a zero reading.
+Agy fallback always uses a five-minute minimum, including near a limit. Codex
+network retries use one, two, then five minutes (Agy uses its five-minute floor);
+Codex/Agy rate limits use five then fifteen minutes, and parse failures one hour.
+
+The owner-local `refresh.jsonl` journal rotates at 512 KiB with one previous file.
+Events contain `time`, `account`, `source` (`poll`, `live`, `rollout`, `statusline`),
+`outcome` (`ok`, `ignored`, an error class, or Claude `publication`/`unmeasured`),
+`httpStatus`, and `retryAfter` (parsed seconds, null when absent). Claude live
+publication events include `five_hour` and `seven_day` booleans indicating
+utilization presence in the publication, including SDK events without a meter.
+No raw payloads, bodies, credentials, headers, transcripts or paths are retained.
+`stoppedAt` is an optional top-level timestamp marking a stopped collector;
+consumers should also keep the existing heartbeat check.
 
 The existing schema-1 `--watch-sessions` lines add a `usage` member containing
 the public schema-2 snapshot (no `_native`). It changes when quota or stale state

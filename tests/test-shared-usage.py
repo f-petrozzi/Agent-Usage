@@ -73,7 +73,7 @@ class SharedTests(unittest.TestCase):
         row = self.service.rows['codex:a']
         self.assertEqual(row['limits'], original['limits'])
         self.assertEqual(row['sampledAt'], original['sampledAt'])
-        self.assertTrue(row['stale'])
+        self.assertFalse(row['stale'])
         self.assertEqual(self.service.failures['codex:a'], 1)
         self.service.poll('codex:a')
         self.assertGreater(self.service.due['codex:a'] - time.monotonic(), 119)
@@ -142,12 +142,15 @@ class SharedTests(unittest.TestCase):
         self.assertEqual(row['_native']['rateLimits']['primary'], update['rateLimits']['primary'])
     def test_live_recovers_freshness_without_bypassing_poll_backoff(self):
         self.seed()
-        self.service.failed('codex:a','Synthetic failure', time.time()+900)
+        self.service.failed('codex:a', usage.UsageError('Synthetic failure', 'rate_limited'), time.time()+900)
         due = self.service.due['codex:a']
         self.assertTrue(self.push(native(99))['accepted'])
         self.assertFalse(self.service.rows['codex:a']['stale'])
         self.assertAlmostEqual(self.service.due['codex:a'], due, delta=.01)
-        self.assertEqual(self.service.failures['codex:a'], 1)
+        self.assertEqual(self.service.failures['codex:a'], 0)
+        self.assertEqual(self.service.rows['codex:a']['refresh']['state'], 'ok')
+        self.push(native(98))
+        self.assertAlmostEqual(self.service.due['codex:a'], due, delta=.01)
     def test_live_during_failed_poll_survives_and_endpoint_still_backs_off(self):
         self.seed()
         def query():
@@ -157,7 +160,8 @@ class SharedTests(unittest.TestCase):
         self.service.poll('codex:a')
         self.assertFalse(self.service.rows['codex:a']['stale'])
         self.assertEqual(self.service.rows['codex:a']['limits'][0]['usedPercent'], 99)
-        self.assertEqual(self.service.failures['codex:a'], 1)
+        self.assertEqual(self.service.failures['codex:a'], 0)
+        self.assertEqual(self.service.rows['codex:a']['refresh']['state'], 'ok')
         self.assertGreater(self.service.due['codex:a']-time.monotonic(), 59)
     def test_live_events_defer_idle_polls_until_the_sample_expires(self):
         self.seed()
@@ -190,11 +194,11 @@ class SharedTests(unittest.TestCase):
         self.assertTrue(doc['accounts'][0]['stale'])
         self.assertTrue(doc['accounts'][1]['stale'])
         self.assertFalse(doc['accounts'][2]['stale'])
-    def test_restart_preserves_stale_readings_without_inventing_success(self):
+    def test_restart_preserves_readings_and_their_health(self):
         self.seed()
         service = shared.UsageService(usage, [('a', self.root/'profile')], root=self.root)
         service.load()
-        self.assertTrue(service.rows['codex:a']['stale'])
+        self.assertFalse(service.rows['codex:a']['stale'])
         self.assertEqual(service.rows['claude']['sampledAt'], self.service.rows['claude']['sampledAt'])
     def test_cli_reads_cache_and_never_falls_back_when_enabled(self):
         self.seed()
