@@ -198,7 +198,11 @@ class UsageService:
         self.readers = {f'codex:{n}': CodexReader(usage, n, h, timeout) for n, h in profiles}
         self.queries = {ident: reader.read for ident, reader in self.readers.items()}
         if include_claude:
-            self.queries['claude'] = lambda: usage.query_claude(timeout, allow_cli=False, strict=True,
+            # Claude Code's own /usage reads both windows without a model turn
+            # (num_turns 0, cost 0 on 2.1.x). The undocumented endpoint is opt-in.
+            direct = os.environ.get('AGENT_USAGE_CLAUDE_DIRECT') == '1'
+            self.queries['claude'] = lambda: usage.query_claude(timeout, allow_cli=not direct, strict=True,
+                prefer_cli=not direct,
                 failure_count=self.failures['claude'] if self.rows['claude'].get('pollFailureClass') == 'rate_limited' else 0)
         if include_agy:
             self.queries['antigravity'] = lambda: usage.query_antigravity(timeout, strict=True)

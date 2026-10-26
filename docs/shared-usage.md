@@ -54,14 +54,17 @@ only when native samples expire (120 seconds), with a 60-second minimum gap.
 It disables hooks, plugins and apps for the read-only reader, reconnects with
 backoff, recycles after one hour, and discovers CLI upgrades every five minutes.
 
-Claude fallback uses only `/api/oauth/usage`, at least five minutes apart. Fresh
-native samples defer it until their 600-second freshness expires. Completed
-Claude turns, detected from the same local activity as `--watch-sessions`,
-schedule one coalesced fallback three seconds later if no native reading arrived.
-The minimum gap and persistent Retry-After/backoff apply to these checks too.
-The shared service never starts `claude -p /usage`; expired credentials require
-normal CLI sign-in. Agy fallback runs every five minutes, including near a limit.
-Resets never imply zero usage.
+Claude fallback runs Claude Code's own
+`claude -p /usage --output-format json --no-session-persistence`, at least five
+minutes apart. Verified on 2026-10-26: `num_turns` 0, zero tokens,
+`total_cost_usd` 0, and both the session and weekly percentages in its text. The
+CLI owns the request and token refresh. The undocumented `/api/oauth/usage`
+endpoint is used only with `AGENT_USAGE_CLAUDE_DIRECT=1`. Fresh native samples
+defer the fallback until their 600-second freshness expires. Completed Claude
+turns, detected from the same local activity as `--watch-sessions`, schedule one
+coalesced fallback ten seconds later if no native reading arrived. The minimum
+gap and persistent Retry-After/backoff apply to these checks too. Agy fallback
+runs every five minutes, including near a limit. Resets never imply zero usage.
 
 Refresh failures keep the last measurement and its sample time. `refresh.state`
 reports `rate_limited`, `auth`, `network`, `parse`, `process`, or `unknown`; a short
@@ -86,15 +89,6 @@ HTTP status and parsed Retry-After seconds. Claude live publications also record
 booleans for the presence of five-hour and weekly utilization. The journal keeps
 at most 512 KiB plus one previous file (`refresh.jsonl.1`), both mode 0600. It
 never records exception text, headers, credentials, bodies, paths or transcripts.
-
-The alternative CLI fallback remains unverified: the 2026-10-26 helper sandbox
-denies access to Claude credentials, so no real `/usage` probe was run. The owner
-can inspect both window percentages and JSON turn/token/cost metadata with:
-
-```sh
-claude -p /usage --output-format json --no-session-persistence
-```
-
 The current endpoint and three-second completion delay remain until this shows
 both windows with zero model turns/tokens or no cost. Switching to a verified CLI
 fallback would also require making the undocumented endpoint explicitly opt-in

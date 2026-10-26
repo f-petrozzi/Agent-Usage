@@ -16,7 +16,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import agent_usage_service as shared
-from agent_usage_live import codex_result, claude_row
+from agent_usage_live import TURN_SETTLE, codex_result, claude_row
 loader = importlib.machinery.SourceFileLoader('usage_live_test', str(ROOT/'scripts/agent-usage'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 usage = importlib.util.module_from_spec(spec);loader.exec_module(usage)
@@ -82,8 +82,8 @@ class LiveTests(unittest.TestCase):
         due=local.pending_turn;local.observe_sessions([]);self.assertEqual(local.pending_turn,due)
         self.service.rows['claude']['pollAttemptedAt']=self.now
         self.service.due['claude']=time.monotonic()+1000
-        with patch('agent_usage_live.time.time',return_value=self.now+4):local.finish_turn()
-        self.assertGreater(self.service.due['claude']-time.monotonic(),295)
+        with patch('agent_usage_live.time.time',return_value=self.now+TURN_SETTLE+1):local.finish_turn()
+        self.assertGreater(self.service.due['claude']-time.monotonic(),300-TURN_SETTLE-2)
         self.assertIsNone(local.pending_turn)
         local.pending_turn=time.time()-1
         self.service.rows['claude'].update(source='live',receivedAt=time.time())

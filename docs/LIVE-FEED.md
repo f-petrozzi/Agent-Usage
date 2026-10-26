@@ -59,7 +59,7 @@ values use the schedule. Network failures retry in five minutes, auth failures
 pause thirty minutes or until credentials mtime changes, and parse failures pause
 an hour or until the CLI version changes. Attempt times and 429 cooldowns persist
 across restarts. A completed Claude turn schedules one fallback check
-three seconds later, only if no newer native reading arrived, subject to the
+ten seconds later, only if no newer native reading arrived, subject to the
 same minimum gap and backoff. Duplicate session watchers cannot multiply polls.
 Idle checks use the same gap. Reset times never imply a zero reading.
 Agy fallback always uses a five-minute minimum, including near a limit. Codex

@@ -6,6 +6,10 @@ import math
 from pathlib import Path
 import time
 
+# Seconds after a Claude turn ends before a fallback check, so a native
+# reading from that turn can arrive first.
+TURN_SETTLE = 10
+
 
 def timestamp(value):
     if type(value) in (int, float) and math.isfinite(value):
@@ -144,13 +148,13 @@ class LocalFeeds:
         """Coalesce a busy -> ended edge; duplicate watchers never request polls."""
         current = {s['id']: s['state'] for s in sessions if s.get('provider') == 'claude'}
         if any(state == 'busy' and current.get(key) in (None, 'idle', 'canceled') for key, state in self.states.items()):
-            self.pending_turn = time.time() + 3
+            self.pending_turn = time.time() + TURN_SETTLE
         self.states = current
 
     def finish_turn(self):
         if self.pending_turn is None or time.time() < self.pending_turn:
             return
-        finished = self.pending_turn - 3
+        finished = self.pending_turn - TURN_SETTLE
         self.pending_turn = None
         with self.service.lock:
             row = self.service.rows.get('claude', {})

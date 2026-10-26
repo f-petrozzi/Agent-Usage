@@ -728,7 +728,7 @@ def _claude_reset_credits(payload: dict[str, Any]) -> tuple[int | None, list[dic
     return count, details
 
 
-def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
+def _query_claude_uncached(timeout: float, allow_cli=True, prefer_cli=False) -> dict[str, Any]:
     account: dict[str, Any] = {
         "id": "claude",
         "provider": "claude",
@@ -751,7 +751,8 @@ def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
     fallback_text: str | None = None
     first_error = None
 
-    if token and not expired:
+    # prefer_cli lets Claude Code's own /usage (no model turn) own the request.
+    if token and not expired and not prefer_cli:
         try:
             payload = _claude_fetch(token, timeout)
         except urllib.error.HTTPError as exc:
@@ -774,7 +775,7 @@ def _query_claude_uncached(timeout: float, allow_cli=True) -> dict[str, Any]:
         token, subscription, _ = _claude_token()
         if subscription:
             account["plan"] = str(subscription)
-        if token:
+        if token and not prefer_cli:
             try:
                 payload = _claude_fetch(token, timeout)
             except urllib.error.HTTPError as exc:
@@ -809,7 +810,7 @@ def _retry_seconds(value: str | None, now: float) -> float:
             return 0.0
 
 
-def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=None) -> dict[str, Any]:
+def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=None, prefer_cli=False) -> dict[str, Any]:
     """Share a credential-scoped cache/cooldown across polling processes.
 
     A 429 never launches the CLI fallback or immediately retries the endpoint.
@@ -862,7 +863,7 @@ def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=Non
         streak = min(8, max(0, int(saved.get("streak", 0))))
         failure = None
         try:
-            account = _query_claude_uncached(timeout) if allow_cli else _query_claude_uncached(timeout, allow_cli=False)
+            account = _query_claude_uncached(timeout, allow_cli=allow_cli, prefer_cli=prefer_cli)
             streak = 0
             next_attempt = now + 300
             account["sampledAt"] = int(time.time())
