@@ -918,9 +918,7 @@ invoke('get_notch_buttons').then(renderNotchButtons).catch(()=>{});
 listen('move_begin',()=>{carrying=true;window.agentTracking=true;document.getElementById('root').classList.add('carrying');moveArms(0,ARM_MOTION.absorb);setHovered(null);clearTimeout(hideTimer);hideCard();});
 listen('move_end',()=>{carrying=false;window.agentTracking=false;document.getElementById('root').classList.remove('carrying');setHovered(null);reportHot();moveArms(1,ARM_MOTION.emerge,smooth);});
 document.addEventListener('pointerup',e=>{if(e.button===0&&carrying)callq('end_move').catch(()=>{});});
-/* Appearing grows the notch out of the screen edge; disappearing slides it away past the edge
-   (agent-usage.css). The Mac's resting-pill fold is not used: with nothing on screen at rest it read as a
-   strip growing, and a slide in hides the base until the end, so the notch seemed to float in. */
+/* Reveal and hide share an edge-attached contour; handles rejoin before the body retracts. */
 let shown=false;
 function setFolded(f){
   if(f===folded) return;
@@ -936,7 +934,7 @@ function setShown(on,edge){
   if(on===shown) return;
   shown=on;if(on)shownAt=performance.now();
   const root=document.getElementById('root');
-  if(!on){ if(typeof notificationRim!=='undefined')notificationRim.clear(); if(typeof retractSlivers==='function')retractSlivers(true); root.classList.remove('visible'); uiMotion.cancel(openFrame);openFrame=0;moveArms(0,ARM_MOTION.absorb);setHovered(null); return; } // absorb, then slide away
+  if(!on){ if(typeof notificationRim!=='undefined')notificationRim.clear(); if(typeof retractSlivers==='function')retractSlivers(true); root.classList.remove('visible'); closeShape();setHovered(null); return; }
   /* Arriving: wells out of the edge instead of sliding in, so its base and flares sit on the screen edge
      from the first frame. Laid out in place and closed against the edge with transitions held, then opened. */
   document.body.classList.add('no-motion');

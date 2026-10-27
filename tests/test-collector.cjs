@@ -73,3 +73,33 @@ test('cached readings expire locally even while the stream is disconnected', () 
   assert.equal(collector.accounts[0].snap.fetched_at,sampledAt*1000);
   collector.close();
 });
+
+test('window provenance and fractional measurements survive desktop normalization',()=>{
+ const sampledAt=Date.now()/1000;
+ const [a]=normalize({schema:2,source:'shared',accounts:[{provider:'claude',sampledAt,warning:'Refresh rate-limited; next try later',limits:[
+  {usedPercent:23.125,windowMins:300,sampledAt,source:'live',origin:'claude-runtime'},
+  {usedPercent:40,windowMins:10080,sampledAt:sampledAt-60,source:'poll',origin:'provider-poll'}
+ ]}]});
+ assert.equal(a.snap.status,'ok','refresh warning alone cannot invalidate a current measurement');
+ assert.equal(a.snap.windows[0].used,.23125);
+ assert.equal(a.snap.windows[0].sampled_at,sampledAt*1000);
+ assert.equal(a.snap.windows[1].sampled_at,(sampledAt-60)*1000);
+ assert.equal(a.snap.windows[0].origin,'claude-runtime');
+ assert.equal(a.snap.windows[1].source,'poll');
+ assert.ok(a.snap.note.includes('rate-limited'));
+});
+
+
+test('activity heartbeats do not rebroadcast identical quotas but freshness changes do',()=>{
+ const {Collector}=require('../desktop/collector.cjs'),collector=new Collector(()=>({}));
+ const now=Date.now()/1000,raw={schema:2,source:'shared',accounts:[{provider:'codex',id:'codex:a',sampledAt:now,receivedAt:now,limits:[{usedPercent:23,windowMins:300}]}]};
+ let changes=0;collector.on('change',()=>changes++);
+ try{
+  collector.acceptSnapshot(raw);
+  for(let i=0;i<100;i++)collector.acceptSnapshot({...raw,generatedAt:now+i});
+  assert.equal(changes,1);
+  collector.acceptSnapshot({...raw,accounts:raw.accounts.map(a=>({...a,stale:true}))});
+  assert.equal(changes,2);
+  collector.acceptSnapshot(raw);assert.equal(changes,3);
+ }finally{collector.close();}
+});

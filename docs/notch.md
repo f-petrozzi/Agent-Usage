@@ -94,7 +94,7 @@ Since 3.0.7 the notch's black, its flares and its resting arms are drawn as SVG
 the black is blurred and cut back at half strength, so shapes close together
 melt into one body. The notch wells out of the screen edge on the Mac's unfold
 spring, and the arms then bud out of its flares as drops and let go. Closing,
-the arms go back in and the notch slides away past the edge. Carried round a
+the arms go back in and the notch contour retracts into the edge without cutting its flares. Carried round a
 corner while the shortcut is held, it is two parts, the one leaving shortening
 and the one arriving growing, gooed into one round body in the bend, with the
 rings carried round on a curve and passing through the bend inside the black.

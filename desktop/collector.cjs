@@ -46,10 +46,12 @@ function normalize(raw) {
         : l.windowMins > 0 && l.windowMins < 1440 ? (base === 'codex' ? 'primary' : 'session') : `window_${i}`,
       group: base === 'gemini' ? clean(l.group || 'Models', 100) : null,
       label: clean(l.label || 'Usage', 100), used: Math.max(0, Math.min(1, l.usedPercent / 100)),
-      resets_at: finite(l.resetsAt) ? l.resetsAt * 1000 : null, count: null, derived: false
+      resets_at: finite(l.resetsAt) ? l.resetsAt * 1000 : null, count: null, derived: false,
+      sampled_at: finite(l.sampledAt) ? l.sampledAt * 1000 : null,
+      source: ['live', 'poll', 'estimate'].includes(l.source) ? l.source : null, origin: clean(l.origin || '', 100)
     }));
     return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
-      status: a.error || a.warning || a.stale || a.available === false ? (windows.length ? 'stale' : 'error') : 'ok', windows,
+      status: a.error || a.stale || a.available === false ? (windows.length ? 'stale' : 'error') : 'ok', windows,
       source: ['live', 'poll', 'estimate'].includes(a.source) ? a.source : null,
       origin: clean(a.origin || '', 100),
       received_at: finite(a.receivedAt) ? a.receivedAt * 1000 : finite(a.sampledAt) ? a.sampledAt * 1000 : 0,
@@ -97,6 +99,7 @@ class Collector extends EventEmitter {
   acceptSnapshot(raw) {
     const accounts = normalize(raw);
     if (!accounts.length) throw new Error('The collector returned no accounts');
+    const before = JSON.stringify(this.accounts);
     const previous = new Map(this.accounts.map(a => [a.id, a]));
     this.accounts = accounts.map(a => {
       const old = previous.get(a.id);
@@ -104,7 +107,8 @@ class Collector extends EventEmitter {
     });
     this.failures = 0;
     this.armExpiry(false);
-    this.emit('change', this.accounts);
+    // Session/activity heartbeats carry the same quota payload. Do not rebuild every renderer for them.
+    if (JSON.stringify(this.accounts) !== before) this.emit('change', this.accounts);
   }
   armExpiry(emit = true) {
     clearTimeout(this.expiry);

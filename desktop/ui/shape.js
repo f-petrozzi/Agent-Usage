@@ -41,7 +41,7 @@ const handleFilters=['goo-start','goo-end'].map(id=>shapeSvg.querySelector('#'+i
 pill.before(shapeSvg);
 
 // How far open (0 closed against the edge, 1 open; a spring takes it a little past)
-let openness=1, openVelocity=0, openFrame=0, openLast=0;
+let openness=0, openVelocity=0, openFrame=0, openLast=0;
 // How far the arms have come away from the flares (0 in the black, 1 at their place), and the tween moving it
 let armsOut=0, armsFrame=0;
 let absorbing=false;
@@ -315,10 +315,11 @@ function drawPassage(){
   const part=(el,edge,length,other,cornerAtStart)=>{
     if(length<1){ el.removeAttribute('d'); return; }
     const len=edge==='top'||edge==='bottom'?W:H, at=cornerAtStart?0:len;
-    const depth=edgeDepth(edge), square=smooth(other/depth), size=smooth(length/depth);
+    const baseDepth=edgeDepth(edge),grown=Math.max(0,Math.min(1,openness));
+    const depth=baseDepth*Math.max(0,openness),square=smooth(other/baseDepth),size=smooth(length/baseDepth);
     const flare=handleMetrics(edge,notchAlongLength()).flare;
-    const rc=SHAPE.corner*(1-square), fc=flare*(1-square), ext=bleed*square;
-    const rf=SHAPE.corner*size, ff=flare*size;
+    const rc=SHAPE.corner*(1-square)*grown, fc=flare*(1-square)*grown, ext=bleed*square;
+    const rf=SHAPE.corner*size*grown, ff=flare*size*grown;
     const d=cornerAtStart
       ? partPath(at-ext,at+length,depth,rc,fc,rf,ff)
       : partPath(at-length,at+ext,depth,rf,ff,rc,fc);
@@ -331,7 +332,7 @@ function drawPassage(){
   armStart.removeAttribute('d'); armEnd.removeAttribute('d');
   for(const el of [...necks,...bands]) el.removeAttribute('d');
   clearSprout();
-  const share=Math.min(1,4*Math.min(before,after)/L), blur=D*.22*share*share*(3-2*share);
+  const share=Math.min(1,4*Math.min(before,after)/L), blur=D*.22*share*share*(3-2*share)*Math.max(0,Math.min(1,openness));
   const cx=corner==='tr'||corner==='br'?W:0, cy=corner==='br'||corner==='bl'?H:0;
   setGoo(blur,cx-L-120,cy-L-120,2*L+240,2*L+240);
 }
@@ -356,11 +357,11 @@ function stowShape(){
 }
 function openShape(){
   uiMotion.cancel(openFrame); openFrame=0;
-  uiMotion.cancel(armsFrame); armsOut=0;
+  uiMotion.cancel(armsFrame);
   absorbing=false;
-  for(const h of handles){uiMotion.cancel(h.frame);h.frame=0;h.value=0;h.target=0;h.velocity=0;}
+  for(const h of handles){uiMotion.cancel(h.frame);h.frame=0;}
   if(matchMedia('(prefers-reduced-motion: reduce)').matches){ armsOut=1; setOpenness(1); return; }
-  openVelocity=0; openLast=0; setOpenness(0);
+  openVelocity=0; openLast=0; // retain the drawn contour when reversing a close
   const omega=2*Math.PI/0.62, zeta=0.72;
   let armsStarted=false;
   const step=now=>{
@@ -369,6 +370,21 @@ function openShape(){
     if(!armsStarted&&next>.78){ armsStarted=true; moveArms(1,ARM_MOTION.emerge,smooth); }
     if(Math.abs(next-1)<.0015&&Math.abs(openVelocity)<.02){ openFrame=0; setOpenness(1); reportHot(); return; }
     setOpenness(next); openFrame=uiMotion.frame(step);
+  };
+  openFrame=uiMotion.frame(step);
+}
+// The same contour returns into the edge after absorption; no translated flare is cut by the viewport.
+// Total 460 ms leaves a painted margin inside the native and embedded hosts' 500 ms hide grace.
+function closeShape(){
+  uiMotion.cancel(openFrame);openFrame=0;
+  moveArms(0,ARM_MOTION.absorb);
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches){setOpenness(0);return;}
+  const from=openness,start=performance.now(),delay=ARM_MOTION.absorb*1000;
+  const step=now=>{
+    const t=Math.max(0,Math.min(1,(now-start-delay)/200));
+    setOpenness(from*(1-smooth(t)));
+    openFrame=t<1?uiMotion.frame(step):0;
+    if(t===1)reportHot();
   };
   openFrame=uiMotion.frame(step);
 }

@@ -89,10 +89,11 @@ HTTP status and parsed Retry-After seconds. Claude live publications also record
 booleans for the presence of five-hour and weekly utilization. The journal keeps
 at most 512 KiB plus one previous file (`refresh.jsonl.1`), both mode 0600. It
 never records exception text, headers, credentials, bodies, paths or transcripts.
-The current endpoint and three-second completion delay remain until this shows
-both windows with zero model turns/tokens or no cost. Switching to a verified CLI
-fallback would also require making the undocumented endpoint explicitly opt-in
-and extending the completion delay to about ten seconds.
+The default CLI fallback uses a ten-second completion delay; the direct endpoint
+remains explicitly opt-in. `--no-session-persistence` prevents the print-mode
+fallback from saving a resumable chat. Historical usage-only SDK transcripts can
+still be rediscovered by catalogs that do not apply the bounded recognizer in
+`scripts/agent-usage`; a picker title alone cannot identify such a transcript.
 
 Stale values keep their last sample times and percentages. Consumers recompute
 age and reset expiry on read; a heartbeat older than 45 seconds means the service
@@ -111,9 +112,14 @@ installations retain one-shot collection.
 
 `--watch-sessions` adds `usage` to its existing schema-1 session lines. New app
 code consumes those snapshots over its existing SSH/WSL connection every 1.5
-seconds or on change. Older Windows versions ignore the additive field and keep
-their 60–180-second quota refresh. This backend change publishes no Windows
-release; the Windows stream consumer requires a subsequent release.
+seconds or on change. Windows releases through 5.1.7 ignore the additive field
+and keep their 60–180-second quota refresh. The stream consumer first exists after that tag;
+a later Windows release must include it. Compare the installed version and
+collector SSH/WSL target before attributing different readings to provider
+precision. The common public cache rounds Codex readings to whole percentage
+points; both consumers receive those same measured values. Desktop normalization
+preserves each window's original sample time and provenance and retains refresh
+warnings without marking otherwise fresh measurements stale.
 
 `${XDG_STATE_HOME:-~/.local/state}/agent-usage` is mode 0700, overridable with
 `AGENT_USAGE_STATE_DIR`. `shared.json` and `updates.sock` are 0600. The service

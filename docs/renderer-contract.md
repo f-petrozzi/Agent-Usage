@@ -51,7 +51,11 @@ metadata/helper work and receipt-based confirmation in VS Code.
 Arm material timing is defined by `ARM_MOTION` in shape.js. Hover targets change
 immediately and analytic springs retain their velocity. Strand geometry depends
 on the current position rather than the direction of its target, making hover
-reversal continuous. The root's CSS stow delay matches the arm absorption time;
-native pointer following and hit rectangles do not wait for the visual morph.
+reversal continuous. Hide absorbs the arms for 260 ms, then retracts the body
+contour into its attached edge over 200 ms. Straight and corner parts use the
+same openness; the root never translates a flare through the viewport boundary.
+Reopening retains the drawn contour and arm positions. Reduced motion settles
+immediately. Hosts retain their 500 ms exit grace; native pointer following and
+hit rectangles do not wait for the visual morph.
 This follows [velocity-continuous spring guidance](https://developer.android.com/develop/ui/compose/animation/customize#spring)
 and preserves [reduced-motion support](https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions.html).
