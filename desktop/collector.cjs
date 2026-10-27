@@ -52,6 +52,7 @@ function normalize(raw) {
     }));
     return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
       status: a.error || a.stale || a.available === false ? (windows.length ? 'stale' : 'error') : 'ok', windows,
+      blocked: a.blocked === true, hasCredits: finite(a.creditBalance) && (a.creditBalance < 0 || a.creditBalance > 0),
       source: ['live', 'poll', 'estimate'].includes(a.source) ? a.source : null,
       origin: clean(a.origin || '', 100),
       received_at: finite(a.receivedAt) ? a.receivedAt * 1000 : finite(a.sampledAt) ? a.sampledAt * 1000 : 0,

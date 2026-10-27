@@ -352,3 +352,7 @@ Close beside navigation, no desktop header band, full-width option rows and
 44px touch controls. Wider settings retain their desktop layout. Narrow tab
 lists use Left/Right; desktop lists use Up/Down. Host styles hide only unavailable
 platform capabilities.
+
+## Cached readings and metadata activation
+
+Reading age remains explicit in account details; stale or temporarily failed refreshes retain the last measured quota ink. Grey means no measured quota, or a fully exhausted unavailable model; an available credit balance keeps exhausted included quota usable. The renderer starts with closed ink so account symbols cannot appear before the notch background. Account metadata uses the pointer-down open state when toggling: focus/compatibility hover from a first touch cannot immediately close what that touch opened. Keyboard focus continues to reveal metadata. The renderer viewport also works in browser hosts.

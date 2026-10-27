@@ -300,8 +300,9 @@ function renderRing(){
     else if(h && h.count!=null) pct.textContent='~'+h.count;
     else if(h) pct.textContent=(h.derived?'~':'')+pctText(h.used)+'%';
     else pct.textContent=p.snap.windows.length?'N/A':'…'; // its declared window is missing: a dash, not a wait
-    glyph.classList.toggle('dim', !!(h && h.used>=1));
+    glyph.classList.toggle('dim', false);
     wrap.classList.toggle('stale', staleOf(p.snap));
+    wrap.classList.toggle('unavailable', window.usageReadingUnavailable(p.snap));
   }
   reportHot(); // a provider appearing or leaving resizes the pill
   if(typeof applyFocusLayout==='function')applyFocusLayout();
@@ -454,14 +455,15 @@ function renderCard(){
   if(typeof setExtraContent==='function')setExtraContent(inlineExtras?[]:snap.details||[],inlineExtras?[]:extraWindows);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){
-    let closeTimer;
+    let closeTimer,pointerOpen=null;
     const expand=on=>setExtraShown(on);
     titleTrigger.addEventListener('mouseenter',()=>{clearTimeout(closeTimer);expand(true);});
     titleTrigger.addEventListener('mouseleave',()=>{closeTimer=setTimeout(()=>{
       if(titleTrigger.isConnected&&!c.matches(':hover')&&!extraCard.matches(':hover'))expand(false);
     },250);});
-    titleTrigger.addEventListener('focusin',()=>expand(true));
-    titleTrigger.addEventListener('click',()=>expand(!extraTarget));
+    titleTrigger.addEventListener('focusin',()=>{if(titleTrigger.matches(':focus-visible'))expand(true);});
+    titleTrigger.addEventListener('pointerdown',()=>{pointerOpen=extraTarget===1;});
+    titleTrigger.addEventListener('click',()=>{expand(pointerOpen===null?!extraTarget:!pointerOpen);pointerOpen=null;});
     if(wasOpen)expand(true);
   }
   c.scrollTop=scroll;
