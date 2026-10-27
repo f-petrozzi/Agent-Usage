@@ -1,0 +1,30 @@
+/* Settings owns its narrow viewport layout; the host only hides unavailable capabilities. */
+@media (max-width: 520px) {
+  #app { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  #side { display:flex; flex-direction:row; width:auto; padding:6px 52px 6px 6px; gap:2px; border-bottom:1px solid var(--sep); }
+  #side .row { flex:1; min-width:0; width:auto; height:auto; min-height:44px; margin:0; justify-content:center; padding:8px 4px; font-size:12px; text-align:center; }
+  #side .row.sel { background:var(--nav-sel); box-shadow:inset 0 1px 0 var(--hi); }
+  #side .ico, #side .band, #side .grow, #nav-pill, #nav-bar { display:none; }
+  #pane { position:static; min-width:0; min-height:0; }
+  #head { position:static; height:0; padding:0; }
+  #head h1, #notch { display:none; }
+  #close { top:6px; right:6px; width:44px; height:44px; border-radius:9px; }
+  #close svg { width:12px; height:12px; }
+  #body { padding:12px 10px max(16px,env(safe-area-inset-bottom)); overscroll-behavior-y:contain; }
+  #strip { margin:8px 10px 0; }
+  .item { gap:10px; padding:10px 12px; min-height:64px; }
+  .item > :first-child { min-width:0; overflow-wrap:anywhere; }
+  .item:has(> .seg) { flex-direction:column; align-items:stretch; gap:8px; }
+  .item > .seg { display:flex; width:100%; max-width:100%; margin:0; flex-wrap:nowrap; }
+  .seg button { flex:1; min-width:0; min-height:44px; height:auto; padding:7px 4px; font-size:12px; overflow-wrap:anywhere; }
+  .btn, select, input { min-height:44px; height:auto; }
+  input, select { font-size:16px; }
+  .switch::before { content:''; position:absolute; inset:-10px -1px; }
+  .acct { padding:12px; gap:8px; grid-template-columns:36px minmax(0,1fr); }
+  .acct-actions { grid-column:1/-1; grid-row:2; justify-content:flex-end; gap:6px; }
+  .acct-actions > button:not(.switch) { width:44px; height:44px; }
+  .acct-actions > .switch { margin-left:8px; }
+  .acct-detail { white-space:normal; overflow-wrap:anywhere; }
+  .acct-alias { min-height:44px; font-size:16px; }
+  .sec { margin-top:20px; }
+}

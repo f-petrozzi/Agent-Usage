@@ -340,3 +340,15 @@ Validation: `tests/test-rim-geometry.cjs` covers clipping, union area/perimeter,
 During tracking, focus targets only the selected group. `edge_cursor`, `move_begin` and tracking layouts clear notification DOM, SVG paths, scroll animations and shimmer before the notch moves; queued alerts wait until movement finishes. Sessions retains its search state on reopening and refreshes only while open, on a 30-second timer or a debounced activity change. Refresh explicitly bypasses the collector history cache, while concurrent reads still share the pending promise.
 
 The Sessions type hierarchy is 17/14/12px in Segoe UI: heading, session name/search, and supporting text. `--tz` compensates for Small's 0.8 zoom so readable text keeps its screen size. Card placement snaps to the device pixel grid, and detail geometry uses its precise style position instead of rounded `offsetLeft`/`offsetTop`, with zero settled translation. The selection surface remains the single fluid accent; keyboard badges and manual reload chrome are removed.
+
+## Embedded and narrow settings surfaces
+
+The renderer reports the drawn account contour until its closing spring settles,
+including after the card becomes inactive. Hosts that clip to `set_hot.rects`
+must retain this painted region; logical close alone does not remove the ink.
+
+`settings-mobile.css` owns layouts at 520px and below: horizontal selected tabs,
+Close beside navigation, no desktop header band, full-width option rows and
+44px touch controls. Wider settings retain their desktop layout. Narrow tab
+lists use Left/Right; desktop lists use Up/Down. Host styles hide only unavailable
+platform capabilities.

@@ -590,7 +590,7 @@ function flushHot(){hotFrame=0;uiMotion.paint('hot',paintHot,50);}
 function paintHot(){
   const open=card.classList.contains('show');
   const rects=open?[rectOf(pill),rectOf(tail),rectOf(card)]:[rectOf(pill)];
-  if(open&&typeof detailHotRect==='function'){const expanded=detailHotRect();if(expanded)rects.push(expanded);}
+  if(typeof detailHotRect==='function'){const expanded=detailHotRect();if(expanded)rects.push(expanded);} // Keep the closing ink inside embedded hosts' clip.
   if(open&&typeof extraTarget==='number'&&extraTarget){rects.push(rectOf(extraCard));const bridge=extraBridgeRect();if(bridge)rects.push(bridge);}
   const controls={};
   if(placeHandles()&&!(open&&typeof isSessionToolsCard==='function'&&isSessionToolsCard())){

@@ -363,9 +363,13 @@ for(const tab of TABS) $('tab-'+tab).onclick=()=>{
   for(const seg of $('pane-'+tab).querySelectorAll('.seg'))placeSeg(seg);
   paintNotch();showNotch(tab==='accounts'&&notchIds().length>0);
 };
+const narrowSettings=matchMedia('(max-width: 520px)');
+function settingsOrientation(){ $('side').setAttribute('aria-orientation',narrowSettings.matches?'horizontal':'vertical'); }
+settingsOrientation();narrowSettings.addEventListener('change',settingsOrientation);
 $('side').addEventListener('keydown',e=>{
-  if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
-  const i=TABS.indexOf(activeTab)+(e.key==='ArrowDown'?1:-1);if(i<0||i>=TABS.length)return;
+  const forward=narrowSettings.matches?'ArrowRight':'ArrowDown',back=narrowSettings.matches?'ArrowLeft':'ArrowUp';
+  if(e.key!==forward&&e.key!==back)return;
+  const i=TABS.indexOf(activeTab)+(e.key===forward?1:-1);if(i<0||i>=TABS.length)return;
   e.preventDefault();$('tab-'+TABS[i]).click();$('tab-'+TABS[i]).focus();
 });
 const initialTab=new URLSearchParams(location.search).get('tab');
