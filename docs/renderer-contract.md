@@ -31,6 +31,7 @@ State concerns stay independent:
 | Interaction | Main held/carrying flags, renderer tracking/hover; pointer targets cannot bypass transfer masks |
 | Notifications | Sliver map, queued alerts and rim; interruption clears owned jobs independently of panel state |
 | Account identity | Stable collector ID; optional aliases affect displayed names only |
+| Account activity | Exact account ID in each session row; a busy parent does not activate idle helper accounts. Synthetic collector, feed and renderer coverage: `tests/test-session-account-isolation.py`, `tests/test-session-feed.cjs`, `tests/browser/activity-account-isolation.cjs` |
 
 Geometry and hot regions use CSS pixels in the renderer. Main multiplies hot
 regions by Electron zoom for DIP hit testing. The native mouse hook sends

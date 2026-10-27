@@ -134,3 +134,21 @@ test('usage rides the existing session stream and preserves sample age and sourc
   assert.equal(collector.accounts[0].snap.fetched_at,100000);
   feed.close();collector.close();
 });
+
+test('busy parent activity never transfers to idle helper accounts across feed updates', () => {
+  const feed = new SessionFeed(() => ({}));
+  const parent = { provider:'claude',account:'claude',id:'parent',state:'busy',since:1000 };
+  const helpers = ['a','b'].map(account=>({ provider:'codex',account:'codex:'+account,
+    id:'helper-'+account,parentId:'parent',parentAccount:'claude',state:'idle',since:900 }));
+  const active = () => feed.sessions.map(s=>[s.account,s.state]);
+  try {
+    feed.line(line([parent,...helpers]));
+    assert.deepEqual(active(),[[accountId('claude','claude'),'busy']]);
+    feed.line(line([parent,{...helpers[0],state:'busy'},helpers[1]]));
+    assert.deepEqual(active(),[[accountId('claude','claude'),'busy'],[accountId('codex','codex:a'),'busy']]);
+    feed.line(line([parent,...helpers]));
+    assert.deepEqual(active(),[[accountId('claude','claude'),'busy']]);
+    feed.line(line([{...parent,state:'idle'},...helpers]));
+    assert.deepEqual(active(),[]);
+  } finally { feed.close(); }
+});
