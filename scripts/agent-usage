@@ -538,12 +538,18 @@ def _claude_cli_usage(timeout: float) -> str:
     binary, _ = _claude_cli()
     if not binary:
         raise UsageError("claude is not installed or not on PATH", "process")
+    # A systemd service's PATH lacks ~/.local/bin. Claude's own sandbox needs
+    # socat from there and, with failIfUnavailable, refuses to start without it.
+    env = dict(os.environ)
+    path = [str(Path(binary).parent), str(Path.home() / ".local" / "bin")]
+    env["PATH"] = os.pathsep.join(dict.fromkeys(path + env.get("PATH", os.defpath).split(os.pathsep)))
     completed = subprocess.run(
         [binary, "-p", "/usage", "--output-format", "json", "--no-session-persistence"],
         capture_output=True,
         text=True,
         timeout=timeout,
         cwd=str(Path.home()),
+        env=env,
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip().splitlines()

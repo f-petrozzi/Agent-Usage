@@ -69,6 +69,18 @@ class ClaudeCliFallbackTests(unittest.TestCase):
                 shared.UsageService(usage, [], include_agy=False, root=self.root).queries['claude']()
             self.assertEqual((query.call_args.kwargs['allow_cli'], query.call_args.kwargs['prefer_cli']), (False, False))
 
+    def test_cli_runs_with_local_bin_on_path(self):
+        # Claude's sandbox needs socat from ~/.local/bin, which a systemd PATH lacks.
+        binary = self.root / 'bin' / 'claude'
+        done = Mock(returncode=0, stdout='{"result": "usage"}', stderr='')
+        with patch.dict(os.environ, {'PATH': '/usr/bin:/bin'}), \
+                patch.object(usage, '_claude_cli', return_value=(str(binary), (2, 1, 311))), \
+                patch.object(usage.subprocess, 'run', return_value=done) as run:
+            usage._claude_cli_usage(30)
+        path = run.call_args.kwargs['env']['PATH'].split(os.pathsep)
+        self.assertEqual(path[:2], [str(binary.parent), str(self.root / '.local' / 'bin')])
+        self.assertIn('/usr/bin', path)
+
 
 if __name__ == '__main__':
     unittest.main()
