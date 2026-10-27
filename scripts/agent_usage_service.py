@@ -26,6 +26,12 @@ from agent_usage_live import LocalFeeds, claude_row
 MAX_BYTES = 1024 * 1024
 MIN_GAP = {'codex': 60, 'claude': 300, 'antigravity': 300}
 FRESHNESS = {'codex': 120, 'claude': 600, 'antigravity': 600}
+# A window that resets reads as stale until a new reading arrives. Check shortly
+# after the reset (and retry while the provider still reports the old window)
+# instead of waiting out the provider's normal gap.
+RESET_GRACE = 15
+RESET_GAP = 60
+RESET_RETRY_FOR = 600
 JOURNAL_BYTES = 512 * 1024
 
 
@@ -348,17 +354,21 @@ class UsageService:
             row['pollRetryAt'] = row['pollRateLimitedUntil']
         row['refresh'] = dict(state='ok', attemptAt=previous.get('refresh', {}).get('attemptAt'),
                               successAt=now, retryAt=None)
+        resets = [w['resetsAt'] for w in row['limits'] if type(w.get('resetsAt')) in (int, float)]
         if source == 'poll':
             row.pop('pollRetryAt', None)
             row.pop('pollRateLimitedUntil', None)
-            interval = 60 if row['provider'] == 'codex' else 300
-            self.due[ident] = time.monotonic() + interval
+            target = now + (60 if row['provider'] == 'codex' else 300)
         else:
             # No fallback provider request while all represented windows are fresh.
-            resets = [w['resetsAt'] for w in row['limits'] if type(w.get('resetsAt')) in (int, float)]
-            expires = min([oldest + FRESHNESS[row['provider']]] + resets)
-            self.due[ident] = time.monotonic() + max(0, expires - now)
-        floor = max(row.get('pollRetryAt') or 0, (row.get('pollAttemptedAt') or 0) + MIN_GAP[row['provider']])
+            target = oldest + FRESHNESS[row['provider']]
+        gap = MIN_GAP[row['provider']]
+        after_reset = min([r + RESET_GRACE for r in resets if r > now] +
+                          [now + RESET_GAP for r in resets if now - RESET_RETRY_FOR < r <= now], default=math.inf)
+        if after_reset < target:
+            target, gap = after_reset, RESET_GAP
+        self.due[ident] = time.monotonic() + max(0, target - now)
+        floor = max(row.get('pollRetryAt') or 0, (row.get('pollAttemptedAt') or 0) + gap)
         self.due[ident] = max(self.due[ident], time.monotonic() + floor - now)
         self.journal(ident, journal_source, 'ok')
         if persist:
@@ -483,6 +493,15 @@ class UsageService:
                                    origin='claude-runtime' if ident == 'claude' else 'codex-runtime')
         return {'accepted': accepted, 'checkRequested': False}
 
+    def current_activity(self, history):
+        """Orbit's SDK chats never append to history.jsonl. A working Claude session
+        or a native quota event from a running turn also counts as activity."""
+        stamps = [history] + [row.get('receivedAt') for row in self.rows.values() if row.get('source') == 'live']
+        if any(state in ('busy', 'waiting') for state in self.local.states.values()):
+            stamps.append(time.time())
+        stamps = [s for s in stamps if type(s) in (int, float) and math.isfinite(s)]
+        return int(max(stamps)) if stamps else None
+
     def worker(self, ident):
         while not self.stop.is_set():
             with self.lock:
@@ -546,9 +565,11 @@ class UsageService:
                         local_scan = time.monotonic()
                     if time.monotonic() - heartbeat >= 10:
                         try:
-                            self.activity = self.usage.latest_activity([h for _, h in self.profiles], 'claude' in self.queries)
+                            history = self.usage.latest_activity([h for _, h in self.profiles], 'claude' in self.queries)
                         except OSError:
-                            pass
+                            history = self.activity
+                        with self.lock:
+                            self.activity = self.current_activity(history)
                         with self.lock:
                             self.save()
                         heartbeat = time.monotonic()

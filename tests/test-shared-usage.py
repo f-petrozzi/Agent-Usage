@@ -65,6 +65,32 @@ class SharedTests(unittest.TestCase):
         self.assertTrue(all(d['accounts'] == docs[0]['accounts'] for d in docs))
         self.assertNotIn('_native', docs[0]['accounts'][0])
         self.assertEqual(self.root.joinpath('shared.json').stat().st_mode & 0o777, 0o600)
+    def claude_resetting_in(self, seconds):
+        reading = measured('claude')
+        reading['limits'].append({'usedPercent': 77, 'resetsAt': int(time.time()) + seconds, 'windowMins': 10080})
+        self.service.queries['claude'] = lambda: reading
+        self.service.poll('claude')
+        return self.service.due['claude'] - time.monotonic()
+    def test_poll_checks_again_just_after_a_window_resets(self):
+        # Midnight weekly reset 15 s after a poll previously waited out the full 300 s gap.
+        self.assertLess(self.claude_resetting_in(15), shared.RESET_GAP + 1)
+        self.assertGreater(self.claude_resetting_in(15), shared.RESET_GAP - 1)
+        self.assertAlmostEqual(self.claude_resetting_in(120), 120 + shared.RESET_GRACE, delta=2)
+        self.assertGreater(self.claude_resetting_in(3600), 299)
+    def test_provider_still_reporting_a_passed_reset_is_rechecked_briefly(self):
+        self.assertLess(self.claude_resetting_in(-30), shared.RESET_GAP + 1)
+        self.assertGreater(self.claude_resetting_in(-shared.RESET_RETRY_FOR - 60), 299)
+    def test_working_claude_session_and_live_events_count_as_activity(self):
+        self.seed()
+        old = int(time.time()) - 36000
+        self.assertEqual(self.service.current_activity(old), old)
+        self.service.local.states = {'session': 'busy'}
+        self.assertGreaterEqual(self.service.current_activity(old), int(time.time()) - 1)
+        self.service.local.states = {'session': 'idle'}
+        self.service.rows['codex:a']['source'] = 'live'
+        self.service.rows['codex:a']['receivedAt'] = time.time() - 30
+        self.assertGreaterEqual(self.service.current_activity(old), int(time.time()) - 31)
+        self.assertIsNone(shared.UsageService(usage, [], root=self.root / 'empty').current_activity(None))
     def test_failure_preserves_reading_time_and_backs_off(self):
         self.seed()
         original = copy.deepcopy(self.service.rows['codex:a'])
