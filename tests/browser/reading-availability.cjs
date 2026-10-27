@@ -25,6 +25,7 @@ const OUT=process.argv[2]||'/tmp/agent-usage-reading-feedback';fs.mkdirSync(OUT,
    await page.evaluate(()=>__emit('layout',{edge:'top',along:.5,scale:1,visible:true,tracking:false}));
    await page.waitForTimeout(1000);
    assert.equal(await page.locator('.cell[data-p="agy"] .ringwrap').evaluate(el=>el.classList.contains('unavailable')),false,'stale is still available');
+   assert.equal(await page.locator('.cell[data-p="agy"] .glyph').evaluate(el=>getComputedStyle(el).opacity),'1','stale readings do not dim the icon');
    await page.evaluate(()=>holdCard('codex'));
    await page.waitForTimeout(1100);
    const trigger=page.locator('#card .metadata-trigger');
@@ -39,9 +40,19 @@ const OUT=process.argv[2]||'/tmp/agent-usage-reading-feedback';fs.mkdirSync(OUT,
    await page.screenshot({path:path.join(OUT,'reading-'+width+'.png')});
    await page.evaluate(()=>{hideCard();__accounts[1].snap.windows=[];__emit('agent_accounts',__accounts);});
    assert(await page.locator('.cell[data-p="agy"] .ringwrap').evaluate(el=>el.classList.contains('unavailable')));
+   await page.waitForTimeout(1100);
+   const noReading=await page.locator('.cell[data-p="agy"] .ringwrap').evaluate(el=>({
+    icon:getComputedStyle(el.querySelector('.glyph')).opacity,
+    ring:getComputedStyle(el.querySelector('svg.ring')).opacity,
+    filter:getComputedStyle(el.querySelector('svg.ring')).filter
+   }));
+   assert.equal(noReading.icon,'0.55');assert.equal(noReading.ring,'1');assert.equal(noReading.filter,'none');
+   await page.evaluate(()=>{__accounts[1].snap.windows=[{id:'gemini',label:'Gemini',used:1,resets_at:Date.now()+3600000}];__accounts[1].snap.blocked=true;__emit('agent_accounts',__accounts);});
+   assert.equal(await page.locator('.cell[data-p="agy"] .glyph').evaluate(el=>getComputedStyle(el).opacity),'0.55');
+   assert.equal(await page.locator('.cell[data-p="agy"] svg.reading').evaluate(el=>getComputedStyle(el).filter),'none');
    assert.deepEqual(errors,[]);
    await page.close();
   }
-  console.log('PASS initial ink, stale colour, no-reading grey, reset hover and first-tap metadata at desktop/phone widths');
+  console.log('PASS initial ink, icon-only conditional dimming, unchanged ring colour, reset hover and first-tap metadata at desktop/phone widths');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

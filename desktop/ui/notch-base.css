@@ -85,8 +85,8 @@
   .c-head .mark svg{width:16px;height:16px;fill:currentColor}
   .pct{font-size:15px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
   .dim{opacity:.55}
-  /* Age remains visible in details; a refresh gap never erases an available reading's colour. */
-  .ringwrap.unavailable > svg.ring,.ringwrap.unavailable > svg.reading,.ringwrap.unavailable > .glyph{opacity:.55;filter:grayscale(1)}
+  /* Only the icon dims for unavailable quota. Reading rings keep their normal colours. */
+  .ringwrap.unavailable > .glyph{opacity:.55}
   /* Session arc animation */
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
