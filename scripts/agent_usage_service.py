@@ -360,8 +360,8 @@ class UsageService:
             row.pop('pollRateLimitedUntil', None)
             target = now + (60 if row['provider'] == 'codex' else 300)
         else:
-            # No fallback provider request while all represented windows are fresh.
-            target = oldest + FRESHNESS[row['provider']]
+            # Claude reserves a minute for the request; other providers wait for expiry.
+            target = oldest + FRESHNESS[row['provider']] - (60 if row['provider'] == 'claude' else 0)
         gap = MIN_GAP[row['provider']]
         after_reset = min([r + RESET_GRACE for r in resets if r > now] +
                           [now + RESET_GAP for r in resets if now - RESET_RETRY_FOR < r <= now], default=math.inf)
@@ -453,6 +453,11 @@ class UsageService:
                 raise self.usage.UsageError('Provider returned no fresh reading.', refresh.get('state', 'parse'),
                                             refresh.get('httpStatus'), refresh.get('retryAfter'))
             with self.lock:
+                # Retain the cache’s later request clock so turn checks cannot replay it.
+                attempt = value.get('refresh', {}).get('attemptAt') if ident == 'claude' else None
+                if type(attempt) in (int, float) and started < attempt <= time.time():
+                    self.rows[ident]['pollAttemptedAt'] = attempt
+                    self.rows[ident]['refresh']['attemptAt'] = attempt
                 sampled = started if ident.startswith('codex:') else min(started, value.get('sampledAt') or started)
                 accepted = self.accept(ident, value, sampled=sampled, persist=False)
                 if not accepted:

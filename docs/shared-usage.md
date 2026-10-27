@@ -60,7 +60,12 @@ minutes apart. Verified on 2026-10-26: `num_turns` 0, zero tokens,
 `total_cost_usd` 0, and both the session and weekly percentages in its text. The
 CLI owns the request and token refresh. The undocumented `/api/oauth/usage`
 endpoint is used only with `AGENT_USAGE_CLAUDE_DIRECT=1`. Fresh native samples
-defer the fallback until their 600-second freshness expires. Completed Claude
+defer the fallback until 60 seconds before their 600-second freshness expires,
+so a slow request can finish while the last measurement is still valid.
+The collector retains the Claude cache’s actual request-start timestamp for
+its five-minute floor. A completed-turn nudge cannot arrive just before that
+cache expires, replay its reading, and defer a real request for another five
+minutes. Cached responses never renew measurement time. Completed Claude
 turns, detected from the same local activity as `--watch-sessions`, schedule one
 coalesced fallback ten seconds later if no native reading arrived. The minimum
 gap and persistent Retry-After/backoff apply to these checks too. Agy fallback
