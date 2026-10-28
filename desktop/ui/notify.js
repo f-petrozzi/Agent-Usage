@@ -202,6 +202,8 @@ function paintSliver(s){
   if(s.account===UPDATE_ID)updateProgress.draw(updateState,{path:s.path,opacity:smooth((t-.74)/.26)});
   if(s.to&&s.t===s.to)scrollSliver(s);
   if(typeof notificationRim!=='undefined')notificationRim.refresh();
+  // The region follows the ink it covers in the same paint, including a reduced-motion jump outside any frame.
+  uiMotion.paint('hot',paintHot,50);
 }
 function scrollSliver(s){
   const clip=s.el.querySelector('.s-text'), text=clip?.querySelector('.s-scroll');

@@ -5,7 +5,12 @@ scheduler and conditional SVG attribute writes. Every simulation callback for a
 frame runs before keyed paints. Paint priority is body (10), attached detail
 surface (20), notification slivers (30), log ink (35), rim geometry (40), rim light (45) and
 hit regions (50). A later mutation of an already painted surface is deferred to
-the next frame. Work stops at rest. CSS/WAAPI activity rotation remains owned by
+the next frame. Hit regions report in the same frame as the ink they cover:
+embedded hosts clip to them, so a later report cuts growing notifications or
+details into sharp-edged blocks. Notification and details paints queue the hot
+paint themselves, and `reportHot()` inside a frame does the same. A closed
+details panel opens from the notch's current geometry, never a cached anchor
+(`tests/browser/notch-reveal.cjs`). Work stops at rest. CSS/WAAPI activity rotation remains owned by
 the compositor and pauses when hidden. Springs preserve velocity on reversal
 and clamp resumed elapsed time to 100 ms; reduced motion jumps to the target.
 

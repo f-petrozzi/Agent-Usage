@@ -31,7 +31,8 @@ function detailGeometry(){
   return {u0:Math.min(a[0],b[0]),u1:Math.max(a[0],b[0]),v0:Math.min(a[1],b[1]),v1:Math.max(a[1],b[1]),
     a0:along,a1:along+length,depth:edgeDepth(notchEdge),edge:notchEdge};
 }
-function drawDetails(){drawShape();uiMotion.paint('details',paintDetails,20);}
+// Its hit region follows in the same paint (also for an instant reduced-motion reveal), so clipping hosts never cut it.
+function drawDetails(){drawShape();uiMotion.paint('details',paintDetails,20);uiMotion.paint('hot',paintHot,50);}
 function paintDetails(){
   // // The arms merge home as the widened flares grow around them.
   if(!detailBox||detailOpen<.001){detailPath.removeAttribute('d');return;}
@@ -115,7 +116,8 @@ function detailStep(now){
 function syncDetails(){
   if(!card.classList.contains('show'))return;
   detailAim=detailGeometry();
-  if(!detailBox||detailBox.edge!==detailAim.edge)detailBox={...detailAim};
+  // A closed panel opens from the notch's current place; only a visible panel glides between anchors.
+  if(!detailBox||detailBox.edge!==detailAim.edge||detailOpen<.001)detailBox={...detailAim};
   if(reducedDetails()){
     detailBox={...detailAim};drawDetails();return;
   }

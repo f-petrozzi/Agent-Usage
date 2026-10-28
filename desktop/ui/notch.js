@@ -585,7 +585,10 @@ function rectOf(el){const r=el.getBoundingClientRect(),k=1;return [r.left*k,r.to
 /* The Electron main process gates click-through on these, so they are reported whenever the pill or card moves, not only
    when the card opens: a stale pill rectangle is a pill that cannot be clicked. */
 let hotFrame=0,lastHot='';
+// Embedded hosts clip their frame to these regions. Inside a frame, report after this frame's surfaces paint
+// (order 50), so growing ink is never cut to a sharp-edged block while the report waits for the next frame.
 function reportHot(){
+  if(uiMotion.phase!=='idle'){uiMotion.paint('hot',paintHot,50);return;}
   if(!hotFrame) hotFrame=uiMotion.frame(flushHot);
 }
 function flushHot(){hotFrame=0;uiMotion.paint('hot',paintHot,50);}
