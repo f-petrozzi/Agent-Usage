@@ -251,6 +251,8 @@ class SharedTests(unittest.TestCase):
                 client.connect(str(self.root/'updates.sock'))
                 client.sendall(json.dumps({'account':'codex:a','sampledAt':time.time(),'result':native(71)}).encode()+b'\n')
                 self.assertTrue(json.loads(client.recv(1024))['accepted'])
+            from agent_usage_refresh import request
+            self.assertTrue(request(self.root/'updates.sock')['accepted'])
             other = shared.UsageService(usage, [], root=self.root)
             with self.assertRaises(BlockingIOError): other.run()
             self.assertEqual((self.root/'updates.sock').stat().st_mode & 0o777, 0o600)

@@ -3,7 +3,7 @@
 The Agent Usage collector owns provider reads. Windows and Orbit read the same
 schema-2 atomic `shared.json`; existing fields and units remain compatible.
 `agent-usage --shared --compact` is the public snapshot. Orbit exposes that cache
-through its existing usage endpoint (no provider request on refresh).
+through its existing usage endpoint (no provider request on cache reads).
 
 Each account keeps `id` (`codex:a`, `codex:b`, `claude`), `provider`, `label`,
 `limits` (`label`, `usedPercent` 0–100, `windowMins`, `resetsAt` Unix seconds),
@@ -50,7 +50,12 @@ Claude's statusline command writes only rate-limit fields plus sample time to
 (or a minimal quota line). Missing fields retain the previous reading and time.
 SDK events update their named window using `utilization` × 100 and `resets_at`.
 One-window events cannot freshen another window. No usage endpoint is called by
-Orbit, statuslines, Windows refreshes, or session watchers.
+Orbit, statuslines or session watchers. An explicit Windows refresh uses
+`agent-usage --refresh --compact` to request the earliest permitted check through
+the UID-checked collector socket, then reads the cache. It retains minimum gaps,
+in-flight deduplication and persisted Retry-After deadlines; acceptance is a
+scheduling receipt, never proof of a new sample. An expired reset timestamp says
+Waiting for usage update until measured data arrives, retaining the last value.
 
 Claude polling has a five-minute minimum gap. Fresh native samples defer it;
 429 retries use five, ten, then fifteen minutes, with small positive jitter

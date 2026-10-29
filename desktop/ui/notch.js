@@ -311,7 +311,7 @@ function renderRing(){
 function resetCopy(ms){
   if(!ms) return '';
   const diff=ms-Date.now();
-  if(diff<=0) return ui().resetting;
+  if(diff<=0) return ui().resetPending;
   const min=Math.round(diff/60000); // rounded before the test, so 59m40s never reads "Resets in 60 min"
   if(min<60) return ui().resetsIn(Math.max(1,min));
   const d=new Date(ms), locale=ui().locale;
@@ -767,7 +767,7 @@ function refreshRing(id){
   if(refreshing[id]) return;
   refreshing[id]={at:Date.now(),timer:setTimeout(()=>settle(id),PRESS_MAX)};
   renderRing();
-  turnReading(id);
+  // Manual refresh acknowledges the press without animating unchanged quota.
   // The cell id addresses the DOM, the provider id addresses the collector: a second Claude
   // account's cell is `claude@work`, which no command answers to.
   const provider=(providers().find(p=>p.id===id)||{}).base||id;

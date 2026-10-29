@@ -77,11 +77,11 @@ function enrollAntigravity(config, accounts) {
 }
 class Collector extends EventEmitter {
   constructor(config) { super(); this.config = config; this.accounts = []; this.busy = false; this.failures = 0; this.closed = false; }
-  refresh() {
+  refresh(manual = false) {
     if (this.busy || this.closed) return false;
     this.busy = true;
     clearTimeout(this.timer);
-    const command = collectorCommand(this.config(), '--timeout 20 --compact');
+    const command = collectorCommand(this.config(), '--timeout 20 --compact' + (manual ? ' --refresh' : ''));
     if (!command) { this.busy = false; this.failed(new Error('Set a valid collector SSH host in Settings → General')); return false; }
     const [executable, args] = command;
     this.child = execFile(executable, args, { windowsHide: true, timeout: 90000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {

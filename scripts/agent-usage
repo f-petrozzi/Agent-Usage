@@ -1902,6 +1902,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--no-antigravity", action="store_true", help="skip automatic agy usage discovery")
     parser.add_argument("--no-claude", action="store_true", help="skip the Claude account")
     parser.add_argument("--timeout", type=float, default=20.0, help="per-provider timeout")
+    parser.add_argument("--refresh", action="store_true", help="request a shared collector check respecting provider cooldowns")
     parser.add_argument("--compact", action="store_true", help="emit JSON without indentation")
     parser.add_argument("--self-test", action="store_true", help="check the parsers and exit")
     mode = parser.add_mutually_exclusive_group()
@@ -1953,6 +1954,9 @@ def main(argv: list[str] | None = None) -> int:
         shared = args.shared or (not args.direct and
                                  ((root / 'shared.enabled').exists() or (root / 'shared.json').exists()))
         if shared:
+            if args.refresh:
+                from agent_usage_refresh import request
+                request(root / 'updates.sock')
             document = shared_snapshot(profiles, include_claude, not args.no_antigravity)
         else:
             document = collect(profiles, include_claude, args.timeout, include_antigravity)

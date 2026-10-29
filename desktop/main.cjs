@@ -559,7 +559,7 @@ function activateControl(name) {
   else if(name==='refresh')requestRefresh(); // 'alerts' opens the log in the page, which control_pressed tells it
 }
 function requestRefresh() {
-  const started=collector.refresh();if(started)send('refresh_started');return started;
+  return collector.refresh(true);
 }
 function stateSnapshot() { return { sessions: [], agg: 'idle', counts: {}, lang_resolved: config?.lang === 'auto' ? 'en' : (config?.lang || 'en'), clock_24h: false }; }
 function glyphs() {

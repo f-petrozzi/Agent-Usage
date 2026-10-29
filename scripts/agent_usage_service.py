@@ -429,13 +429,8 @@ class UsageService:
             self.due[ident] = time.monotonic() + max(0, (row.get('pollAttemptedAt') or 0) + MIN_GAP['claude'] - time.time())
 
     def request_check(self, ident):
-        if ident in self.inflight:
-            return False
-        row = self.rows[ident]
-        earliest = max(time.time(), row.get('pollRetryAt') or 0,
-                       (row.get('pollAttemptedAt') or 0) + MIN_GAP[row['provider']])
-        self.due[ident] = min(self.due[ident], time.monotonic() + earliest - time.time())
-        return True
+        from agent_usage_refresh import schedule
+        return schedule(self, ident)
 
     def poll(self, ident):
         started = time.time()
@@ -475,6 +470,9 @@ class UsageService:
     def publish(self, request):
         if not isinstance(request, dict):
             raise ValueError('Invalid usage publication.')
+        if request == {'operation': 'refresh'}:
+            from agent_usage_refresh import handle
+            return handle(self)
         if set(request) != {'account', 'sampledAt', 'result'}:
             raise ValueError('Invalid usage publication.')
         ident, sampled = request['account'], request['sampledAt']
