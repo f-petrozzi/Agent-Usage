@@ -1,7 +1,7 @@
 /* Real renderer, synthetic expired quota, no provider or personal records. */
 'use strict';
 const assert=require('node:assert/strict'), path=require('node:path'),fs=require('node:fs');
-const {chromium}=require('/mnt/ssd/homelab/tools/agent-toolkit/node_modules/playwright');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/usage-refresh-truth';fs.mkdirSync(OUT,{recursive:true});
 (async()=>{
  const browser=await chromium.launch();
