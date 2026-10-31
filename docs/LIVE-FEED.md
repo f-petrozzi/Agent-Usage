@@ -57,7 +57,10 @@ in-flight deduplication and persisted Retry-After deadlines; acceptance is a
 scheduling receipt, never proof of a new sample. An expired reset timestamp says
 Waiting for usage update until measured data arrives, retaining the last value.
 
-Claude polling normally has a five-minute minimum gap. Successful cached readings
+Claude polls every minute while a local Claude session is busy and every five
+minutes while idle. Manual refresh and turn-completion checks have a one-minute
+minimum gap. Native measured readings suppress active fallback checks for a minute.
+The shared successful-query cache also permits this cadence. Successful cached readings
 expire 15 seconds after a quota reset, subject to a 60-second request gap, so
 the collector’s reset check reaches the provider. Failure cooldowns remain authoritative. Fresh native samples defer it;
 429 retries use five, ten, then fifteen minutes, with small positive jitter
@@ -68,7 +71,7 @@ an hour or until the CLI version changes. Attempt times and 429 cooldowns persis
 across restarts. A completed Claude turn schedules one fallback check
 ten seconds later, only if no newer native reading arrived, subject to the
 same minimum gap and backoff. Duplicate session watchers cannot multiply polls.
-Idle checks use the same gap. Reset times never imply a zero reading.
+Idle checks remain five minutes apart. Reset times never imply a zero reading.
 Agy fallback always uses a five-minute minimum, including near a limit. Codex
 network retries use one, two, then five minutes (Agy uses its five-minute floor);
 Codex/Agy rate limits use five then fifteen minutes, and parse failures one hour.
@@ -89,8 +92,8 @@ changes, with the existing 15-second heartbeat. Discovery cadence is 1.5 seconds
 for stream readers and one second for the collector's local sources. Orbit's
 compatibility `retry_after` is two seconds. These are local cache reads only.
 
-The new Windows stream consumer is implemented in `desktop/collector.cjs` and
-wired in `desktop/main.cjs`; the currently released Windows app ignores the
-additive field and retains its existing 60–180-second refresh. No Windows release
-is part of this collector/Orbit change. Native Claude VS Code panel statusline
-invocation remains unverified; see [shared usage](shared-usage.md).
+Windows consumes the stream in `desktop/collector.cjs`, wired through
+`desktop/main.cjs`. Version 5.2.0 adds active Claude fallback checks and the
+one-minute manual refresh floor. Native Claude VS Code panel statusline invocation
+remains unverified; the installed wrapper and Orbit SDK publications are retained,
+with polling covering missing measurements. See [shared usage](shared-usage.md).

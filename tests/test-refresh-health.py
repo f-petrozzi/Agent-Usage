@@ -185,16 +185,16 @@ class RefreshTests(unittest.TestCase):
         os.utime(credentials, ns=(credentials.stat().st_atime_ns, credentials.stat().st_mtime_ns + 1000000))
         self.service.pause_checked['claude'] = 0
         self.service.wake_changed_claude('claude')
-        self.assertGreater(self.service.due['claude'] - time.monotonic(), 299)
-        self.assertLess(self.service.due['claude'] - time.monotonic(), 301)
+        self.assertGreater(self.service.due['claude'] - time.monotonic(), 59)
+        self.assertLess(self.service.due['claude'] - time.monotonic(), 61)
         with patch.object(usage, '_claude_cli', return_value=('fake', (2, 1, 1))):
             self.service.failed('claude', usage.UsageError('invalid output', 'parse'))
         self.assertGreater(self.service.due['claude'] - time.monotonic(), 3599)
         self.service.pause_checked['claude'] = 0
         with patch.object(usage, '_claude_cli', return_value=('fake', (2, 1, 2))):
             self.service.wake_changed_claude('claude')
-        self.assertGreater(self.service.due['claude'] - time.monotonic(), 299)
-        self.assertLess(self.service.due['claude'] - time.monotonic(), 301)
+        self.assertGreater(self.service.due['claude'] - time.monotonic(), 59)
+        self.assertLess(self.service.due['claude'] - time.monotonic(), 61)
 
     def test_agy_near_limit_and_completion_checks_cannot_poll_before_five_minutes(self):
         self.service.rows['antigravity']['pollAttemptedAt'] = time.time()

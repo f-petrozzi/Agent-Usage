@@ -816,7 +816,7 @@ def _retry_seconds(value: str | None, now: float) -> float:
             return 0.0
 
 
-def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=None, prefer_cli=False) -> dict[str, Any]:
+def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=None, prefer_cli=False, cache_seconds=300) -> dict[str, Any]:
     """Share a credential-scoped cache/cooldown across polling processes.
 
     A 429 never launches the CLI fallback or immediately retries the endpoint.
@@ -869,6 +869,7 @@ def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=Non
         deadline = saved.get("nextAttempt")
         if isinstance(deadline, (int, float)) and cached.get("refresh", {}).get("state") == "ok":
             attempted = cached["refresh"].get("attemptAt") or 0
+            deadline = min(deadline, attempted + max(60, cache_seconds))
             for window in cached.get("limits", []):
                 reset = window.get("resetsAt")
                 if type(reset) in (int, float) and reset <= now:
@@ -881,7 +882,7 @@ def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=Non
         try:
             account = _query_claude_uncached(timeout, allow_cli=allow_cli, prefer_cli=prefer_cli)
             streak = 0
-            next_attempt = now + 300
+            next_attempt = now + max(60, cache_seconds)
             account["sampledAt"] = int(time.time())
             account["refresh"] = {"state": "ok", "attemptAt": now, "successAt": time.time(), "retryAt": None}
         except Exception as exc:

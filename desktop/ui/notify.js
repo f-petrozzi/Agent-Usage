@@ -451,7 +451,7 @@ function placeUnreadDot(){
   Object.assign(st,{left:g.P1[0]-o.left-box+'px',top:g.P1[1]-o.top-box+'px',width:2*box+'px',height:2*box+'px'});
   st.setProperty('--glyph-x',`${(g.D[0]-g.P1[0]).toFixed(2)}px`);st.setProperty('--glyph-y',`${(g.D[1]-g.P1[1]).toFixed(2)}px`);
   st.setProperty('--sprout-size',g.glyph.toFixed(2)+'px');st.setProperty('--swell',k.toFixed(3));
-  st.setProperty('--glyph-blur',(2.4*(1-smooth(s/.9))).toFixed(2));st.setProperty('--sprout-on',(smooth((s-.42)/.4)).toFixed(3));
+  st.setProperty('--sprout-on',(smooth((s-.42)/.4)).toFixed(3));
   const since=sprout.snapAt?(performance.now()-sprout.snapAt)/1000:9;
   st.setProperty('--sway',since<1.2?`${(16*Math.exp(-since/.26)*Math.sin(2*Math.PI*since/.38)).toFixed(2)}deg`:'0deg');
   sproutButton.classList.add('placed');

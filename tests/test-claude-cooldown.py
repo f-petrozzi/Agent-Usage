@@ -56,3 +56,25 @@ with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {'AGENT_USAGE
     query(1)
     assert fetch_reset.call_count == 2, 'old provider windows must not cause rapid retries'
 print('PASS: reset cache expiry and bounded retry')
+
+# Active/manual callers shorten successful caches, never provider cooldowns.
+clock.return_value = 1800000000.0
+fresh = Mock(return_value={'provider': 'claude', 'limits': [
+    {'usedPercent': 20, 'resetsAt': 1800010000.0}]})
+with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {'AGENT_USAGE_CACHE_DIR': root}), patch.dict(query.__globals__, {
+    '_claude_token': lambda: ('test-token', 'pro', False), '_query_claude_uncached': fresh,
+}), patch('time.time', clock):
+    query(1)
+    clock.return_value += 59
+    query(1, cache_seconds=60)
+    assert fresh.call_count == 1
+    clock.return_value += 2
+    query(1, cache_seconds=60)
+    assert fresh.call_count == 2
+    fresh.side_effect = error
+    clock.return_value += 61
+    query(1, cache_seconds=60)
+    clock.return_value += 61
+    query(1, cache_seconds=60)
+    assert fresh.call_count == 3, 'one-minute callers must honor Retry-After'
+print('PASS: active cache cadence and cooldown preservation')
