@@ -37,3 +37,22 @@ with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {'AGENT_USAGE
     assert module['_retry_seconds']('Tue, 15 Jan 2030 08:00:00 GMT', 0) > 0
     assert module['_retry_seconds']('invalid', 0) == 0
 print('PASS: Retry-After, persistent cooldown, cached usage, recovery, no CLI fallback on 429')
+
+# The scheduler's post-reset check must reach the provider through the cache.
+clock.return_value = 1800000000.0
+fetch_reset = Mock(return_value={'provider': 'claude', 'limits': [
+    {'usedPercent': 90, 'resetsAt': 1800000100.0}]})
+with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {'AGENT_USAGE_CACHE_DIR': root}), patch.dict(query.__globals__, {
+    '_claude_token': lambda: ('test-token', 'pro', False), '_query_claude_uncached': fetch_reset,
+}), patch('time.time', clock):
+    query(1)
+    clock.return_value += 110
+    query(1)
+    assert fetch_reset.call_count == 1, 'respect reset grace'
+    clock.return_value += 6
+    query(1)
+    assert fetch_reset.call_count == 2, 'reset must expire successful cache early'
+    clock.return_value += 1
+    query(1)
+    assert fetch_reset.call_count == 2, 'old provider windows must not cause rapid retries'
+print('PASS: reset cache expiry and bounded retry')

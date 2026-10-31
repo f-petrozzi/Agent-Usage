@@ -863,7 +863,17 @@ def query_claude(timeout: float, allow_cli=True, strict=False, failure_count=Non
                 raise failure
             return account
 
-        if isinstance(saved.get("nextAttempt"), (int, float)) and now < saved["nextAttempt"]:
+        # Successful cache entries expire shortly after a quota reset. Keep
+        # actual failure cooldowns authoritative, including legacy 429 entries.
+        cached = saved.get("account") or {}
+        deadline = saved.get("nextAttempt")
+        if isinstance(deadline, (int, float)) and cached.get("refresh", {}).get("state") == "ok":
+            attempted = cached["refresh"].get("attemptAt") or 0
+            for window in cached.get("limits", []):
+                reset = window.get("resetsAt")
+                if type(reset) in (int, float) and reset <= now:
+                    deadline = min(deadline, max(reset + 15, attempted + 60))
+        if isinstance(deadline, (int, float)) and now < deadline:
             if isinstance(saved.get("account"), dict):
                 return expose(saved["account"])
         streak = min(8, max(0, int(saved.get("streak", 0))))

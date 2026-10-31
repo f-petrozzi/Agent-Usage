@@ -57,7 +57,9 @@ in-flight deduplication and persisted Retry-After deadlines; acceptance is a
 scheduling receipt, never proof of a new sample. An expired reset timestamp says
 Waiting for usage update until measured data arrives, retaining the last value.
 
-Claude polling has a five-minute minimum gap. Fresh native samples defer it;
+Claude polling normally has a five-minute minimum gap. Successful cached readings
+expire 15 seconds after a quota reset, subject to a 60-second request gap, so
+the collector’s reset check reaches the provider. Failure cooldowns remain authoritative. Fresh native samples defer it;
 429 retries use five, ten, then fifteen minutes, with small positive jitter
 within that cap. Positive Retry-After values override the cap; zero or missing
 values use the schedule. Network failures retry in five minutes, auth failures
