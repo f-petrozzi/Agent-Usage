@@ -3,6 +3,20 @@
 Historical implementation and validation notes, preserved from the original README.
 Older entries describe the behavior of that release; see the [current README](../README.md) for the latest features and controls.
 
+## Claude reset recovery (5.2.1)
+
+Claude can briefly return the old quota window after its reset. The shared
+collector now retains that response as measured data and retries on the reset
+schedule, instead of mistaking its expired reset for a parse failure and pausing
+for an hour. Expired readings stay visibly stale; resets do not imply zero usage.
+Cached reads retain sample times, and provider error/Retry-After cooldowns remain
+in force. The homelab collector is updated independently of the Windows app.
+
+Validation: four new provider-free regressions exercise the real Claude cache
+and scheduler through reset lag, recovery, cached rereads, bounded retries and
+429 cooldowns. Existing shared-cache, refresh-health, manual-refresh, Claude CLI,
+freshness and persistent-cooldown checks pass.
+
 ## Shared usage collector (5.1.7)
 
 A shared homelab service now owns Codex, Claude and Agy quota collection, with

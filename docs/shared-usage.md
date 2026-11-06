@@ -71,6 +71,13 @@ coalesced fallback ten seconds later if no native reading arrived. The minimum
 gap and persistent Retry-After/backoff apply to these checks too. Agy fallback
 runs every five minutes, including near a limit. Resets never imply zero usage.
 
+A successful Claude poll can briefly report the previous window after its reset.
+The collector retains that measured response, keeps the expired window visibly
+stale, and checks again on its existing reset schedule (once a minute for the
+first ten minutes, then the normal cadence). An expired reset is not a parser
+failure and must not trigger the hour-long parse pause. Cached rereads retain
+their original sample times; provider errors and Retry-After cooldowns still apply.
+
 Refresh failures keep the last measurement and its sample time. `refresh.state`
 reports `rate_limited`, `auth`, `network`, `parse`, `process`, or `unknown`; a short
 warning gives the next retry time. Warnings do not themselves make readings

@@ -290,7 +290,15 @@ class UsageService:
             row = self.usage.normalize_codex({'account': ident[6:], 'result': native}, self.usage.active_codex_account())
         else:
             row = copy.deepcopy(value)
-        if row.get('error') or row.get('warning') or row.get('stale') or not row.get('limits'):
+        # Claude's cache marks a measured response stale when a reset has passed,
+        # even while the provider still reports that old window. It is valid data,
+        # not a parser failure: retain it and let the bounded reset retry run.
+        # The sample-age check below still rejects aged cache entries; readers
+        # continue to show the expired window as stale without assuming zero.
+        reset_pending = source == 'poll' and row.get('provider') == 'claude' and any(
+            type(w.get('resetsAt')) in (int, float) and w['resetsAt'] <= now
+            for w in row.get('limits', []))
+        if row.get('error') or row.get('warning') or (row.get('stale') and not reset_pending) or not row.get('limits'):
             raise ValueError(row.get('warning') or row.get('error') or 'Provider did not return fresh usage.')
         sampled = sampled if sampled is not None else row.get('sampledAt', now)
         if type(sampled) not in (int, float) or not 0 <= now - sampled <= FRESHNESS[row['provider']]:
