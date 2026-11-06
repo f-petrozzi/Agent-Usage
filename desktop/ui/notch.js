@@ -436,19 +436,7 @@ function renderCard(){
   if(!snap.windows.length){
     if(inlineExtras)html+=`<div class="inline-extras">${renderExtraContent(snap.details||[],extraWindows)}</div>`;
   }
-  { // this account's live sessions: waiting before busy, newest first within each, so what gets cut is what matters least
-    const acts=activity.filter(a=>a.account===p.id).sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
-    if(acts.length){
-      html+=`<div class="c-sessions">`;
-      for(const a of acts.slice(0,SESSION_ROWS)){
-        const col=a.state==='waiting'?WATCH:INK;
-        const linked=a.id&&a.sessionId&&['claude','codex','antigravity'].includes(a.provider);
-        const tag=linked?'button':'div', attrs=linked?` type="button" data-session="${esc(a.id)}" data-account="${esc(a.account)}"`:"";
-        html+=`<${tag}${attrs} class="s-row${linked?' session-link':''}"><span class="s-dot" style="background:${col}"></span>${esc(a.name)}<span style="color:#808080;margin-left:auto">${esc(textCopy(a.detail))}</span></${tag}>`;
-      }
-      html+=moreRow(acts.length-SESSION_ROWS)+`</div>`;
-    }
-  }
+  html+=renderWorkingSessions(p);
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
   c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;

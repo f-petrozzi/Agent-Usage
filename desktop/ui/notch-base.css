@@ -357,3 +357,16 @@
   body[data-edge="left"] #move{--arc:90deg}
   body[data-edge="top"] #move{--arc:270deg}
   @media (prefers-reduced-motion: reduce){.handle > *{transition:none}}
+
+/* Live-session rows reserve one small state mark; titles never compete with a caption. */
+.s-row .s-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.s-row .s-working{position:relative;flex:0 0 12px;width:12px;height:12px;color:var(--ink)}
+.s-working::after{content:"";position:absolute;inset:0;border:1.5px solid currentColor;border-right-color:transparent;border-radius:50%;box-sizing:border-box}
+@media(prefers-reduced-motion:no-preference){
+  .s-working::after{animation:spin 1.2s linear infinite;animation-play-state:paused}
+  .s-working.is-visible::after{animation-play-state:running}
+  #root:not(.visible) .s-working::after,#card:not(.show) .s-working::after,html[data-activity-hidden] .s-working::after{animation-play-state:paused}
+}
+/* Preserve the last drawn angle while a completed working mark quietly settles away. */
+.s-working-exit{position:fixed;color:var(--ink);pointer-events:none;z-index:5}
+.s-working-exit::after{animation:none;transform:var(--working-exit-angle)}
