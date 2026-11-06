@@ -49,6 +49,15 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
     const reasons=[];
     for(const layer of layers){const r=await cdp.send('LayerTree.compositingReasons',{layerId:layer.layerId});reasons.push({width:layer.width,height:layer.height,reasons:r.compositingReasons});}
     assert.ok(reasons.some(l=>l.width<=56&&l.height<=56&&l.reasons.some(r=>/transform.*animation|animation.*transform/i.test(r))),JSON.stringify(reasons));
+    // A browser-suspended visible arc recovers without any collector packet.
+    await page.locator('.activity-layer').evaluate(el=>el.getAnimations()[0].pause());
+    await page.waitForTimeout(4500);
+    assert.equal(await page.locator('.activity-layer').evaluate(el=>el.getAnimations()[0].playState),'running');
+    // Browser cache restoration must rearm recovery; hidden CSS pauses remain deliberate.
+    await page.evaluate(()=>{dispatchEvent(new Event('pagehide'));dispatchEvent(new Event('pageshow'));});
+    await page.locator('.activity-layer').evaluate(el=>el.getAnimations()[0].pause());
+    await page.waitForTimeout(4500);
+    assert.equal(await page.locator('.activity-layer').evaluate(el=>el.getAnimations()[0].playState),'running');
     await page.evaluate(()=>__emit('disappear',{}));
     assert.equal(await page.locator('.activity-layer').evaluate(el=>getComputedStyle(el).animationPlayState),'paused');
     await page.evaluate(()=>__emit('appear',{}));
