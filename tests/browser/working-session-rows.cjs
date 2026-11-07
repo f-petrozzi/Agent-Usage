@@ -17,6 +17,7 @@ fs.mkdirSync(OUT,{recursive:true});
     const accounts=[{id:'codex:a',base:'codex',name:'Codex A',glyph:'A',snap}];
     const rows=[{id:'synthetic-linked',sessionId:'native-linked',provider:'codex',account:'codex:a',state:'busy',name:title,detail:'Working',since:1},
      {id:'synthetic-unlinked',provider:'codex',account:'codex:a',state:'busy',name:title+' second',detail:'Working',since:2}];
+    window.rowAccounts=accounts;window.rowActivity=rows;window.rowMoveBefore=Element.prototype.moveBefore;
     const values={get_agent_accounts:accounts,get_glyphs:{},get_activity:rows,get_notch_edge:'top',get_notch_insets:[0,0,0,0],get_notch_slots:[],get_focus_accounts:[],get_session_pins:[],get_session_library:[],get_alert_log:[],get_weekly_ring:'off',get_theme_resolved:'dark',get_color_transition:'hard_step',get_appearance:{},get_notch_buttons:{pin:false,alerts:true},get_ui_flags:{notch_visible:true},get_alert_preferences:{muted:[]},get_update_state:{status:'unavailable'},get_state:{sessions:[],counts:{},agg:'busy',lang_resolved:'en'}};
     window.rowEmit=(name,payload)=>(events[name]||[]).forEach(fn=>fn(payload));
     window.agentUsage={on:(name,fn)=>{(events[name]||=[]).push(fn);return()=>{};},invoke:async(command,args)=>{
@@ -40,6 +41,25 @@ fs.mkdirSync(OUT,{recursive:true});
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    const mark=linked.locator('.s-working');
    const transform=()=>mark.evaluate(el=>getComputedStyle(el,'::after').transform);
+   await page.waitForFunction(()=>document.querySelector('.s-row.session-link .s-working.is-visible'));
+   await mark.evaluate(el=>{window.originalWorkingMark=el;window.originalWorkingAnimation=el.getAnimations({subtree:true})[0];});
+   let clock=await mark.evaluate(el=>el.getAnimations({subtree:true})[0]?.currentTime||0);
+   // Several complete revolutions, with both quota and activity updates between them.
+   for(let step=0;step<8;step++){
+    await page.waitForTimeout(340);
+    const sample=await page.evaluate(step=>{
+     if(step===4)Element.prototype.moveBefore=undefined;
+     if(step===6)Element.prototype.moveBefore=rowMoveBefore;
+     rowAccounts[0].snap.windows[0].used=.58+step/1000;
+     rowEmit('agent_accounts',rowAccounts);
+     rowEmit('activity',rowActivity.map(row=>({...row,since:row.since+step})));
+     const current=document.querySelector('.s-row.session-link .s-working'),animation=current.getAnimations({subtree:true})[0];
+     return {sameMark:current===originalWorkingMark,sameAnimation:animation===originalWorkingAnimation,time:animation?.currentTime||0,nativeMove:typeof current.parentElement.moveBefore};
+    },step);
+    assert(sample.sameMark,'existing working mark survives native and legacy snapshot reconciliation');
+    if(!reduce){assert(sample.time-clock>280&&sample.time-clock<500,'native animation clock keeps a constant rate: '+JSON.stringify({clock,...sample}));clock=sample.time;}
+   }
+   if(!reduce)assert(clock>2400,'rotation runs continuously for more than two turns');
    if(reduce)assert.equal(await mark.evaluate(el=>getComputedStyle(el,'::after').animationName),'none');
    else{
     await page.waitForFunction(()=>document.querySelector('.s-row.session-link .s-working.is-visible'));
@@ -71,7 +91,7 @@ fs.mkdirSync(OUT,{recursive:true});
    if(!reduce)for(let i=0;i<3;i++)await page.evaluate(()=>{rowEmit('disappear');rowEmit('appear');});
    await page.evaluate(()=>{document.getElementById('card').classList.remove('show');});
 
-   assert.deepEqual(errors,[]);console.log(JSON.stringify({width,reduce,ellipsis:true,fullTitle:true,accessibleWorking:true,caption:false,visibilityPause:true}));
+   assert.deepEqual(errors,[]);console.log(JSON.stringify({width,reduce,ellipsis:true,fullTitle:true,accessibleWorking:true,caption:false,visibilityPause:true,snapshotPhase:true}));
    await page.close();
   }
  }finally{await browser.close();}

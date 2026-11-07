@@ -21,11 +21,30 @@ function settleWorkingSessions(account,rows){
   }
 }
 function workingSessionKey(account,row){return encodeURIComponent(JSON.stringify([account.id,row.id||row.name]));}
+function replaceUsageContent(card,html){
+  const previous=new Map([...card.querySelectorAll('.s-working')].map(mark=>[mark.dataset.workingSession,mark]));
+  const next=document.createElement('div');next.className='usage-content';next.innerHTML=html;
+  card.append(next);
+  for(const placeholder of next.querySelectorAll('.s-working')){
+    const mark=previous.get(placeholder.dataset.workingSession);if(!mark)continue;
+    const parent=placeholder.parentElement;
+    const clocks=mark.getAnimations({subtree:true}).map(a=>({animation:a,name:a.animationName,time:a.currentTime}));
+    if(parent.moveBefore)parent.moveBefore(mark,placeholder);
+    else parent.insertBefore(mark,placeholder);
+    placeholder.remove();
+    // Some webviews recreate a pseudo-element's animation even on a state-preserving move.
+    for(const animation of mark.getAnimations({subtree:true})){
+      const clock=clocks.find(a=>a.name===animation.animationName);
+      if(clock&&clock.animation!==animation&&clock.time!=null)animation.currentTime=clock.time;
+    }
+  }
+  for(const child of [...card.children])if(child!==next)child.remove();
+}
 function renderWorkingSessions(account){
   const rows=activity.filter(a=>a.account===account.id)
     .sort((a,b)=>(b.state==='waiting')-(a.state==='waiting')||b.since-a.since);
   settleWorkingSessions(account,rows);
-  // Card reconciliation replaces these bounded rows. Release old targets before observing the new ones.
+  // Observe newly visible marks after reconciliation; retained marks keep their CSS phase.
   queueMicrotask(()=>{
     workingSessionVisibility.disconnect();
     for(const mark of document.querySelectorAll('#card .s-working'))workingSessionVisibility.observe(mark);

@@ -220,6 +220,16 @@ class SharedTests(unittest.TestCase):
         self.assertTrue(doc['accounts'][0]['stale'])
         self.assertTrue(doc['accounts'][1]['stale'])
         self.assertFalse(doc['accounts'][2]['stale'])
+    def test_retained_window_age_cannot_be_hidden_by_a_new_account_sample(self):
+        self.seed()
+        path = self.root / 'shared.json'
+        data = json.loads(path.read_text())
+        now = time.time()
+        data['accounts'][1]['sampledAt'] = now
+        data['accounts'][1]['limits'][0]['sampledAt'] = now - 601
+        path.write_text(json.dumps(data))
+        self.assertTrue(shared.read_snapshot(path)['accounts'][1]['stale'])
+
     def test_restart_preserves_readings_and_their_health(self):
         self.seed()
         service = shared.UsageService(usage, [('a', self.root/'profile')], root=self.root)

@@ -79,6 +79,22 @@ class ResetPollingTests(unittest.TestCase):
         self.assertEqual([w['usedPercent'] for w in row['limits']], [1, 28])
         self.assertEqual(row['sampledAt'], self.clock)
 
+    def test_zero_after_reset_stays_pending_until_a_measured_new_window_arrives(self):
+        self.value['limits'][0]['usedPercent'] = 0
+        self.service.poll('claude')
+        row = self.snapshot()
+        self.assertTrue(row['stale'])
+        self.assertEqual(row['limits'][0]['usedPercent'], 0)
+        self.assertEqual(self.service.due['claude'], self.clock + 60)
+        self.assertEqual(self.provider.call_count, 2)
+        self.clock = self.service.due['claude']
+        self.value['limits'][0].update(usedPercent=2, resetsAt=self.clock + 18000)
+        self.service.poll('claude')
+        row = self.snapshot()
+        self.assertFalse(row['stale'])
+        self.assertEqual(row['limits'][0]['usedPercent'], 2)
+        self.assertEqual(self.provider.call_count, 3)
+
     def test_expired_windows_keep_the_normal_gap_after_reset_retry_period(self):
         self.clock += shared.RESET_RETRY_FOR
         self.service.poll('claude')

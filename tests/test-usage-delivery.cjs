@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const {Collector,SessionFeed}=require('../desktop/collector.cjs');
 test('stream delivers successive measured windows without waiting for the refresh timer',async()=>{
  const now=Date.now()/1000;
- const snapshot=used=>({schema:2,source:'shared',accounts:[{id:'codex:a',provider:'codex',sampledAt:now,receivedAt:now,source:'live',origin:'codex-runtime',limits:[{usedPercent:used,windowMins:300,sampledAt:now,source:'live',origin:'codex-runtime'}]}]});
+ const snapshot=used=>({schema:2,source:'shared',updatedAt:now,accounts:[{id:'codex:a',provider:'codex',sampledAt:now,receivedAt:now,source:'live',origin:'codex-runtime',limits:[{usedPercent:used,windowMins:300,sampledAt:now,source:'live',origin:'codex-runtime'}]}]});
  const lines=[23,26].map(used=>JSON.stringify({schema:1,sessions:[],usage:snapshot(used)}));
  const script=`const lines=${JSON.stringify(lines)};process.stdout.write(lines[0]+'\\n');setTimeout(()=>process.stdout.write(lines[1]+'\\n'),80);setTimeout(()=>{},10000);`;
  const feed=new SessionFeed(()=>({}),()=>[process.execPath,['-e',script]]),collector=new Collector(()=>({}));

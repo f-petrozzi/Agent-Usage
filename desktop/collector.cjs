@@ -2,6 +2,7 @@
 const { execFile, spawn } = require('node:child_process');
 const { EventEmitter } = require('node:events');
 const crypto = require('node:crypto');
+const freshness = require('./ui/availability.js');
 
 const clean = (value, limit = 500) => String(value ?? '').replace(/\s*\u2014\s*/g, '. ').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').slice(0, limit);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
@@ -50,18 +51,24 @@ function normalize(raw) {
       sampled_at: finite(l.sampledAt) ? l.sampledAt * 1000 : null,
       source: ['live', 'poll', 'estimate'].includes(l.source) ? l.source : null, origin: clean(l.origin || '', 100)
     }));
-    return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap: {
+    const snap = {
       status: a.error || a.stale || a.available === false ? (windows.length ? 'stale' : 'error') : 'ok', windows,
+      provider: base,
       blocked: a.blocked === true, hasCredits: finite(a.creditBalance) && (a.creditBalance < 0 || a.creditBalance > 0),
       source: ['live', 'poll', 'estimate'].includes(a.source) ? a.source : null,
       origin: clean(a.origin || '', 100),
       received_at: finite(a.receivedAt) ? a.receivedAt * 1000 : finite(a.sampledAt) ? a.sampledAt * 1000 : 0,
-      expires_at: raw.source === 'shared' && finite(a.sampledAt) ? Math.min(
-        a.sampledAt * 1000 + (a.provider === 'codex' ? 120000 : 600000),
-        ...windows.map(w => w.resets_at).filter(t => finite(t) && t > 0)) : null,
+      expires_at: null,
       fetched_at: finite(a.sampledAt) ? a.sampledAt * 1000 : raw.source === 'shared' ? 0 : timestamp,
       note: clean([a.error, a.warning].filter(Boolean).join(' · '), 1500), details, resets
-    }};
+    };
+    if (raw.source === 'shared') {
+      const now = Date.now(), age = now - raw.updatedAt * 1000;
+      snap.expires_at = freshness.expiresAt(snap);
+      if (raw.stoppedAt || !finite(raw.updatedAt) || age < 0 || age > 45000 || freshness.stale(snap, base, now))
+        snap.status = windows.length ? 'stale' : 'error';
+    }
+    return { id, base, name, glyph: base === 'gemini' ? 'A' : base === 'claude' ? 'C' : 'Cx', snap };
   }).filter(Boolean);
 }
 // Enable the newly added provider once, while respecting later user choices.
@@ -107,6 +114,7 @@ class Collector extends EventEmitter {
       return old && old.snap.received_at > a.snap.received_at ? old : a;
     });
     this.failures = 0;
+    this.healthDeadline = raw.source === 'shared' && finite(raw.updatedAt) ? raw.updatedAt * 1000 + 45000 : null;
     this.armExpiry(false);
     // Session/activity heartbeats carry the same quota payload. Do not rebuild every renderer for them.
     if (JSON.stringify(this.accounts) !== before) this.emit('change', this.accounts);
@@ -115,13 +123,15 @@ class Collector extends EventEmitter {
     clearTimeout(this.expiry);
     let changed = false;
     const now = Date.now();
+    const unavailable = finite(this.healthDeadline) && this.healthDeadline <= now;
     this.accounts = this.accounts.map(a => {
-      if (a.snap.status !== 'ok' || !finite(a.snap.expires_at) || a.snap.expires_at > now) return a;
+      if (a.snap.status !== 'ok' || !unavailable && (!finite(a.snap.expires_at) || a.snap.expires_at > now)) return a;
       changed = true;
-      return { ...a, snap: { ...a.snap, status: 'stale', note: 'Usage reading is stale; waiting for a provider update.' } };
+      return { ...a, snap: { ...a.snap, status: 'stale', note: unavailable ? 'Shared usage service is unavailable (last reading).' : 'Usage reading is stale; waiting for a provider update.' } };
     });
     if (changed && emit) this.emit('change', this.accounts);
     const deadlines = this.accounts.filter(a => a.snap.status === 'ok' && finite(a.snap.expires_at)).map(a => a.snap.expires_at);
+    if (!unavailable && this.accounts.some(a => a.snap.status === 'ok') && finite(this.healthDeadline)) deadlines.push(this.healthDeadline);
     if (deadlines.length) this.expiry = setTimeout(() => this.armExpiry(), Math.max(1, Math.min(...deadlines) - now + 1));
   }
   failed(error) {

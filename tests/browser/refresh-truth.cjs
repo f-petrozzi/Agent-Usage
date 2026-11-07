@@ -12,7 +12,8 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/u
    await page.addInitScript(()=>{
     const now=Date.now(),listeners={}; window.__calls=[];
     const accounts=[{id:'claude',base:'claude',name:'Claude',glyph:'C',snap:{status:'stale',windows:[{id:'session',label:'5 hours',used:.73,resets_at:now-660000}],fetched_at:now-900000,details:[],note:'Usage reading is stale; waiting for a provider update.'}}];
-    const answers={get_agent_accounts:accounts,get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true},get_notch_edge:'top',get_state:{sessions:[],counts:{},agg:'idle',lang_resolved:'en'},get_theme_resolved:'dark',get_weekly_ring:'off',get_update_state:{status:'current'},get_notch_slots:[],get_activity:[],get_focus_accounts:[],get_alert_log:[]};
+    window.__accounts=accounts;
+    const answers={get_agent_accounts:accounts,get_usage:accounts[0].snap,get_glyphs:{},get_ui_flags:{notch_visible:false,notch_on_hover:true},get_notch_edge:'top',get_state:{sessions:[],counts:{},agg:'idle',lang_resolved:'en'},get_theme_resolved:'dark',get_weekly_ring:'off',get_update_state:{status:'current'},get_notch_slots:[],get_activity:[],get_focus_accounts:[],get_alert_log:[]};
     window.agentUsage={invoke:(name,args)=>{__calls.push([name,args]);return Promise.resolve(name==='refresh_ring'?false:name in answers?answers[name]:name.startsWith('get_')?{}:true);},on:(name,fn)=>{(listeners[name]||=[]).push(fn);return()=>{};}};
     window.__emit=(name,value)=>(listeners[name]||[]).forEach(fn=>fn(value));
    });
@@ -29,6 +30,18 @@ const UI=path.resolve(__dirname,'../../desktop/ui'),OUT=process.argv[2]||'/tmp/u
    assert.equal(await page.locator('svg.reading').evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length),0);
    assert.match(await page.locator('#card').innerText(),/73%/);
    await page.screenshot({path:path.join(OUT,'expired-'+width+'.png')});
+   await page.evaluate(()=>{__accounts[0].snap.windows[0].used=0;__emit('agent_accounts',__accounts);});
+   assert.equal(await page.locator('.w-pct').innerText(),'—','expired zero is not a current quota reading');
+   assert.doesNotMatch(await page.locator('.w-left').innerText(),/100% left/);
+   assert.match(await page.locator('.w-left').innerText(),/Last reading.*0%/);
+   assert.equal(await page.locator('.cell .pct').innerText(),'…');
+   await page.screenshot({path:path.join(OUT,'pending-zero-'+width+'.png')});
+   await page.evaluate(()=>{const snap=__accounts[0].snap;snap.status='ok';snap.fetched_at=Date.now();snap.note='';snap.windows[0]={...snap.windows[0],used:.02,sampled_at:Date.now(),resets_at:Date.now()+18000000};__emit('agent_accounts',__accounts);});
+   assert.equal(await page.locator('.w-pct').innerText(),'2%');
+   assert.match(await page.locator('.w-left').innerText(),/98% left/);
+   assert.equal(await page.locator('.cell .pct').innerText(),'2%');
+   await page.screenshot({path:path.join(OUT,'recovered-two-'+width+'.png')});
+   assert.doesNotMatch(await page.locator('body').innerText(),/get_usage failed/);
    assert.deepEqual(errors,[]);
    await page.close();
   }

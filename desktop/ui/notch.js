@@ -219,10 +219,8 @@ function weeklyOf(snap,id){
   return tightestOf(lanes.filter(w=>laneIs(w,'weekly')));
 }
 // END TESTABLE WEEKLY SELECTOR
-// 15 minutes, the Mac's `UsageStore.staleAfter`. At 5 a reading went grey between two polls of a
-// provider that is answering perfectly well, which made "stale" mean "recently fetched" rather than
-// "old enough not to trust". A provider that knows its own reading is stale still says so in status.
-function staleOf(snap){ if(snap.status==='stale') return true; return snap.fetched_at>0 && (Date.now()-snap.fetched_at)>15*60*1000; }
+// Both hosts use measured account/window times and the collector's provider freshness limits.
+function staleOf(snap,provider){return window.usageReadingStale(snap,provider);}
 let stateSnap={sessions:[],agg:'idle'};
 
 function svgArc(r,frac,color,width,extra=''){
@@ -260,7 +258,7 @@ function renderRing(){
     const h=headlineOf(p.snap,p.base);
     cell.querySelector('.account-alias').textContent=p.alias||p.name.replace(/^(?:Codex|Claude|Antigravity|AGY)(?:\s*[·:—-]\s*|\s+)/i,'')||p.name;
 
-    cell.setAttribute('aria-label',p.name+(h?`, ${h.label}: ${pctText(h.used)}% used`:''));
+    cell.setAttribute('aria-label',p.name+(h?`, ${h.label}: ${window.usageWindowPending(h)?ui().resetPending:pctText(h.used)+'% used'}`:''));
     let inner=`<circle cx="28" cy="28" r="22" fill="${HOLE}"/><circle cx="28" cy="28" r="25" fill="none" stroke="${TRACK}" stroke-width="5"/>`;
     wrap.classList.toggle('pressed',!!refreshing[p.id]);
     const used=h&&h.count==null?Math.min(h.used,1):null, prev=reading.dataset.used?Number(reading.dataset.used):null;
@@ -298,10 +296,10 @@ function renderRing(){
     }
     if(p.snap.status==='needsAuth'||p.snap.status==='none') pct.textContent='N/A';
     else if(h && h.count!=null) pct.textContent='~'+h.count;
-    else if(h) pct.textContent=(h.derived?'~':'')+pctText(h.used)+'%';
+    else if(h) pct.textContent=window.usageWindowPending(h)?'…':(h.derived?'~':'')+pctText(h.used)+'%';
     else pct.textContent=p.snap.windows.length?'N/A':'…'; // its declared window is missing: a dash, not a wait
     glyph.classList.toggle('dim', false);
-    wrap.classList.toggle('stale', staleOf(p.snap));
+    wrap.classList.toggle('stale', staleOf(p.snap,p.base));
     wrap.classList.toggle('unavailable', window.usageReadingUnavailable(p.snap));
   }
   reportHot(); // a provider appearing or leaving resizes the pill
@@ -354,11 +352,11 @@ function renderUsageWindows(windows,boxed=true,headings=true){
         <div class="w-used">${w.count>0?`~${w.count} ${textCopy(w.count===1?'request today':'requests today')}`:textCopy('no requests today')}</div></div>`;
       continue;
     }
-    const [used,left]=usedParts(w);
+    const [used,left]=usedParts(w),pending=window.usageWindowPending(w);
     html+=`<div class="win">
-      <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-pct">${esc(used)}%</span></div>
+      <div class="w-row"><span class="w-label">${esc(textCopy(w.label))}</span><span class="w-pct">${pending?'—':esc(used)+'%'}</span></div>
       <div class="w-track" data-window="${esc(w.id)}"><div class="w-fill" style="width:${(Math.min(w.used,1)*100).toFixed(0)}%;background:${tone(w.used)}"></div></div>
-      <div class="w-foot"><span class="w-reset">${resetCopy(w.resets_at)}</span><span class="w-left">${esc(ui().left(left))}</span></div>
+      <div class="w-foot"><span class="w-reset">${resetCopy(w.resets_at)}</span><span class="w-left">${esc(pending?textCopy('Last reading')+' '+used+'%':ui().left(left))}</span></div>
     </div>`;
   }
   if(group&&boxed) html+=`</div>`;
@@ -421,7 +419,7 @@ function renderCard(){
   const title=esc(ui().title(p.name));
   const refresh=`<button class="c-refresh${refreshing[p.id]?' spinning':''}" type="button" aria-label="Refresh ${esc(p.name)}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12.9 9.2A5 5 0 1 1 11.5 4.3"/><path d="M12.2 1.9v2.8H9.4"/></svg></button>`;
   let html=`<div class="c-head">${headIcon}${hasExtras&&!inlineExtras?`<button class="c-title metadata-trigger" type="button" aria-expanded="false" aria-controls="extra-card">${title}</button>`:`<span class="c-title">${title}</span>`}${p.id==='collector'?'':`<div class="c-head-actions"><button class="c-history-trigger" type="button" data-account="${esc(p.id)}" aria-label="Sessions for ${esc(p.name)}">${HISTORY_ICON}</button>${refresh}</div>`}</div>`;
-  if(staleOf(snap)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
+  if(staleOf(snap,p.base)&&snap.fetched_at) html+=`<div class="c-sub">${ui().updated(ago(snap.fetched_at))}</div>`;
   if(snap.status==='needsAuth'){
     const who={claude:'Sign in to Claude Code to see usage.',cursor:'Sign in to Cursor to see usage.',codex:'Sign in to Codex to see usage.',grok:'Run grok login to see usage.',opencode:'Run opencode auth login to see usage.',gemini:'Sign in to Antigravity to see usage.'}[p.base]||'';
     html+=`<div class="c-note">${textCopy(who)}<br>${esc(textCopy(snap.note||''))}</div>`;
@@ -439,7 +437,7 @@ function renderCard(){
   html+=renderWorkingSessions(p);
   const wasOpen=typeof extraTarget==='number'&&extraTarget===1&&c.dataset.account===p.id;
   const scroll=c.scrollTop,changedAccount=!!c.dataset.account&&c.dataset.account!==p.id;
-  c.innerHTML=`<div class="usage-content">${html}</div>`;c.dataset.account=p.id;
+  replaceUsageContent(c,html);c.dataset.account=p.id;
   if(typeof setExtraContent==='function')setExtraContent(inlineExtras?[]:snap.details||[],inlineExtras?[]:extraWindows);
   const titleTrigger=c.querySelector('.metadata-trigger');
   if(titleTrigger){

@@ -55,17 +55,17 @@ It disables hooks, plugins and apps for the read-only reader, reconnects with
 backoff, recycles after one hour, and discovers CLI upgrades every five minutes.
 
 Claude fallback runs Claude Code's own
-`claude -p /usage --output-format json --no-session-persistence`, at least five
-minutes apart. Verified on 2026-10-26: `num_turns` 0, zero tokens,
+`claude -p /usage --output-format json --no-session-persistence`, once a minute
+while Claude is busy and every five minutes while idle. Verified on 2026-10-26: `num_turns` 0, zero tokens,
 `total_cost_usd` 0, and both the session and weekly percentages in its text. The
 CLI owns the request and token refresh. The undocumented `/api/oauth/usage`
 endpoint is used only with `AGENT_USAGE_CLAUDE_DIRECT=1`. Fresh native samples
 defer the fallback until 60 seconds before their 600-second freshness expires,
 so a slow request can finish while the last measurement is still valid.
 The collector retains the Claude cache’s actual request-start timestamp for
-its five-minute floor. A completed-turn nudge cannot arrive just before that
-cache expires, replay its reading, and defer a real request for another five
-minutes. Cached responses never renew measurement time. Completed Claude
+its one-minute request floor. A completed-turn nudge cannot arrive just before that
+cache expires, replay its reading, and defer a real request for another cache
+interval. Cached responses never renew measurement time. Completed Claude
 turns, detected from the same local activity as `--watch-sessions`, schedule one
 coalesced fallback ten seconds later if no native reading arrived. The minimum
 gap and persistent Retry-After/backoff apply to these checks too. Agy fallback
@@ -108,7 +108,7 @@ still be rediscovered by catalogs that do not apply the bounded recognizer in
 `scripts/agent-usage`; a picker title alone cannot identify such a transcript.
 
 Stale values keep their last sample times and percentages. Consumers recompute
-age and reset expiry on read; a heartbeat older than 45 seconds means the service
+age for every retained window and reset expiry on read; a heartbeat older than 45 seconds means the service
 is unavailable. A recent response can recover displayed freshness during a
 provider polling failure without bypassing its endpoint cooldown. No transcript
 estimates are fabricated: account-level percentages cannot be reliably inferred
@@ -132,6 +132,16 @@ precision. The common public cache rounds Codex readings to whole percentage
 points; both consumers receive those same measured values. Desktop normalization
 preserves each window's original sample time and provenance and retains refresh
 warnings without marking otherwise fresh measurements stale.
+
+The standalone collector and shared renderer use the same two-minute Codex and
+ten-minute Claude/Agy measurement limits, including each retained window's sample
+time. Expired windows show Waiting for usage update and an explicit last reading;
+they do not claim a current zero or 100% left. Account-card working arcs retain
+their DOM identity and native animation clock across quota and activity updates,
+including in older webviews without state-preserving DOM moves. Hidden/offscreen
+and reduced-motion behavior remains unchanged. [OR-210/212 source checks and
+owner return checks](../artifacts/or210-212-20261107/VERIFICATION.md) distinguish
+synthetic verification from natural-reset and Windows acceptance.
 
 `${XDG_STATE_HOME:-~/.local/state}/agent-usage` is mode 0700, overridable with
 `AGENT_USAGE_STATE_DIR`. `shared.json` and `updates.sock` are 0600. The service

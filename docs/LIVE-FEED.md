@@ -55,7 +55,11 @@ Orbit, statuslines or session watchers. An explicit Windows refresh uses
 the UID-checked collector socket, then reads the cache. It retains minimum gaps,
 in-flight deduplication and persisted Retry-After deadlines; acceptance is a
 scheduling receipt, never proof of a new sample. An expired reset timestamp says
-Waiting for usage update until measured data arrives, retaining the last value.
+Waiting for usage update until measured data arrives, retaining the last value
+with an explicit Last reading label. The headline percentage is pending and
+the card does not present that expired sample as current usage or remaining quota.
+Desktop normalization and shared-cache reads both check each window's sample
+time as well as the account sample, reset deadline and collector heartbeat.
 
 Claude polls every minute while a local Claude session is busy and every five
 minutes while idle. Manual refresh and turn-completion checks have a one-minute

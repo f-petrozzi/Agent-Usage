@@ -71,7 +71,7 @@ function usedOf(a){
   const w=a.base==='claude'?by('session')||ws[0]:a.base==='codex'?by('primary')||ws[0]:tightest(lanes.filter(w=>w.used<1))||tightest(lanes);
   return Math.max(0,Math.min(1,w.used));
 }
-const staleOf=snap=>snap?.status==='stale'||(snap?.fetched_at>0&&Date.now()-snap.fetched_at>15*60*1000);
+const staleOf=(snap,provider)=>window.usageReadingStale(snap,provider);
 const NOTCH_PALETTE={ample:'#00FF88',watch:'#F2FF00',crit:'#FF3F00',track:'#303030',hole:'#2a2a2a'};
 let palette={...NOTCH_PALETTE,track:'rgba(255,255,255,.11)'};
 function readPalette(){const s=getComputedStyle(document.documentElement),v=n=>s.getPropertyValue('--'+n).trim();palette={ample:v('ample'),watch:v('watch'),crit:v('crit'),track:v('track')};}
@@ -154,7 +154,7 @@ function updateRow(r,a,on){
   paintGlyph(r.glyph,a);
   const used=usedOf(a), key=`${used}|${colorTransition}|${palette.ample}`;
   if(r.ringKey!==key){r.ringKey=key;r.ringEl.innerHTML=ring(used,36,16.2,2.6,palette);}
-  r.el.classList.toggle('stale',staleOf(a.snap));
+  r.el.classList.toggle('stale',staleOf(a.snap,a.base));
   const shown=on.includes(a.id), muted=alertPrefs.muted.includes(a.id);
   r.el.classList.toggle('off',!shown);
   r.sw.classList.toggle('on',shown);r.sw.setAttribute('aria-checked',String(shown));r.sw.setAttribute('aria-label',a.name);
@@ -325,7 +325,7 @@ function renderNotch(){
     paintGlyph(c.glyph,a);
     const used=usedOf(a), key=`${used}|${colorTransition}`;
     if(c.key!==key){c.key=key;c.ringEl.innerHTML=ring(used,28,12.2,2.6,NOTCH_PALETTE,NOTCH_PALETTE.hole);}
-    c.el.classList.toggle('stale',staleOf(a.snap));
+    c.el.classList.toggle('stale',staleOf(a.snap,a.base));
   }
   for(const [id,c] of notch.cells)if(!ids.includes(id)&&c.presence.to!==0){
     c.presence.done=()=>{if(c.presence.x<=0){c.el.remove();notch.cells.delete(id);}};

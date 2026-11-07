@@ -62,7 +62,10 @@ def read_snapshot(path=None, *, internal=False, now=None):
         age = now - sampled if type(sampled) in (int, float) else math.inf
         expired = any(type(w.get('resetsAt')) in (int, float) and w['resetsAt'] <= now
                       for w in account.get('limits', []))
-        stale = not alive or not 0 <= age <= FRESHNESS.get(account.get('provider'), 120) or expired
+        ttl = FRESHNESS.get(account.get('provider'), 120)
+        old_window = any(type(w.get('sampledAt')) in (int, float) and not 0 <= now - w['sampledAt'] <= ttl
+                         for w in account.get('limits', []))
+        stale = not alive or not 0 <= age <= ttl or expired or old_window
         account['available'] = bool(account.get('limits'))
         account['stale'] = stale
         if not stale and account.get('warning') in (

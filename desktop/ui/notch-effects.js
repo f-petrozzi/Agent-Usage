@@ -31,7 +31,7 @@ const notchEffects=(()=>{
         if(first&&Number.isFinite(first.resets_at)&&first.resets_at>0&&now>=first.resets_at&&now-first.resets_at<=120000
           &&Number.isFinite(next.resets_at)&&next.resets_at>now&&next.resets_at>first.resets_at
           &&Number.isFinite(first.used)&&Number.isFinite(next.used)&&next.used>=0&&first.used-next.used>=.01
-          &&!staleOf(old.snap)&&!staleOf(account.snap))result.push({account:account.id,window:next.id});
+          &&!staleOf(old.snap,old.base)&&!staleOf(account.snap,account.base))result.push({account:account.id,window:next.id});
       }
     }
     return result;

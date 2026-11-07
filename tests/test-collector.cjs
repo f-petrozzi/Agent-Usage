@@ -55,14 +55,15 @@ test('Resets are a count and the soonest expiry, not metadata lines',()=>{
 });
 
 test('Shared cache keeps stale flags and never assigns a fresh timestamp to an unmeasured account',()=>{
-  const rows=normalize({schema:2,source:'shared',generatedAt:200,accounts:[
-    {id:'codex:a',provider:'codex',sampledAt:100,stale:true,limits:[{usedPercent:40}]},
+  const now=Date.now()/1000;
+  const rows=normalize({schema:2,source:'shared',generatedAt:now,updatedAt:now,accounts:[
+    {id:'codex:a',provider:'codex',sampledAt:now-100,stale:true,limits:[{usedPercent:40}]},
     {id:'claude',provider:'claude',available:false,sampledAt:null,limits:[]},
-    {id:'antigravity',provider:'antigravity',sampledAt:120,stale:false,limits:[{usedPercent:10}]}
+    {id:'antigravity',provider:'antigravity',sampledAt:now-120,stale:false,limits:[{usedPercent:10}]}
   ]});
-  assert.equal(rows[0].snap.status,'stale');assert.equal(rows[0].snap.fetched_at,100000);
+  assert.equal(rows[0].snap.status,'stale');assert.equal(rows[0].snap.fetched_at,(now-100)*1000);
   assert.equal(rows[1].snap.status,'error');assert.equal(rows[1].snap.fetched_at,0);
-  assert.equal(rows[2].snap.status,'ok');assert.equal(rows[2].snap.fetched_at,120000);
+  assert.equal(rows[2].snap.status,'ok');assert.equal(rows[2].snap.fetched_at,(now-120)*1000);
 });
 
 test('cached readings expire locally even while the stream is disconnected', () => {
@@ -76,7 +77,7 @@ test('cached readings expire locally even while the stream is disconnected', () 
 
 test('window provenance and fractional measurements survive desktop normalization',()=>{
  const sampledAt=Date.now()/1000;
- const [a]=normalize({schema:2,source:'shared',accounts:[{provider:'claude',sampledAt,warning:'Refresh rate-limited; next try later',limits:[
+ const [a]=normalize({schema:2,source:'shared',updatedAt:sampledAt,accounts:[{provider:'claude',sampledAt,warning:'Refresh rate-limited; next try later',limits:[
   {usedPercent:23.125,windowMins:300,sampledAt,source:'live',origin:'claude-runtime'},
   {usedPercent:40,windowMins:10080,sampledAt:sampledAt-60,source:'poll',origin:'provider-poll'}
  ]}]});
@@ -89,10 +90,49 @@ test('window provenance and fractional measurements survive desktop normalizatio
  assert.ok(a.snap.note.includes('rate-limited'));
 });
 
+test('shared freshness follows every represented sample, reset and heartbeat',()=>{
+ const now=Date.now()/1000;
+ const raw={schema:2,source:'shared',updatedAt:now,accounts:[{id:'claude',provider:'claude',sampledAt:now,limits:[
+  {usedPercent:2,windowMins:300,sampledAt:now,resetsAt:now+18000},
+  {usedPercent:40,windowMins:10080,sampledAt:now-601,resetsAt:now+86400}
+ ]}]};
+ assert.equal(normalize(raw)[0].snap.status,'stale','an old retained weekly window is not refreshed by a new session sample');
+ raw.accounts[0].limits[1].sampledAt=now;
+ assert.equal(normalize(raw)[0].snap.status,'ok');
+ raw.accounts[0].limits[0].resetsAt=now-1;
+ raw.accounts[0].limits[0].usedPercent=0;
+ const pending=normalize(raw)[0].snap;
+ assert.equal(pending.status,'stale','an expired measured zero is pending, not fresh headroom');
+ assert.equal(pending.windows[0].used,0,'retain measured data for explicit last-reading display');
+ raw.accounts[0].limits[0].resetsAt=now+18000;
+ raw.updatedAt=now-46;
+ assert.equal(normalize(raw)[0].snap.status,'stale','collector health is separate from quota age');
+ raw.updatedAt=now;
+ raw.accounts[0].sampledAt=now+10;
+ assert.equal(normalize(raw)[0].snap.status,'stale','future samples cannot be treated as fresh');
+});
+
+test('collector health expires locally without refreshing otherwise current usage',t=>{
+ const {Collector}=require('../desktop/collector.cjs'),collector=new Collector(()=>({}));
+ t.mock.timers.enable({apis:['Date','setTimeout'],now:1800000000000});
+ const now=Date.now()/1000,raw={schema:2,source:'shared',updatedAt:now,accounts:[
+  {id:'claude',provider:'claude',sampledAt:now,limits:[{usedPercent:2,windowMins:300,resetsAt:now+18000}]}
+ ]};
+ try{
+  collector.acceptSnapshot(raw);
+  assert.equal(collector.accounts[0].snap.status,'ok');
+  t.mock.timers.tick(45001);
+  assert.equal(collector.accounts[0].snap.status,'stale');
+  assert.equal(collector.accounts[0].snap.windows[0].used,.02);
+  assert.equal(collector.accounts[0].snap.fetched_at,now*1000);
+  assert.match(collector.accounts[0].snap.note,/service is unavailable/);
+ }finally{collector.close();}
+});
+
 
 test('activity heartbeats do not rebroadcast identical quotas but freshness changes do',()=>{
  const {Collector}=require('../desktop/collector.cjs'),collector=new Collector(()=>({}));
- const now=Date.now()/1000,raw={schema:2,source:'shared',accounts:[{provider:'codex',id:'codex:a',sampledAt:now,receivedAt:now,limits:[{usedPercent:23,windowMins:300}]}]};
+ const now=Date.now()/1000,raw={schema:2,source:'shared',updatedAt:now,accounts:[{provider:'codex',id:'codex:a',sampledAt:now,receivedAt:now,limits:[{usedPercent:23,windowMins:300}]}]};
  let changes=0;collector.on('change',()=>changes++);
  try{
   collector.acceptSnapshot(raw);
