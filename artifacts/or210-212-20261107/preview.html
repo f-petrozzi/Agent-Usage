@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OR-210 / OR-212 synthetic captures</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui;background:#161616;color:#eee}body{max-width:1040px;margin:32px auto;padding:0 20px}h1{font-size:24px}button{font:inherit;color:inherit;background:#303030;border:1px solid #666;border-radius:8px;padding:10px 14px;margin:0 8px 12px 0;cursor:pointer}button[aria-pressed=true]{background:#474747;border-color:#ccc}button:focus-visible{outline:2px solid #fff;outline-offset:3px}img{display:block;max-width:100%;max-height:75vh;object-fit:contain;object-position:left top;border:1px solid #383838}p{color:#ccc}a{color:#b5d7ff}
+</style>
+<h1>Usage freshness and continuous working arcs</h1>
+<p>Synthetic browser captures. Natural reset and packaged Windows checks remain outstanding.</p>
+<div aria-label="Capture selection">
+<button data-image="reset-pending.png" aria-pressed="true">Expired window</button>
+<button data-image="reset-measured.png" aria-pressed="false">Measured 2%</button>
+<button data-image="working-sessions.png" aria-pressed="false">Working sessions</button>
+</div>
+<img src="reset-pending.png" alt="Synthetic usage capture: expired window">
+<p><a href="VERIFICATION.md">Exact checks and remaining owner acceptance</a></p>
+<script>
+document.addEventListener('click',event=>{const selected=event.target.closest('[data-image]');if(!selected)return;for(const button of document.querySelectorAll('[data-image]'))button.setAttribute('aria-pressed',String(button===selected));const image=document.querySelector('img');image.src=selected.dataset.image;image.alt='Synthetic usage capture: '+selected.textContent;});
+</script>
