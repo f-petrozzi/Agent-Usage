@@ -81,7 +81,7 @@ const near = (a, b, tolerance = .75) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= 
     const motion = await page.evaluate(() => __sprout);
     assert.ok(motion.goo > 4, 'liquid while it is drawn out: ' + JSON.stringify(motion));
     assert.equal(motion.strand, 1, 'on a strand of the notch');
-    assert.ok(motion.blur > 1, 'the bell sharpens as it arrives');
+    assert.equal(await page.locator('.sprout-glyph').evaluate(el => getComputedStyle(el).filter), 'none', 'bell stays vector-only throughout opening');
     assert.ok(motion.sway > 5, 'and swings from the snap');
     assert.equal(motion.stretch, 1, 'the dot stretches as it travels');
     assert.ok(motion.over > 1.02, 'it pops a little past and settles');

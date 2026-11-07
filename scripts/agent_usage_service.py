@@ -24,7 +24,7 @@ import time
 from agent_usage_live import LocalFeeds, claude_row
 
 MAX_BYTES = 1024 * 1024
-MIN_GAP = {'codex': 60, 'claude': 300, 'antigravity': 300}
+MIN_GAP = {'codex': 60, 'claude': 60, 'antigravity': 300}
 FRESHNESS = {'codex': 120, 'claude': 600, 'antigravity': 600}
 # A window that resets reads as stale until a new reading arrives. Check shortly
 # after the reset (and retry while the provider still reports the old window)
@@ -208,7 +208,7 @@ class UsageService:
             # (num_turns 0, cost 0 on 2.1.x). The undocumented endpoint is opt-in.
             direct = os.environ.get('AGENT_USAGE_CLAUDE_DIRECT') == '1'
             self.queries['claude'] = lambda: usage.query_claude(timeout, allow_cli=not direct, strict=True,
-                prefer_cli=not direct,
+                prefer_cli=not direct, cache_seconds=60,
                 failure_count=self.failures['claude'] if self.rows['claude'].get('pollFailureClass') == 'rate_limited' else 0)
         if include_agy:
             self.queries['antigravity'] = lambda: usage.query_antigravity(timeout, strict=True)
@@ -290,7 +290,15 @@ class UsageService:
             row = self.usage.normalize_codex({'account': ident[6:], 'result': native}, self.usage.active_codex_account())
         else:
             row = copy.deepcopy(value)
-        if row.get('error') or row.get('warning') or row.get('stale') or not row.get('limits'):
+        # Claude's cache marks a measured response stale when a reset has passed,
+        # even while the provider still reports that old window. It is valid data,
+        # not a parser failure: retain it and let the bounded reset retry run.
+        # The sample-age check below still rejects aged cache entries; readers
+        # continue to show the expired window as stale without assuming zero.
+        reset_pending = source == 'poll' and row.get('provider') == 'claude' and any(
+            type(w.get('resetsAt')) in (int, float) and w['resetsAt'] <= now
+            for w in row.get('limits', []))
+        if row.get('error') or row.get('warning') or (row.get('stale') and not reset_pending) or not row.get('limits'):
             raise ValueError(row.get('warning') or row.get('error') or 'Provider did not return fresh usage.')
         sampled = sampled if sampled is not None else row.get('sampledAt', now)
         if type(sampled) not in (int, float) or not 0 <= now - sampled <= FRESHNESS[row['provider']]:
@@ -358,7 +366,7 @@ class UsageService:
         if source == 'poll':
             row.pop('pollRetryAt', None)
             row.pop('pollRateLimitedUntil', None)
-            target = now + (60 if row['provider'] == 'codex' else 300)
+            target = now + (60 if row['provider'] == 'codex' or ident == 'claude' and self.claude_active() else 300)
         else:
             # Claude reserves a minute for the request; other providers wait for expiry.
             target = oldest + FRESHNESS[row['provider']] - (60 if row['provider'] == 'claude' else 0)
@@ -505,10 +513,20 @@ class UsageService:
         stamps = [s for s in stamps if type(s) in (int, float) and math.isfinite(s)]
         return int(max(stamps)) if stamps else None
 
+    def claude_active(self):
+        return any(state == 'busy' for state in self.local.states.values())
+
+    def schedule_active_claude(self, ident):
+        if ident == 'claude' and self.claude_active():
+            row = self.rows[ident]
+            if time.time() - (row.get('sampledAt') or 0) >= 60:
+                self.request_check(ident)
+
     def worker(self, ident):
         while not self.stop.is_set():
             with self.lock:
                 self.wake_changed_claude(ident)
+                self.schedule_active_claude(ident)
                 delay = self.due[ident] - time.monotonic()
             if delay > 0:
                 self.stop.wait(min(delay, 1))

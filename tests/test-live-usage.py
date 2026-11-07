@@ -83,7 +83,7 @@ class LiveTests(unittest.TestCase):
         self.service.rows['claude']['pollAttemptedAt']=self.now
         self.service.due['claude']=time.monotonic()+1000
         with patch('agent_usage_live.time.time',return_value=self.now+TURN_SETTLE+1):local.finish_turn()
-        self.assertGreater(self.service.due['claude']-time.monotonic(),300-TURN_SETTLE-2)
+        self.assertGreater(self.service.due['claude']-time.monotonic(),60-TURN_SETTLE-2)
         self.assertIsNone(local.pending_turn)
         local.pending_turn=time.time()-1
         self.service.rows['claude'].update(source='live',receivedAt=time.time())
