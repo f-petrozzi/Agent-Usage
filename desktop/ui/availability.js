@@ -18,10 +18,12 @@
     for(const window of snap.windows||[])if(finite(window.resets_at)&&window.resets_at>0)deadlines.push(window.resets_at);
     return deadlines.length?Math.min(...deadlines):null;
   }
-  function readingStale(snap,provider=snap.provider,now=Date.now()){
+  // pending:false judges only the measurement, for callers (renewal detection) that
+  // compare a reading taken just before its window's reset with the next one.
+  function readingStale(snap,provider=snap.provider,now=Date.now(),{pending=true}={}){
     const times=samples(snap);
     return snap.status==='stale'||snap.status==='error'||!finite(snap.fetched_at)||snap.fetched_at<=0||!times.length||
-      times.some(t=>now<t||now-t>ttl(provider))||(snap.windows||[]).some(w=>windowPending(w,now));
+      times.some(t=>now<t||now-t>ttl(provider))||pending&&(snap.windows||[]).some(w=>windowPending(w,now));
   }
   root.usageReadingUnavailable = readingUnavailable;
   root.usageReadingStale = readingStale;

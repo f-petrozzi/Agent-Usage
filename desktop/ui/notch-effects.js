@@ -28,10 +28,13 @@ const notchEffects=(()=>{
         const first=old.snap.windows.find(w=>w.id===next.id&&w.label===next.label);
         // Corrections and moving reset estimates are not renewals. Require a just
         // crossed boundary, a new boundary and restored capacity on fresh readings.
+        // The old reading's window has passed its reset by definition, so judge only
+        // its measurement age; the pending-reset rule would refuse every renewal.
         if(first&&Number.isFinite(first.resets_at)&&first.resets_at>0&&now>=first.resets_at&&now-first.resets_at<=120000
           &&Number.isFinite(next.resets_at)&&next.resets_at>now&&next.resets_at>first.resets_at
           &&Number.isFinite(first.used)&&Number.isFinite(next.used)&&next.used>=0&&first.used-next.used>=.01
-          &&!staleOf(old.snap,old.base)&&!staleOf(account.snap,account.base))result.push({account:account.id,window:next.id});
+          &&!window.usageReadingStale(old.snap,old.base,now,{pending:false})
+          &&!window.usageReadingStale(account.snap,account.base,now))result.push({account:account.id,window:next.id});
       }
     }
     return result;
