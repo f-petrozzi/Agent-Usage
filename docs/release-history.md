@@ -3,6 +3,22 @@
 Historical implementation and validation notes, preserved from the original README.
 Older entries describe the behavior of that release; see the [current README](../README.md) for the latest features and controls.
 
+## Claude live-session discovery (5.2.4)
+
+Claude activity no longer disappears when its session directory accumulates more
+than 64 records. The collector checks every candidate's process identity before
+reporting live sessions, so dead records, reused PIDs and idle sessions cannot
+hide an active chat. Quiet sessions remain visible while their process is alive;
+the existing outgoing feed limit is unchanged.
+
+Update the collector on its host and reconnect the desktop session feed (quit
+and reopen Agent Usage). A Windows update alone does not replace the collector.
+The installer restarts the shared usage service when it is enabled.
+
+Validation: regressions cover 96 stale records ahead of an old live session,
+busy/waiting/idle transitions, and working-session discovery behind 80 live idle
+records. Existing process-identity and key-file isolation checks remain in place.
+
 ## Claude reset recovery (5.2.1)
 
 Claude can briefly return the old quota window after its reset. The shared

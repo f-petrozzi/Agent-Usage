@@ -1040,7 +1040,9 @@ def rollout_processes(proc_root: Path = Path("/proc")) -> dict[str, list[int]]:
 
 def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
-    for path in sorted((config_dir / "sessions").glob("*.json"))[:64]:
+    # Leftover records must not consume a discovery budget and hide live sessions.
+    # Inspect every candidate; the outgoing feed applies its own display limit.
+    for path in sorted((config_dir / "sessions").glob("*.json")):
         try:
             if path.stat().st_size > 64 * 1024:
                 continue

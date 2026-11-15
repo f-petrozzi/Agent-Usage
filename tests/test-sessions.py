@@ -54,6 +54,32 @@ class ClaudeSessionTests(unittest.TestCase):
         got = usage.claude_sessions(self.dir, include_terminal=True)
         self.assertEqual([(s['id'], s['state']) for s in got], [('live', 'idle')])
 
+    def test_stale_backlog_cannot_hide_an_old_live_session_or_its_transitions(self):
+        for i in range(96):
+            self.write(f'{i:06}.json', pid=os.getpid() if i % 2 else 2**22 + 12345,
+                       procStart='1', sessionId=f'stale-{i}', status='busy')
+        for state in ('busy', 'waiting', 'idle'):
+            with self.subTest(state=state):
+                self.write('999999.json', pid=os.getpid(), procStart=own_start(), sessionId='live',
+                           status=state, waitingFor='permission', statusUpdatedAt=1000)
+                # A quiet but live process must not expire or lose to newer stale files.
+                os.utime(self.dir / 'sessions' / '999999.json', (1, 1))
+                got = usage.claude_sessions(self.dir, include_terminal=True)
+                self.assertEqual([(s['id'], s['state'], s['since']) for s in got], [('live', state, 1)])
+                self.assertEqual(got[0]['waitingFor'], 'permission' if state == 'waiting' else None)
+                active = usage.claude_sessions(self.dir)
+                self.assertEqual([s['id'] for s in active], [] if state == 'idle' else ['live'])
+
+    def test_live_idle_sessions_do_not_hide_working_sessions_during_discovery(self):
+        for i in range(80):
+            self.write(f'{i:06}.json', pid=os.getpid(), procStart=own_start(),
+                       sessionId=f'idle-{i}', status='idle')
+        self.write('999999.json', pid=os.getpid(), procStart=own_start(), sessionId='working', status='busy')
+        self.assertEqual([s['id'] for s in usage.claude_sessions(self.dir)], ['working'])
+        got = usage.claude_sessions(self.dir, include_terminal=True)
+        self.assertEqual(len(got), 81)
+        self.assertEqual([s['id'] for s in got if s['state'] == 'busy'], ['working'])
+
     def test_key_files_are_never_opened(self):
         key = self.dir / 'sessions' / '1.abc.key'
         key.write_text('{"peerToken":"secret"}')
