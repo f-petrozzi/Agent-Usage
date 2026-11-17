@@ -1039,7 +1039,13 @@ def rollout_processes(proc_root: Path = Path("/proc")) -> dict[str, list[int]]:
 
 
 def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[dict[str, Any]]:
+    from agent_usage_processes import collector_owned
+
     sessions: list[dict[str, Any]] = []
+    collectors = {Path(__file__), Path.home() / '.local/bin/agent-usage'}
+    installed = shutil.which('agent-usage')
+    if installed:
+        collectors.add(Path(installed))
     # Leftover records must not consume a discovery budget and hide live sessions.
     # Inspect every candidate; the outgoing feed applies its own display limit.
     for path in sorted((config_dir / "sessions").glob("*.json")):
@@ -1054,6 +1060,9 @@ def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[di
         state = CLAUDE_STATES.get(record.get("status"))
         if state is None or (state == "idle" and not include_terminal) or not _process_matches(record.get("pid"), record.get("procStart")):
             continue
+        parents = process_ancestry(record.get("pid"))
+        if collector_owned(parents, collectors):
+            continue
         since = record.get("statusUpdatedAt")
         waiting_for = record.get("waitingFor")
         sessions.append({
@@ -1061,7 +1070,7 @@ def claude_sessions(config_dir: Path, include_terminal: bool = False) -> list[di
             "account": "claude",
             "id": _short(record.get("sessionId") or path.stem),
             "sessionId": _short(record.get("sessionId") or ""),
-            "terminalPids": process_ancestry(record.get("pid")),
+            "terminalPids": parents,
             "cwd": record.get("cwd") if isinstance(record.get("cwd"), str) else None,
             "name": _short(record.get("name") or Path(str(record.get("cwd") or "Claude")).name),
             "state": state,

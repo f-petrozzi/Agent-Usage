@@ -3,12 +3,15 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 import sqlite3
 import tempfile
 import time
 import unittest
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
 
 loader = importlib.machinery.SourceFileLoader('history_usage', str(Path(__file__).parents[1] / 'scripts/agent-usage'))
 spec = importlib.util.spec_from_loader(loader.name, loader)

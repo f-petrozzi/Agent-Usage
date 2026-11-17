@@ -5,10 +5,13 @@ import json
 import sqlite3
 import fcntl
 import os
+import sys
 from pathlib import Path
 import tempfile
 import time
 import unittest
+
+sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
 
 loader = importlib.machinery.SourceFileLoader('usage', str(Path(__file__).parents[1]/'scripts/agent-usage'))
 spec = importlib.util.spec_from_loader(loader.name, loader)

@@ -3,6 +3,22 @@
 Historical implementation and validation notes, preserved from the original README.
 Older entries describe the behavior of that release; see the [current README](../README.md) for the latest features and controls.
 
+## Internal Claude quota activity (5.2.5)
+
+Exclude the collector's own Claude quota processes from live session discovery.
+Their temporary native names (such as `fab-9f`) no longer appear as working chats
+or trigger completed-turn refresh nudges. Exact collector process ancestry
+continues to identify a check after Claude replaces its argv with a process title.
+Ordinary chats, including short chats with the same names, retain immediate
+activity updates. Native quota events, polling and cooldowns keep their existing
+behavior. No environments, credentials or transcript contents are inspected.
+
+Update the Linux collector and reconnect existing session streams. The Windows
+release carries the corresponding version; it does not update the host collector.
+Regression coverage includes an actual synthetic process with replaced argv,
+busy/waiting/idle internal states, real short chats, completed-turn nudges and
+missing/oversized process metadata. No model turns are needed for validation.
+
 ## Claude live-session discovery (5.2.4)
 
 Claude activity no longer disappears when its session directory accumulates more

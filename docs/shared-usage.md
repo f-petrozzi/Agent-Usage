@@ -62,6 +62,16 @@ CLI owns the request and token refresh. The undocumented `/api/oauth/usage`
 endpoint is used only with `AGENT_USAGE_CLAUDE_DIRECT=1`. Fresh native samples
 defer the fallback until 60 seconds before their 600-second freshness expires,
 so a slow request can finish while the last measurement is still valid.
+Collector-owned Claude processes are excluded from live chat activity before
+either the session stream or completed-turn scheduler sees them. Detection uses
+the exact collector script in the process ancestry, including after Claude
+replaces its command line with a process title. It reads bounded process metadata,
+never environments, and does not filter by session name, SDK entrypoint or lifetime.
+Uncertain ownership stays visible. Genuine chat activity, native measurements,
+fallback cadence, freshness and retry rules are unchanged; a quota check's exit
+cannot schedule another check as if a user turn had ended. Update the collector
+and reconnect existing session streams to activate this behavior in both apps.
+
 The collector retains the Claude cache’s actual request-start timestamp for
 its one-minute request floor. A completed-turn nudge cannot arrive just before that
 cache expires, replay its reading, and defer a real request for another cache
